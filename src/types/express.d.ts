@@ -1,7 +1,10 @@
+import type { TenantContext } from "../security/tenant-context.js";
+
 declare global {
   namespace Express {
     interface Request {
-      readonly requestId?: string;
+      requestId?: string;
+      tenantContext?: TenantContext;
     }
   }
 }
