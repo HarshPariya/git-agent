@@ -8,7 +8,25 @@
     "dev": "tsx watch src/app.ts",
     "build": "tsc",
     "start": "node dist/app.js",
-    "test": "npm run build && node --test dist/tests/**/*.test.js"
+    "test": "npm run build && node --test dist/tests/**/*.test.js",
+    "rag:parse": "tsx src/ingestion/test-parser.ts",
+    "rag:graph": "tsx src/retrieval/test-graph-search.ts",
+    "rag:vector": "tsx src/retrieval/test-vector-search.ts",
+    "rag:hybrid": "tsx src/retrieval/test-hybrid-search.ts",
+    "rag:retrieve": "tsx src/retrieval/test-retriever.ts",
+    "tool:search-code": "tsx src/tools/test-search-code.ts",
+    "db:test": "tsx src/db/test-database.ts",
+    "db:vector": "tsx src/db/test-vector-store.ts",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "rag:eval": "tsx src/retrieval/eval.ts",
+    "rag:ablation": "tsx src/retrieval/ablation-eval.ts",
+    "rag:security-test": "tsx src/ingestion/test-security.ts",
+    "rag:embed-test": "tsx src/ingestion/test-embedder.ts",
+    "rag:indexer-test": "tsx src/ingestion/test-indexer.ts",
+    "rag:limits-test": "tsx src/guardrails/test-limits.ts",
+    "rag:integration-test": "tsx src/retrieval/test-integration.ts",
+    "db:backup-test": "tsx src/db/test-backup.ts",
+    "tool:impact-analysis": "tsx src/tools/test-impact-analysis.ts"
   },
   "repository": {
     "type": "git",
@@ -23,7 +41,12 @@
   ],
   "author": "HarshPariya",
   "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/HarshPariya/ai-chatbot/issues"
+  },
+  "homepage": "https://github.com/HarshPariya/ai-chatbot#readme",
   "dependencies": {
+    "@xenova/transformers": "^2.17.2",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
@@ -35,7 +58,8 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^26.3.0",
+    "@types/pg": "^8.23.1",
     "tsx": "^4.23.12",
-    "typescript": "^7.0.2"
+    "typescript": "^5.9.3"
   }
 }
