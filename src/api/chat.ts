@@ -7,7 +7,6 @@ import { groqProvider } from "../llm/client.js";
 import { MockRetriever } from "../retrieval/mock-retriever.js";
 
 interface ChatBody {
-  readonly tenantId?: unknown;
   readonly message?: unknown;
   readonly sessionId?: unknown;
 }
@@ -50,13 +49,22 @@ export async function chatHandler(
   next: NextFunction,
 ): Promise<void> {
   try {
+    const context = request.tenantContext;
+
+    if (!context) {
+      throw new AppError(
+        "Tenant context is missing",
+        "AUTHENTICATION_ERROR",
+        401,
+      );
+    }
+
     const body = getBody(request.body);
-    const tenantId = getString(body.tenantId, "Tenant ID");
     const message = getString(body.message, "Message");
     const sessionId = getString(body.sessionId, "Session ID");
 
     const result = await agent.run({
-      tenantId,
+      tenantId: context.tenantId,
       sessionId,
       question: message,
     });
