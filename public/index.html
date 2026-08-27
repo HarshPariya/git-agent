@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChatGPT AI Code Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="chatgpt-layout">
+
+  <!-- Left Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="brand">
+        <span class="icon">🤖</span>
+        <span class="title">CodeGPT</span>
+      </div>
+      <button id="btn-new-chat" class="btn-new-chat">+ New Chat</button>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-title">Quick Actions</div>
+      <button class="shortcut-btn" data-query="/impact traverseGraph">⚡ Impact: traverseGraph</button>
+      <button class="shortcut-btn" data-query="/metrics">📊 Check System SLA</button>
+      <button class="shortcut-btn" data-query="How does graph search work?">🔍 How Graph Search Works</button>
+      <button class="shortcut-btn" data-query="Where is normalizeId used?">🔎 Find normalizeId Usages</button>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="system-health">
+        <span class="health-dot online"></span>
+        <span id="sidebar-health-text">Online • 100% SLA</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Chat Workspace -->
+  <main class="chat-workspace">
+
+    <!-- Top Chat Navigation Bar -->
+    <header class="chat-topbar">
+      <div class="model-selector">
+        <span class="model-icon">🔮</span>
+        <select id="model-select">
+          <option value="graphrag">GraphRAG Hybrid (Vector + AST Knowledge Graph)</option>
+          <option value="vector">Vector Search Only (pgvector)</option>
+          <option value="impact">AST Impact Debugger Mode</option>
+        </select>
+      </div>
+
+      <div class="topbar-actions">
+        <button id="btn-clear-history" class="btn-icon" title="Clear Chat History">🗑️ Clear</button>
+      </div>
+    </header>
+
+    <!-- Chat Messages Scroll Container -->
+    <div id="chat-messages-container" class="messages-container">
+      <div class="welcome-card glass-panel">
+        <div class="welcome-icon">⚡</div>
+        <h2>GraphRAG AI Code Assistant</h2>
+        <p>Ask questions about your codebase, debug functions, or analyze impact paths in real-time.</p>
+        
+        <div class="prompt-grid">
+          <button class="prompt-card" data-prompt="How does graph traversal work?">
+            <span class="title">🔍 Graph Traversal</span>
+            <span class="desc">How does BFS graph search find caller entities?</span>
+          </button>
+          <button class="prompt-card" data-prompt="/impact traverseGraph">
+            <span class="title">⚡ Impact Analysis</span>
+            <span class="desc">What breaks if I modify traverseGraph()?</span>
+          </button>
+          <button class="prompt-card" data-prompt="Where is normalizeId used?">
+            <span class="title">🔎 Function Lookup</span>
+            <span class="desc">Find exact occurrences and references to normalizeId.</span>
+          </button>
+          <button class="prompt-card" data-prompt="/metrics">
+            <span class="title">📊 SLA & Metrics</span>
+            <span class="desc">Show P50/P95 latency, pool stats, and cache hit rates.</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Fixed Input Bar -->
+    <footer class="input-container">
+      <div class="input-wrapper glass-panel">
+        <textarea id="user-input" placeholder="Message CodeGPT or type /impact <symbol>..." rows="1"></textarea>
+        <button id="btn-send" class="btn-send">
+          <span>Send</span> 🚀
+        </button>
+      </div>
+      <div class="input-footer-hint">
+        <span>CodeGPT uses PostgreSQL + pgvector & AST Knowledge Graphs. Sub-20ms SLA.</span>
+      </div>
+    </footer>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
