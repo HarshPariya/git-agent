@@ -30,6 +30,7 @@ test("registers and resolves a knowledge tool", async () => {
     input: {
       query: "What is the refund policy?",
     },
+    permissions: ["read"],
   });
 
   assert.equal(result[0]?.source, "refund-policy.pdf");
