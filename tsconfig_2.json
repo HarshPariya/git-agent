@@ -13,6 +13,7 @@
     "src/security/**/*.ts",
     "tests/security-middleware.test.ts",
     "tests/http-security.test.ts",
+    "tests/evaluation.test.ts",
     "src/errors/**/*.ts",
     "src/logging/**/*.ts",
     "src/middleware/**/*.ts",
