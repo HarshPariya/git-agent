@@ -18,7 +18,11 @@ test("exposes a runtime knowledge tool", async () => {
     ]),
   );
 
-  const tool = registry.getRuntime("retrieve_knowledge");
+  const tool = registry.getRuntime("retrieve_knowledge", {
+    tenantId: "test",
+    sessionId: "test",
+    userPermissions: ["read"],
+  });
   const result = await tool.execute({
     query: "refund policy",
   });
@@ -38,7 +42,11 @@ test("rejects invalid runtime tool input", async () => {
 
   registry.register(createKnowledgeTool(async () => []));
 
-  const tool = registry.getRuntime("retrieve_knowledge");
+  const tool = registry.getRuntime("retrieve_knowledge", {
+    tenantId: "test",
+    sessionId: "test",
+    userPermissions: ["read"],
+  });
 
   await assert.rejects(
     () => tool.execute({ query: "" }),

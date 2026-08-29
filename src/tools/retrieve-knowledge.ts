@@ -1,5 +1,5 @@
 import type { RetrievalRequest, RetrievalResult } from "../retrieval/types.js";
-import type { ToolDefinition } from "./types.js";
+import type { ToolDefinition, ToolPermission } from "./types.js";
 
 const parameters = {
   type: "object",
@@ -78,6 +78,9 @@ export type KnowledgeRetriever = (
   request: RetrievalRequest,
 ) => Promise<readonly RetrievalResult[]>;
 
+const DEFAULT_PERMISSIONS: readonly ToolPermission[] = ["read"];
+const DEFAULT_TIMEOUT_MS = 10_000;
+
 export const createKnowledgeTool = (
   retriever: KnowledgeRetriever,
 ): ToolDefinition<RetrievalRequest, readonly RetrievalResult[]> => ({
@@ -85,6 +88,8 @@ export const createKnowledgeTool = (
   description:
     "Retrieve relevant knowledge from the connected knowledge system.",
   parameters,
+  permissions: DEFAULT_PERMISSIONS,
+  timeoutMs: DEFAULT_TIMEOUT_MS,
   parseInput,
   execute: ({ input }) => retriever(input),
 });
