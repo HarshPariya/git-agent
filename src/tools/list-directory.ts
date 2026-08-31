@@ -11,7 +11,16 @@ import type {
 const DEFAULT_PERMISSIONS: readonly ToolPermission[] = ["read"];
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_ALLOWED_ENTRIES = 200;
-const BLOCKED_NAMES = new Set([".git", "node_modules", ".env", ".env.local"]);
+const BLOCKED_NAMES = new Set([
+  ".git",
+  "node_modules",
+  ".env",
+  ".env.local",
+  "dist",
+  "dist-member2",
+  ".turbo",
+  ".next",
+]);
 
 const parameters = {
   type: "object",

@@ -14,7 +14,7 @@ import type { ToolLlmResponse } from "../types/llm.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { logger } from "../logging/logger.js";
 
-const MAX_OUTPUT_CHARS = 2000;
+const MAX_OUTPUT_CHARS = 4000;
 
 export interface ToolCallingRequest {
   readonly instructions: string;
@@ -85,7 +85,6 @@ const boundMessagesWithoutOrphans = (
   const userMessage = allMessages[0]!;
   const recentSlice = allMessages.slice(-10);
 
-  // Skip any leading tool messages that lost their assistant parent
   let validStartIndex = 0;
   while (
     validStartIndex < recentSlice.length &&
@@ -121,6 +120,7 @@ export async function runToolCalling({
   });
 
   const executedTools: string[] = [];
+  const allExecutedResults: ToolExecutionResult[] = [];
 
   for (
     let round = 0;
@@ -134,6 +134,7 @@ export async function runToolCalling({
     );
 
     for (const output of outputs) {
+      allExecutedResults.push(output);
       if (output.success) executedTools.push(output.toolName);
     }
 
@@ -172,10 +173,62 @@ export async function runToolCalling({
     return response;
   }
 
+  // Synthesize exact tool results into the response text if LLM returns empty text
+  const formattedOutputs = allExecutedResults
+    .filter((res) => res.success && res.output)
+    .map((res) => {
+      const data = res.output as Record<string, unknown>;
+      if (typeof data.content === "string" && data.content.trim().length > 0) {
+        const ext = String(data.path || "").split(".").pop() || "";
+        return `\`\`\`${ext}\n${data.content}\n\`\`\``;
+      }
+      if (typeof data.message === "string" && data.message.trim().length > 0) {
+        return `✅ **${res.toolName}**: ${data.message}`;
+      }
+      if (typeof data.output === "string" && data.output.trim().length > 0) {
+        return `\`\`\`text\n${data.output}\n\`\`\``;
+      }
+      if (Array.isArray(data.entries)) {
+        const header = `### Directory: \`${String(data.path || ".")}\` (${data.totalEntries ?? data.entries.length} items)\n`;
+        const list = (
+          data.entries as Array<{
+            name: string;
+            relativePath: string;
+            type: string;
+          }>
+        )
+          .map(
+            (e) =>
+              `- ${e.type === "directory" ? "📁" : "📄"} \`${e.relativePath || e.name}\``,
+          )
+          .join("\n");
+        return `${header}\n${list}`;
+      }
+      if (Array.isArray(data.results)) {
+        return (
+          data.results as Array<{
+            content: string;
+            source: string;
+            page?: number;
+          }>
+        )
+          .map(
+            (r) =>
+              `> **[${r.source}${r.page ? ` p.${r.page}` : ""}]**\n${r.content}`,
+          )
+          .join("\n\n");
+      }
+      return JSON.stringify(res.output, null, 2);
+    })
+    .filter(Boolean)
+    .join("\n\n");
+
   const fallbackSummary =
-    executedTools.length > 0
-      ? `Successfully executed operations using: ${executedTools.join(", ")}.`
-      : "Successfully completed requested tool operations.";
+    formattedOutputs.trim().length > 0
+      ? formattedOutputs
+      : executedTools.length > 0
+        ? `Successfully executed operations using: ${executedTools.join(", ")}.`
+        : "Successfully completed requested tool operations.";
 
   return {
     ...response,
