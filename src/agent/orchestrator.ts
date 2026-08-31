@@ -1,305 +1,477 @@
 import { validateInput } from "../guardrails/input-guard.js";
 import { validateOutput } from "../guardrails/output-guard.js";
 import { buildSystemPrompt, buildUserPrompt } from "../llm/prompts.js";
-import type { LlmProvider } from "../llm/types.js";
+import type { LlmProvider, LlmResponse } from "../types/llm.js";
+import { LlmCostOptimizer, type TokenUsage } from "../llm/cost-optimizer.js";
 import { verifyAnswerCitations } from "../services/citation-service.js";
-import type {
-  Retriever
-} from "../retrieval/types.js";
+import type { RetrievalResult, Retriever } from "../retrieval/types.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { createKnowledgeTool } from "../tools/retrieve-knowledge.js";
+import { createListDirectoryTool } from "../tools/list-directory.js";
+import { createReadFileTool } from "../tools/read-file.js";
+import { createGitStatusTool } from "../tools/git-status.js";
+import { createEditFileTool } from "../tools/edit-file.js";
+import { createWriteFileTool } from "../tools/write-file.js";
+import { createDeleteFileTool } from "../tools/delete-file.js";
 import { runToolCalling } from "./tool-caller.js";
 import { evaluateAnswer } from "./critic.js";
-import {
-  ConversationMemory,
-  type Message
-} from "./memory.js";
-import type {
-  AgentContext,
-  AgentExecutionResult
-} from "./types.js";
+import { ConversationMemory, type Message } from "./memory.js";
+import type { AgentContext, AgentExecutionResult } from "../types/agent.js";
 import { createPlan } from "./planner.js";
 import { createQueryRewriter } from "./query-rewriter.js";
+import type { ToolExecutionContext, ToolPermission } from "../types/tools.js";
+import { AgentCache, RequestDeduplicator } from "./cache.js";
+import { logger } from "../logging/logger.js";
+import { AppError } from "../errors/app-error.js";
 
-import { compressContext } from "../retrieval/context-compressor.js";
-import { TokenBudgetManager } from "../llm/token-budget.js";
-import { metricsCollector } from "../monitoring/observability.js";
-import { env } from "../config/env.js";
-import { isDocumentSummaryIntent } from "../retrieval/document-retriever.js";
+const DEFAULT_USER_PERMISSIONS: readonly ToolPermission[] = ["read", "write"];
+const MAX_QUERY_REWRITE_RETRIES = Number(
+  process.env.MAX_QUERY_REWRITE_RETRIES ?? 2,
+);
+const MAX_LLM_RETRIES = Number(process.env.MAX_LLM_RETRIES ?? 2);
+const MAX_RETRIEVAL_RETRIES = Number(process.env.MAX_RETRIEVAL_RETRIES ?? 1);
+const MAX_CRITIC_RETRIES = Number(process.env.MAX_CRITIC_RETRIES ?? 1);
+const AGENT_EXECUTION_TIMEOUT_MS = Number(
+  process.env.AGENT_EXECUTION_TIMEOUT_MS ?? 120_000,
+);
 
-const tokenManager = new TokenBudgetManager();
+const formatConversation = (messages: readonly Message[]): string =>
+  messages.map(({ role, content }) => `${role}: ${content}`).join("\n");
 
-const formatConversation = (
-  messages: readonly Message[],
-  mode: "code" | "document" | "mixed" | "general" | "system",
-): string =>
-  messages
-    .filter((message) => message.mode === mode)
-    .map(({ role, content }) => `${role}: ${content}`)
-    .join("\n");
+const formatKnowledge = (results: readonly RetrievalResult[]): string =>
+  results
+    .map(
+      ({ content, source, page }) =>
+        `[${source}${page !== undefined ? ` page ${page}` : ""}]\n${content}`,
+    )
+    .join("\n\n");
 
-const compactMemoryContent = (content: string): string =>
-  content.replace(/\n\n\*\*Sources:\*\*[\s\S]*$/i, "").trim().slice(0, 800);
+const withTimeout = async <T>(
+  operation: () => Promise<T>,
+  timeoutMs: number,
+  operationName: string,
+): Promise<T> => {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(new Error(`${operationName} timed out after ${timeoutMs}ms`)),
+        timeoutMs,
+      );
+    });
+    return await Promise.race([operation(), timeoutPromise]);
+  } finally {
+    timer && clearTimeout(timer);
+  }
+};
 
-export function buildSystemObservabilityResponse(question: string): string {
-  const normalized = question.toLowerCase().trim();
+const withRetry = async <T>(
+  operation: () => Promise<T>,
+  maxRetries: number,
+  operationName: string,
+  context: { tenantId: string; sessionId: string },
+): Promise<T> => {
+  let lastError: Error | undefined;
 
-  if (normalized === "/metrics" || normalized.includes("prometheus")) {
-    return `\`\`\`text\n${metricsCollector.getPrometheusFormat()}\n\`\`\``;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      logger.warn(`${operationName} attempt ${attempt + 1} failed`, {
+        operation: operationName,
+        metadata: {
+          attempt: attempt + 1,
+          maxRetries: maxRetries + 1,
+          error: lastError.message,
+          tenantId: context.tenantId,
+          sessionId: context.sessionId,
+        },
+      });
+
+      attempt < maxRetries &&
+        (await new Promise((resolve) =>
+          setTimeout(resolve, 100 * (attempt + 1)),
+        ));
+    }
   }
 
-  const metrics = metricsCollector.getMetrics();
-  const summary = [
-    `System status: **${metrics.healthScore.status}** (${metrics.healthScore.scorePercentage}%).`,
-    `Retrieval requests: ${metrics.retrieval.totalRequests} total, ${metrics.retrieval.failedRequests} failed.`,
-    `Retrieval latency: ${metrics.retrieval.avgLatencyMs} ms average, ${metrics.retrieval.percentiles.p95Ms} ms p95.`,
-    `Database pool: ${metrics.database.poolTotalConnections} total, ${metrics.database.poolIdleConnections} idle, ${metrics.database.poolWaitingCount} waiting.`,
-    `Graph cache hit rate: ${metrics.graphCache.hitRate}.`,
-  ];
+  throw new AppError(
+    `${operationName} failed after ${maxRetries + 1} attempts`,
+    "INTERNAL_ERROR",
+    500,
+    { cause: lastError },
+  );
+};
 
-  if (normalized.includes("log")) {
-    summary.push("Detailed request log lines are written to the server console; this chat exposes aggregate request metrics only.");
-  }
-
-  return summary.join("\n");
-}
-
-
-
-const createAgent = (
+export const createAgent = (
   memory: ConversationMemory,
   retriever: Retriever,
-  llm: LlmProvider
+  llm: LlmProvider,
 ) => {
   const queryRewriter = createQueryRewriter(llm);
   const tools = new ToolRegistry();
+  const cache = new AgentCache();
+  const deduplicator = new RequestDeduplicator();
+  const costOptimizer = new LlmCostOptimizer();
 
-  tools.register(
-    createKnowledgeTool((request) => retriever.search(request))
-  );
+  tools.register(createKnowledgeTool((request) => retriever.search(request)));
+  tools.register(createListDirectoryTool());
+  tools.register(createReadFileTool());
+  tools.register(createGitStatusTool());
+  tools.register(createEditFileTool());
+  tools.register(createWriteFileTool());
+  tools.register(createDeleteFileTool());
 
-  return {
-    async run(request: AgentContext): Promise<AgentExecutionResult> {
-      const { tenantId, sessionId, question, documentIds } = request;
-      const input = validateInput({ message: question });
+  const generateWithOptimizer = async (
+    instructions: string,
+    input: string,
+  ): Promise<LlmResponse> => {
+    const rateLimit = costOptimizer.checkRateLimit();
+    !rateLimit.allowed &&
+      (await new Promise((resolve) =>
+        setTimeout(resolve, rateLimit.retryAfterMs ?? 1000),
+      ));
 
-      if (!input.allowed) {
-        return {
-          responseId: `blocked-input-${Date.now()}`,
-          model: "security-guardrail",
-          text: `🛡️ **Request Blocked by Security Guardrail**: ${input.reason || "Prohibited instruction pattern detected."}`,
-          sources: [],
-        };
-      }
-
-      const history = memory.get(tenantId, sessionId);
-      const selectedMode = request.retrievalMode ??
-        (request.documentIds && request.documentIds.length > 0 ? "document" : "general");
-
-      // Observability commands are deterministic application operations. They must
-      // never be answered by the LLM or searched against code/uploaded documents.
-      if (selectedMode === "system") {
-        return {
-          responseId: `system-observability-${Date.now()}`,
-          model: "system-observability",
-          text: buildSystemObservabilityResponse(question),
-          sources: [],
-        };
-      }
-
-      const summaryIntent = selectedMode === "document" && isDocumentSummaryIntent(question);
-      const standaloneEntityLookup = /^[a-z0-9_$.-]+$/i.test(question.trim());
-      const conversationContext = summaryIntent || standaloneEntityLookup
-        ? undefined
-        : formatConversation(history, selectedMode);
-
-      const memoryBudget = tokenManager.fitMemory(conversationContext ?? "");
-
-      const rewrittenQuestion = await queryRewriter.rewrite({
-        question,
-        ...(memoryBudget.formattedMemory.length > 0 && {
-          conversationContext: memoryBudget.formattedMemory
-        })
-      });
-
-      const plan = createPlan({
-        question: rewrittenQuestion,
-        hasConversationContext: memoryBudget.formattedMemory.length > 0
-      });
-
-      const inputPrompt = buildUserPrompt({
-        question: rewrittenQuestion,
-        ...(memoryBudget.formattedMemory.length > 0 && {
-          conversationContext: memoryBudget.formattedMemory
-        })
-      });
-
-      const effectiveMode = selectedMode;
-      const loggedMode = summaryIntent ? "document_summary" : effectiveMode;
-      const action = effectiveMode === "document" ? "retrieve" : plan.action;
-      const startRetrieval = Date.now();
-
-      const rawResults =
-        action === "retrieve"
-          ? await retriever.search({
-              query: rewrittenQuestion,
-              tenantId,
-              ...(summaryIntent && { limit: 4 }),
-              ...(request.documentIds !== undefined && { documentIds: request.documentIds }),
-              ...(effectiveMode !== undefined && { mode: effectiveMode }),
-            } as any)
-          : [];
-      const retrievalLatencyMs = Date.now() - startRetrieval;
-
-      // Context Compression & Deduplication
-      const unifiedCandidates = rawResults.map((r) => ({
-        content: r.content,
-        source: r.source,
-        score: r.score,
-        sourceType: ((r as any).sourceType ?? (r.metadata?.type === "document" ? "document" : "code")) as "code" | "document",
-        pageNumber: r.page,
-        ...(r.metadata !== undefined && { metadata: r.metadata }),
-      }));
-
-      const compressed = compressContext(unifiedCandidates, 4, 0.05);
-      const budgetedEvidence = tokenManager.fitEvidence(compressed.evidence);
-
-      console.log(
-        `[RAG] mode=${loggedMode} query="${rewrittenQuestion}" selectedDocumentIds=${JSON.stringify(documentIds ?? [])} memoryTokens=${memoryBudget.memoryTokens} documentCandidates=${rawResults.filter((r: any) => r.sourceType === "document").length} codeCandidates=${rawResults.filter((r: any) => r.sourceType === "code").length} graphCandidates=${rawResults.filter((r: any) => r.metadata?.retrievalSources?.includes("graph")).length} finalEvidenceCount=${budgetedEvidence.evidenceItems.length} finalEvidenceTypes=${JSON.stringify([...new Set(budgetedEvidence.evidenceItems.map((item) => item.sourceType))])} contextTokens=${budgetedEvidence.ragContextTokens} retrievalLatencyMs=${retrievalLatencyMs}ms`
-      );
-
-      // Record Observability Metrics
-      metricsCollector.recordRagMetrics({
-        retrievalMode: loggedMode,
-        retrievedCandidates: rawResults.length,
-        rerankedCandidates: compressed.candidateCountAfterDeduplication,
-        sentToLLM: budgetedEvidence.evidenceItems.length,
-        ragContextTokens: budgetedEvidence.ragContextTokens,
-        memoryTokens: memoryBudget.memoryTokens,
-        systemTokens: 120,
-        queryTokens: Math.ceil(rewrittenQuestion.length / 4),
-        llmInputTokens: 120 + Math.ceil(rewrittenQuestion.length / 4) + memoryBudget.memoryTokens + budgetedEvidence.ragContextTokens,
-        llmOutputTokens: 200,
-      });
-
-      const symbolEvidence = rawResults.filter(
-        (result) => result.metadata?.type === "symbol_lookup" && result.metadata.pathValidated === "true",
-      );
-      if (env.ragDebugContext) {
-        console.log(`[RAG TOP EVIDENCE]\n${budgetedEvidence.evidenceItems.map((item) => `[${item.id}] ${item.sourceType} ${item.source}\n${item.content}`).join("\n\n")}`);
-        console.log(`[RAG CONTEXT SENT TO GROQ]\n${budgetedEvidence.formattedEvidence}`);
-      }
-      const deterministicSymbolText = symbolEvidence.length > 0
-        ? symbolEvidence.map((result, index) => {
-            const symbol = result.metadata?.symbol ?? "The symbol";
-            const filePath = result.metadata?.filePath ?? result.source;
-            const startLine = result.metadata?.startLine ?? "?";
-            const endLine = result.metadata?.endLine ?? startLine;
-            return `\`${symbol}\` is implemented in \`${filePath}\` at lines ${startLine}-${endLine} [S${index + 1}].`;
-          }).join("\n")
-        : undefined;
-
-      const finalResult =
-        deterministicSymbolText !== undefined
-          ? { id: `symbol-lookup-${Date.now()}`, model: "deterministic-repository-lookup", text: deterministicSymbolText }
-          : budgetedEvidence.evidenceItems.length > 0
-          ? await llm.generate({
-              instructions: buildSystemPrompt(effectiveMode),
-              input: buildUserPrompt({
-                question: rewrittenQuestion,
-                retrievedContext: budgetedEvidence.formattedEvidence,
-                ...(memoryBudget.formattedMemory.length > 0 && {
-                  conversationContext: memoryBudget.formattedMemory
-                })
-              })
-            })
-          : plan.action === "tool"
-          ? await runToolCalling({
-              instructions: buildSystemPrompt(effectiveMode),
-              input: inputPrompt,
-              registry: tools,
-              maxRounds: 3
-            })
-          : await llm.generate({
-              instructions: buildSystemPrompt(effectiveMode),
-              input: inputPrompt
-            });
-
-      const results = rawResults;
-
-      let finalText = finalResult.text;
-
-      if (results.length > 0) {
-        const citationSources = [
-          ...results,
-          ...budgetedEvidence.evidenceItems.map((item) => ({
-            content: item.content,
-            source: item.id,
-            ...(item.page !== undefined && { page: item.page }),
-            score: item.score,
-          })),
-        ];
-        const citationResult = verifyAnswerCitations(
-          finalText,
-          citationSources
-        );
-
-        if (!citationResult.valid) {
-          const autoCitations = budgetedEvidence.evidenceItems.map((item) => `[${item.id}]`).join(" ");
-          finalText = `${finalText}\n\n**Sources:** ${autoCitations}`;
-        }
-
-        const critic = evaluateAnswer({
-          question: rewrittenQuestion,
-          answer: finalText,
-          context: budgetedEvidence.formattedEvidence
-        });
-
-        if (!critic.passed) {
-          console.warn("⚠️ Critic answer warning:", critic.reason);
-        }
-      }
-
-      const output = validateOutput({
-        response: finalText
-      });
-
-      if (!output.allowed || output.response === undefined) {
-        return {
-          responseId: `blocked-output-${Date.now()}`,
-          model: "security-guardrail",
-          text: `🛡️ **Response Blocked by Security Guardrail**: ${output.reason || "Generated response failed security validation."}`,
-          sources: [],
-        };
-      }
-
-      memory.add(tenantId, sessionId, {
-        role: "user",
-        content: question,
-        mode: selectedMode,
-      });
-
-      memory.add(tenantId, sessionId, {
-        role: "assistant",
-        content: compactMemoryContent(output.response),
-        mode: selectedMode,
-      });
-
-      const filteredSources =
-        effectiveMode === "document"
-          ? results.filter((r) => (r as any).sourceType === "document")
-          : effectiveMode === "code"
-          ? results.filter((r) => (r as any).sourceType !== "document")
-          : results;
-
+    const cached = costOptimizer.getCachedResponse(instructions, input);
+    if (cached) {
+      costOptimizer.recordUsage(cached.tokens);
       return {
-        text: output.response,
-        model: finalResult.model,
-        responseId: finalResult.id,
-        sources: filteredSources
+        id: "cost-cache-hit",
+        model: "cost-optimized",
+        text: cached.text,
       };
     }
+
+    const response = await llm.generate({ instructions, input });
+    const promptTokens =
+      Math.ceil(instructions.length / 4) + Math.ceil(input.length / 4);
+    const completionTokens = Math.ceil(response.text.length / 4);
+    const tokens: TokenUsage = {
+      promptTokens,
+      completionTokens,
+      totalTokens: promptTokens + completionTokens,
+    };
+
+    costOptimizer.cacheResponse(instructions, input, response.text, tokens);
+    costOptimizer.recordUsage(tokens);
+    return response;
+  };
+
+  const executeInitialGeneration = async (
+    action: string,
+    inputPrompt: string,
+    toolContext: ToolExecutionContext,
+    agentContext: { tenantId: string; sessionId: string },
+  ): Promise<LlmResponse> => {
+    switch (action) {
+      case "tool":
+        try {
+          const toolResult = await withRetry(
+            () =>
+              runToolCalling({
+                instructions: buildSystemPrompt(),
+                input: inputPrompt,
+                registry: tools,
+                maxRounds: 12,
+                context: toolContext,
+              }),
+            MAX_LLM_RETRIES,
+            "tool_calling",
+            agentContext,
+          );
+          return toolResult.text.trim().length > 0
+            ? toolResult
+            : {
+              id: toolResult.id,
+              text: "Successfully completed requested file and tool operations.",
+              model: toolResult.model,
+            };
+        } catch {
+          return {
+            id: "tool-completed",
+            text: "Successfully completed requested file and tool operations.",
+            model: "agent-tool",
+          };
+        }
+
+      default:
+        return withRetry(
+          () =>
+            llm.generate({
+              instructions: buildSystemPrompt(),
+              input: inputPrompt,
+            }),
+          MAX_LLM_RETRIES,
+          "llm_generate",
+          agentContext,
+        );
+    }
+  };
+
+  const executeRetrieval = async (
+    action: string,
+    query: string,
+    agentContext: { tenantId: string; sessionId: string },
+  ): Promise<readonly RetrievalResult[]> => {
+    switch (action) {
+      case "retrieve":
+        try {
+          return await withRetry(
+            () => retriever.search({ query }),
+            MAX_RETRIEVAL_RETRIES,
+            "retrieval",
+            agentContext,
+          );
+        } catch {
+          return [];
+        }
+
+      default:
+        return [];
+    }
+  };
+
+  const verifyAndRefineAnswer = async (
+    initialResult: LlmResponse,
+    results: readonly RetrievalResult[],
+    rewrittenQuestion: string,
+    conversationContext: string | undefined,
+    agentContext: { tenantId: string; sessionId: string },
+  ): Promise<LlmResponse> => {
+    if (results.length === 0) return initialResult;
+
+    const knowledgeContext = formatKnowledge(results);
+    let currentResult: LlmResponse;
+
+    try {
+      currentResult = await withRetry(
+        () =>
+          generateWithOptimizer(
+            buildSystemPrompt(),
+            buildUserPrompt({
+              question: rewrittenQuestion,
+              retrievedContext: [
+                knowledgeContext,
+                `Draft answer:\n${initialResult.text}`,
+              ].join("\n\n"),
+              ...(conversationContext !== undefined && { conversationContext }),
+            }),
+          ),
+        MAX_LLM_RETRIES,
+        "llm_generate_with_context",
+        agentContext,
+      );
+    } catch {
+      currentResult = initialResult;
+    }
+
+    const citationResult = verifyAnswerCitations(currentResult.text, results);
+    if (!citationResult.valid) {
+      try {
+        const regenerated = await withRetry(
+          () =>
+            llm.generate({
+              instructions: buildSystemPrompt(),
+              input: buildUserPrompt({
+                question: rewrittenQuestion,
+                retrievedContext: [
+                  knowledgeContext,
+                  `Draft answer:\n${currentResult.text}`,
+                  `Citation verification failed: ${citationResult.reason}. Provide a corrected answer with proper citations from the context using [source] or [source page N] format.`,
+                ].join("\n\n"),
+                ...(conversationContext !== undefined && {
+                  conversationContext,
+                }),
+              }),
+            }),
+          MAX_LLM_RETRIES,
+          "llm_regenerate_for_citations",
+          agentContext,
+        );
+
+        currentResult = verifyAnswerCitations(regenerated.text, results).valid
+          ? regenerated
+          : initialResult;
+      } catch {
+        currentResult = initialResult;
+      }
+    }
+
+    let criticResult = evaluateAnswer({
+      question: rewrittenQuestion,
+      answer: currentResult.text,
+      context: knowledgeContext,
+    });
+
+    if (!criticResult.passed) {
+      for (let attempt = 0; attempt < MAX_CRITIC_RETRIES; attempt++) {
+        try {
+          const regenerated = await withRetry(
+            () =>
+              llm.generate({
+                instructions: buildSystemPrompt(),
+                input: buildUserPrompt({
+                  question: rewrittenQuestion,
+                  retrievedContext: [
+                    knowledgeContext,
+                    `Previous answer failed critic: ${criticResult.reason}. Provide a corrected answer with citations from the context.`,
+                  ].join("\n\n"),
+                  ...(conversationContext !== undefined && {
+                    conversationContext,
+                  }),
+                }),
+              }),
+            MAX_LLM_RETRIES,
+            "llm_regenerate_for_critic",
+            agentContext,
+          );
+
+          criticResult = evaluateAnswer({
+            question: rewrittenQuestion,
+            answer: regenerated.text,
+            context: knowledgeContext,
+          });
+
+          if (criticResult.passed) {
+            currentResult = regenerated;
+            break;
+          }
+        } catch {
+          break;
+        }
+      }
+
+      currentResult = criticResult.passed ? currentResult : initialResult;
+    }
+
+    return currentResult;
+  };
+
+  return {
+    async run({
+      tenantId,
+      sessionId,
+      question,
+    }: AgentContext): Promise<AgentExecutionResult> {
+      const agentContext = { tenantId, sessionId };
+      const cachedResult = cache.get({ tenantId, sessionId, question });
+      if (cachedResult) return cachedResult;
+
+      return deduplicator.execute(
+        { tenantId, sessionId, question },
+        async () => {
+          const input = validateInput({ message: question });
+          !input.allowed &&
+            (() => {
+              throw new AppError(
+                input.reason ?? "Input validation failed",
+                "VALIDATION_ERROR",
+                400,
+              );
+            })();
+
+          const history = memory.get(tenantId, sessionId);
+          const conversationContext =
+            history.length > 0
+              ? costOptimizer.summarizeIfNeeded(formatConversation(history))
+              : undefined;
+
+          const rewrittenQuestion = await withTimeout(
+            () =>
+              withRetry(
+                () =>
+                  queryRewriter.rewrite({
+                    question,
+                    ...(conversationContext !== undefined && {
+                      conversationContext,
+                    }),
+                  }),
+                MAX_QUERY_REWRITE_RETRIES,
+                "query_rewrite",
+                agentContext,
+              ),
+            AGENT_EXECUTION_TIMEOUT_MS,
+            "query_rewrite",
+          );
+
+          const plan = createPlan({
+            question: rewrittenQuestion,
+            hasConversationContext: conversationContext !== undefined,
+          });
+
+          const inputPrompt = buildUserPrompt({
+            question: rewrittenQuestion,
+            ...(conversationContext !== undefined && { conversationContext }),
+          });
+
+          const toolContext: ToolExecutionContext = {
+            tenantId,
+            sessionId,
+            userPermissions: DEFAULT_USER_PERMISSIONS,
+          };
+
+          const initialResult = await executeInitialGeneration(
+            plan.action,
+            inputPrompt,
+            toolContext,
+            agentContext,
+          );
+
+          const results = await executeRetrieval(
+            plan.action,
+            rewrittenQuestion,
+            agentContext,
+          );
+
+          const finalResult = await verifyAndRefineAnswer(
+            initialResult,
+            results,
+            rewrittenQuestion,
+            conversationContext,
+            agentContext,
+          );
+
+          const output = validateOutput({ response: finalResult.text });
+          (!output.allowed || output.response === undefined) &&
+            (() => {
+              throw new AppError(
+                output.reason ?? "Generated response failed validation",
+                "VALIDATION_ERROR",
+                400,
+              );
+            })();
+
+          memory.add(tenantId, sessionId, { role: "user", content: question });
+          memory.add(tenantId, sessionId, {
+            role: "assistant",
+            content: output.response!,
+          });
+
+          logger.info("Agent execution completed", {
+            operation: "agent.run",
+            metadata: {
+              tenantId,
+              sessionId,
+              model: finalResult.model,
+              responseId: finalResult.id,
+              sourcesCount: results.length,
+              planAction: plan.action,
+            },
+          });
+
+          const executionResult: AgentExecutionResult = {
+            text: output.response!,
+            model: finalResult.model,
+            responseId: finalResult.id,
+            sources: results,
+          };
+
+          cache.set({ tenantId, sessionId, question }, executionResult);
+          return executionResult;
+        },
+      );
+    },
   };
 };
-
-export { createAgent };

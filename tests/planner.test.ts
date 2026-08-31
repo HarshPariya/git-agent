@@ -34,3 +34,12 @@ test("selects a tool when the question explicitly requires one", () => {
 
   assert.equal(plan.action, "tool");
 });
+
+test("selects a tool for folder and codebase inspection questions", () => {
+  const plan = createPlan({
+    question: "can you check my folder structure and tell me what is in my agent folder",
+    hasConversationContext: false,
+  });
+
+  assert.equal(plan.action, "tool");
+});
