@@ -88,7 +88,7 @@ test("orchestrator handles very long question", async () => {
   });
 
   const agent = createAgent(memory, retriever, llm);
-  const longQuestion = "What is ".repeat(2000) + "?";
+  const longQuestion = "What is ".repeat(10_000) + "?";
 
   await assert.rejects(
     () =>

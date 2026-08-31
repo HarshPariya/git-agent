@@ -5,7 +5,7 @@ import type {
 
 export type { OutputGuardRequest, OutputGuardResult };
 
-const DEFAULT_MAX_RESPONSE_LENGTH = 8_000;
+const DEFAULT_MAX_RESPONSE_LENGTH = 64_000;
 const MAX_RESPONSE_LENGTH = Number(
   process.env.MAX_RESPONSE_LENGTH ?? DEFAULT_MAX_RESPONSE_LENGTH,
 );
