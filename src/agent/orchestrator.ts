@@ -200,7 +200,7 @@ export const createAgent = (
           text: "Retrieved evidence is required before answering.",
         };
 
-      case "tool":
+      case "tool": {
         try {
           const toolResult = await withRetry(
             () =>
@@ -225,6 +225,7 @@ export const createAgent = (
         } catch {
           // Upstream LLM rate limited or unreachable — execute requested tool autonomously
         }
+        const lowerQ = userQuery.toLowerCase().trim();
 
         // 1. Git status (highest precedence when query mentions git)
         if (lowerQ.includes("git")) {
