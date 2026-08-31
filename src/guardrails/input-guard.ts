@@ -5,10 +5,7 @@ import type {
 
 export type { InputGuardRequest, InputGuardResult };
 
-const DEFAULT_MAX_MESSAGE_LENGTH = 4_000;
-const MAX_MESSAGE_LENGTH = Number(
-  process.env.MAX_MESSAGE_LENGTH ?? DEFAULT_MAX_MESSAGE_LENGTH,
-);
+const MAX_MESSAGE_LENGTH = 4_000;
 
 const INJECTION_PATTERNS = [
   /ignore\s+(all\s+)?previous\s+instructions/i,

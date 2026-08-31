@@ -1,16 +1,18 @@
 import type Groq from "groq-sdk";
 
 import {
-  continueLlmWithTools,
-  generateLlmWithTools,
+  continueWithTools,
+  generateWithTools,
   type LlmTool,
-  type ToolLlmResponse,
-} from "../llm/router.js";
-import { ToolRegistry } from "../tools/registry.js";
+} from "../llm/client.js";
 import type {
   ToolExecutionContext,
   ToolExecutionResult,
 } from "../types/tools.js";
+import type { ToolLlmResponse } from "../types/llm.js";
+import type { ToolRegistry } from "../tools/registry.js";
+
+const MAX_OUTPUT_CHARS = 1500;
 
 export interface ToolCallingRequest {
   readonly instructions: string;
@@ -18,35 +20,43 @@ export interface ToolCallingRequest {
   readonly registry: ToolRegistry;
   readonly maxRounds: number;
   readonly context: ToolExecutionContext;
+  readonly generateLlmWithTools?: typeof generateWithTools;
+  readonly continueLlmWithTools?: typeof continueWithTools;
 }
 
-const toLlmTools = (
+const formatToolContent = (result: ToolExecutionResult): string => {
+  const serialized = JSON.stringify(result);
+  return serialized.length > MAX_OUTPUT_CHARS
+    ? `${serialized.slice(0, MAX_OUTPUT_CHARS)}... [truncated]`
+    : serialized;
+};
+
+export const toLlmTools = (
   registry: ToolRegistry,
   context: ToolExecutionContext,
 ): readonly LlmTool[] =>
   registry.list(context).map((tool) => ({
-    type: "function",
+    type: "function" as const,
     name: tool.name,
     description: tool.description,
     parameters: tool.parameters,
   }));
 
-const executeTool = async (
+export const executeTool = async (
   registry: ToolRegistry,
-  call: ToolLlmResponse["toolCalls"][number],
+  call: {
+    readonly callId: string;
+    readonly name: string;
+    readonly arguments: string;
+  },
   context: ToolExecutionContext,
 ): Promise<ToolExecutionResult> => {
   try {
-    const input: unknown = JSON.parse(call.arguments);
-    const result = await registry.executeTool(call.name, input, context);
-
+    const parsedArgs = JSON.parse(call.arguments || "{}") as unknown;
+    const result = await registry.executeTool(call.name, parsedArgs, context);
     return {
-      toolName: call.name,
+      ...result,
       callId: call.callId,
-      success: result.success,
-      output: result.output,
-      error: result.error,
-      durationMs: result.durationMs,
     };
   } catch (error) {
     return {
@@ -54,7 +64,7 @@ const executeTool = async (
       callId: call.callId,
       success: false,
       output: undefined,
-      error: error instanceof Error ? error.message : "Tool execution failed",
+      error: error instanceof Error ? error.message : "Invalid tool arguments",
       durationMs: 0,
     };
   }
@@ -66,6 +76,8 @@ export async function runToolCalling({
   registry,
   maxRounds,
   context,
+  generateLlmWithTools = generateWithTools,
+  continueLlmWithTools = continueWithTools,
 }: ToolCallingRequest): Promise<ToolLlmResponse> {
   const tools = toLlmTools(registry, context);
   const messages: Groq.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -81,39 +93,72 @@ export async function runToolCalling({
     tools,
   });
 
-  for (let round = 0; response.toolCalls.length > 0; round += 1) {
-    round >= maxRounds &&
-      (() => {
-        throw new Error("Maximum tool-call rounds exceeded");
-      })();
+  const executedTools: string[] = [];
 
+  for (
+    let round = 0;
+    response.toolCalls.length > 0 && round < maxRounds;
+    round += 1
+  ) {
     messages.push(response.message);
 
     const outputs = await Promise.all(
       response.toolCalls.map((call) => executeTool(registry, call, context)),
     );
 
+    for (const output of outputs) {
+      if (output.success) executedTools.push(output.toolName);
+    }
+
     messages.push(
       ...outputs.map(
         (result): Groq.Chat.Completions.ChatCompletionToolMessageParam => ({
           role: "tool",
           tool_call_id: result.callId,
-          content: JSON.stringify({
-            success: result.success,
-            output: result.output,
-            error: result.error,
-            durationMs: result.durationMs,
-          }),
+          content: formatToolContent(result),
         }),
       ),
     );
 
-    response = await continueLlmWithTools({
-      instructions,
-      messages,
-      tools,
-    });
+    const boundedMessages =
+      messages.length > 10
+        ? [messages[0]!, ...messages.slice(-8)]
+        : messages;
+
+    try {
+      response = await continueLlmWithTools({
+        instructions,
+        messages: boundedMessages,
+        tools,
+      });
+    } catch {
+      break;
+    }
   }
 
-  return response;
+  const responseText = response.text.trim();
+  if (responseText.length > 0) {
+    return response;
+  }
+
+  const fallbackSummary =
+    executedTools.length > 0
+      ? `Successfully executed operations using: ${executedTools.join(", ")}.`
+      : "Successfully completed requested tool operations.";
+
+  return {
+    ...response,
+    text: fallbackSummary,
+    message: {
+      role: "assistant",
+      content: fallbackSummary,
+      ...(response.message.tool_calls !== undefined && {
+        tool_calls: response.message.tool_calls,
+      }),
+    },
+  };
 }
+
+export const toolCaller = {
+  call: runToolCalling,
+};
