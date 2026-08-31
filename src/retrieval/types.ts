@@ -2,6 +2,8 @@ export interface RetrievalRequest {
   readonly query: string;
   readonly tenantId?: string;
   readonly limit?: number;
+  readonly documentIds?: readonly string[] | undefined;
+  readonly mode?: "code" | "document" | "mixed" | "general" | "system" | undefined;
 }
 
 export interface RetrievalResult {
@@ -10,6 +12,7 @@ export interface RetrievalResult {
   readonly page?: number;
   readonly score: number;
   readonly metadata?: Readonly<Record<string, string>>;
+  readonly sourceType?: "code" | "document" | undefined;
 }
 
 export interface Retriever {

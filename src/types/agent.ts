@@ -4,6 +4,8 @@ export interface AgentContext {
   readonly tenantId: string;
   readonly sessionId: string;
   readonly question: string;
+  readonly documentIds?: readonly string[] | undefined;
+  readonly retrievalMode?: "code" | "document" | "mixed" | "general" | "system" | undefined;
 }
 
 export interface AgentExecutionResult {
@@ -44,6 +46,7 @@ export interface QueryRewriteRequest {
 export interface Message {
   readonly role: "user" | "assistant";
   readonly content: string;
+  readonly mode?: "code" | "document" | "mixed" | "general" | "system" | undefined;
 }
 
 export interface Memory {

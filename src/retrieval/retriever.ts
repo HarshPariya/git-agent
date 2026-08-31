@@ -299,17 +299,26 @@ export class CodeRetriever {
       });
     }
     const results = await this.retrieve(request.query, { limit: request.limit });
-    return results.map((r) => ({
-      content: r.content || r.name,
-      source: r.filePath || r.name,
-      score: r.score,
-      metadata: {
-        type: r.type || "",
+    const requestedFilename = parseRequestedFilename(request.query);
+    return results.map((r) => {
+      const metadata: Record<string, string> = {
+        type: requestedFilename ? "file_lookup" : r.type || "",
         startLine: String(r.startLine || 0),
         endLine: String(r.endLine || 0),
         retrievalSources: r.sources.join(","),
-      },
-    }));
+      };
+      if (requestedFilename) metadata.requestedFilename = requestedFilename;
+      if (requestedFilename && r.filePath && r.filePath !== "repository-index") {
+        metadata.filePath = r.filePath;
+        metadata.pathValidated = "true";
+      }
+      return {
+        content: r.content || r.name,
+        source: r.filePath || r.name,
+        score: r.score,
+        metadata,
+      };
+    });
   }
 
   getStats(): RetrieverStats {
