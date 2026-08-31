@@ -26,7 +26,7 @@
   // State
   let isSubmitting = false;
 
-  // Show Toast Notification
+  // ─── Show Toast Notification ──────────────────────────────
   const showToast = (message, type = "info") => {
     const toast = document.createElement("div");
     toast.className = `toast ${type}`;
@@ -39,23 +39,39 @@
     }, 3500);
   };
 
-  // Generate Random Session ID
+  // ─── Generate Random Session ID ──────────────────────────
   const generateRandomSession = () => {
     const randomId = "session-" + Math.random().toString(36).substring(2, 9);
     inputSessionId.value = randomId;
     showToast(`Switched to session: ${randomId}`);
   };
 
-  // Parse Markdown to HTML
+  // ─── Strip Raw LLM XML/Internal Tags ─────────────────────
+  const stripInternalTags = (text) =>
+    text
+      .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
+      .replace(/<think>[\s\S]*?<\/think>/gi, "")
+      .replace(/<function=[\w]+>[\s\S]*?<\/function>/gi, "")
+      .replace(/<parameter=[\w]+>[\s\S]*?<\/parameter>/gi, "")
+      .replace(/<\/?(function|parameter|tools|tool_call)\b[^>]*>/gi, "")
+      .replace(/\[?TOOL_CALL[\s\S]*?END_TOOL_CALL\]?/gi, "")
+      .trim();
+
+  // ─── Parse Markdown to HTML ───────────────────────────────
   const formatMarkdown = (text) => {
     if (!text) return "";
 
-    let formatted = text
+    // Always strip internal XML tags first before any encoding
+    const clean = stripInternalTags(text);
+    if (!clean) return "";
+
+    // HTML-encode the cleaned text
+    let formatted = clean
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
 
-    // Code blocks with syntax highlighting container
+    // Code blocks with copy button (must run before other replacements)
     formatted = formatted.replace(
       /```([a-zA-Z0-9_\-]*)\n([\s\S]*?)```/g,
       (_match, lang, code) => {
@@ -67,13 +83,28 @@
     // Inline code
     formatted = formatted.replace(/`([^`]+)`/g, "<code>$1</code>");
 
-    // Bold
+    // Bold and Italic
     formatted = formatted.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-
-    // Italic
     formatted = formatted.replace(/\*([^*]+)\*/g, "<em>$1</em>");
 
-    // Tool execution markers
+    // Headings
+    formatted = formatted.replace(/^#### (.+)$/gm, "<h5>$1</h5>");
+    formatted = formatted.replace(/^### (.+)$/gm, "<h4>$1</h4>");
+    formatted = formatted.replace(/^## (.+)$/gm, "<h3>$1</h3>");
+    formatted = formatted.replace(/^# (.+)$/gm, "<h2>$1</h2>");
+
+    // Bullet lists
+    formatted = formatted.replace(/^[\s]*[-*•]\s+(.+)$/gm, "<li>$1</li>");
+    // Wrap consecutive list items
+    formatted = formatted.replace(/((?:<li>.*<\/li>\s*)+)/gs, "<ul>$1</ul>");
+
+    // Numbered lists
+    formatted = formatted.replace(/^[\s]*\d+\.\s+(.+)$/gm, "<li>$1</li>");
+
+    // Horizontal rule
+    formatted = formatted.replace(/^---+$/gm, "<hr/>");
+
+    // Tool execution markers — render as styled badge boxes
     formatted = formatted.replace(
       /(?:Successfully executed operations using|Executed tools?):\s*([a-zA-Z0-9_, -]+)/gi,
       (_match, tools) => {
@@ -88,12 +119,14 @@
     // Newlines to paragraphs
     const paragraphs = formatted
       .split("\n\n")
+      .filter((s) => s.trim())
       .map((p) => `<p>${p.replace(/\n/g, "<br/>")}</p>`)
       .join("");
+
     return paragraphs;
   };
 
-  // Append Message to Chat Feed
+  // ─── Append Message to Chat Feed ─────────────────────────
   const appendMessage = (sender, content, isBot = false, metadata = {}) => {
     const row = document.createElement("div");
     row.className = `message-row ${isBot ? "bot-row" : "user-row"}`;
@@ -112,20 +145,13 @@
           <span class="msg-time">${timeStr}</span>
         </div>
         <div class="msg-body">
-          ${isBot ? formatMarkdown(content) : `<p>${content.replace(/\n/g, "<br/>")}</p>`}
+          ${isBot ? formatMarkdown(content) : `<p>${content.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br/>")}</p>`}
         </div>
         ${metadata.sources && metadata.sources.length > 0
-        ? `
-          <div class="sources-pill-group">
-            <span class="sources-label">Sources:</span>
-            ${metadata.sources
-          .map(
-            (s) =>
-              `<span class="source-tag">📄 ${s.source}${s.page ? ` (p. ${s.page})` : ""}</span>`,
-          )
-          .join(" ")}
-          </div>
-        `
+        ? `<div class="sources-pill-group">
+              <span class="sources-label">Sources:</span>
+              ${metadata.sources.map((s) => `<span class="source-tag">📄 ${s.source}${s.page ? ` (p. ${s.page})` : ""}</span>`).join(" ")}
+            </div>`
         : ""
       }
       </div>
@@ -135,7 +161,7 @@
     chatMessages.scrollTop = chatMessages.scrollHeight;
   };
 
-  // Show Typing Indicator
+  // ─── Show Typing Indicator ────────────────────────────────
   const showTypingIndicator = () => {
     const id = "typing-indicator-" + Date.now();
     const row = document.createElement("div");
@@ -145,7 +171,7 @@
       <div class="msg-avatar">🤖</div>
       <div class="msg-bubble">
         <div class="msg-body">
-          <span class="pulse-dot"></span> <em>Agent is analyzing workspace & executing tools...</em>
+          <span class="pulse-dot"></span> <em>Agent is analyzing workspace &amp; executing tools...</em>
         </div>
       </div>
     `;
@@ -154,13 +180,13 @@
     return id;
   };
 
-  // Remove Typing Indicator
+  // ─── Remove Typing Indicator ──────────────────────────────
   const removeTypingIndicator = (id) => {
     const el = document.getElementById(id);
     if (el) el.remove();
   };
 
-  // Send Message to Backend API
+  // ─── Send Message to Backend API ─────────────────────────
   const sendMessage = async (messageText) => {
     if (!messageText.trim() || isSubmitting) return;
 
@@ -200,8 +226,7 @@
           responseId: data.responseId,
         });
       } else {
-        const errorMsg =
-          data.error?.message || "An unexpected error occurred.";
+        const errorMsg = data.error?.message || "An unexpected error occurred.";
         appendMessage(
           "System Notice",
           `⚠️ **Notice (${data.error?.code || response.status})**: ${errorMsg}`,
@@ -224,7 +249,7 @@
     }
   };
 
-  // Health Poller
+  // ─── Health Poller ────────────────────────────────────────
   const checkHealth = async () => {
     try {
       const res = await fetch("/health");
@@ -233,13 +258,12 @@
         systemStatusText.innerText = "API Live (200 OK)";
         systemStatusIndicator.style.background = "rgba(16, 185, 129, 0.1)";
         systemStatusIndicator.style.color = "#34d399";
-        systemStatusIndicator.querySelector(".status-dot").style.background =
-          "#10b981";
+        systemStatusIndicator.querySelector(".status-dot").style.background = "#10b981";
 
         if (healthStatusVal) healthStatusVal.innerText = "ONLINE";
         if (healthUptimeVal)
           healthUptimeVal.innerText = `Environment: ${health.environment || "production"}`;
-        if (healthModelVal) healthModelVal.innerText = "GPT-OSS / Qwen";
+        if (healthModelVal) healthModelVal.innerText = "Qwen 3.8 / GPT-OSS";
       } else {
         systemStatusText.innerText = "Degraded Status";
         systemStatusIndicator.style.background = "rgba(245, 158, 11, 0.1)";
@@ -252,7 +276,7 @@
     }
   };
 
-  // ScrollSpy & Navigation Active State
+  // ─── ScrollSpy & Navigation Active State ─────────────────
   const setupScrollSpy = () => {
     const sections = ["studio", "tools", "architecture", "metrics"]
       .map((id) => document.getElementById(id))
@@ -284,7 +308,7 @@
     });
   };
 
-  // Event Listeners
+  // ─── Event Listeners ──────────────────────────────────────
   chatForm.addEventListener("submit", (e) => {
     e.preventDefault();
     sendMessage(chatInput.value);
@@ -299,17 +323,13 @@
 
   btnClearChat.addEventListener("click", () => {
     chatMessages.innerHTML = "";
-    appendMessage(
-      "GraphRAG Agent",
-      "Chat cleared. Ready for your next command!",
-      true,
-    );
+    appendMessage("GraphRAG Agent", "Chat cleared. Ready for your next command!", true);
   });
 
   btnNewSession.addEventListener("click", generateRandomSession);
   btnRandomSession.addEventListener("click", generateRandomSession);
 
-  // Tool Capability Items (Focuses input and scrolls to chat)
+  // Tool Capability Items — focus input and scroll to chat
   toolCapItems.forEach((item) => {
     item.addEventListener("click", () => {
       const toolName = item.getAttribute("data-tool");
@@ -318,7 +338,7 @@
     });
   });
 
-  // Initialize
+  // ─── Initialize ───────────────────────────────────────────
   checkHealth();
   setupScrollSpy();
   setInterval(checkHealth, 15000);
