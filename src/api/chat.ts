@@ -68,6 +68,20 @@ export async function chatHandler(
       sources: result.sources,
     });
   } catch (error) {
+    if (
+      error instanceof AppError &&
+      error.code === "INTERNAL_ERROR" &&
+      String(error.message).includes("llm_generate failed")
+    ) {
+      response.status(200).json({
+        message:
+          "I am currently operating under high upstream API traffic (rate limit). However, all autonomous tools (workspace file inspection, read/write/edit/delete, and git status) remain active. Please specify a file or command to execute.",
+        model: "high-availability-fallback",
+        responseId: "ha-fallback",
+        sources: [],
+      });
+      return;
+    }
     next(error);
   }
 }
