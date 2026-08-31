@@ -1,108 +1,187 @@
+import crypto from "node:crypto";
 import Groq from "groq-sdk";
 
 import { env } from "../config/env.js";
-import type { LlmProvider, LlmRequest, LlmResponse } from "./types.js";
+import type {
+  LlmProvider,
+  LlmRequest,
+  LlmResponse,
+  LlmTool,
+  ToolCall,
+  ToolLlmResponse,
+} from "../types/llm.js";
 
-export interface LlmTool {
-  readonly type: "function";
-  readonly name: string;
-  readonly description: string;
-  readonly parameters: Readonly<Record<string, unknown>>;
-}
+export type { LlmTool, ToolLlmResponse };
 
-export interface ToolCall {
-  readonly callId: string;
-  readonly name: string;
-  readonly arguments: string;
-}
+const MAX_COMPLETION_TOKENS = 4096;
 
-export interface ToolLlmResponse extends LlmResponse {
-  readonly toolCalls: readonly ToolCall[];
-  readonly message: Groq.Chat.Completions.ChatCompletionMessage;
-}
-
-function getApiKey(): string {
-  return process.env.GROQ_API_KEY?.trim() || env.groqApiKey || "";
-}
-
-function getGroqModel(): string {
-  const model = process.env.GROQ_MODEL?.trim() || env.groqModel;
-  if (!model || model.includes("llama")) {
-    return "openai/gpt-oss-120b";
-  }
-  return model;
-}
-
-function getGroqClient(): Groq {
-  return new Groq({
-    apiKey: getApiKey(),
-  });
-}
+const client = new Groq({
+  apiKey: env.groqApiKey,
+});
 
 const toToolCalls = (
-  calls: readonly Groq.Chat.Completions.ChatCompletionMessageToolCall[],
+  rawCalls: readonly Groq.Chat.Completions.ChatCompletionMessageToolCall[],
 ): readonly ToolCall[] =>
-  calls.map((call) => ({
+  rawCalls.map((call) => ({
     callId: call.id,
     name: call.function.name,
     arguments: call.function.arguments,
   }));
 
-export const groqProvider: LlmProvider = {
-  async generate({ instructions, input }: LlmRequest): Promise<LlmResponse> {
-    const apiKey = getApiKey();
-    if (
-      !apiKey ||
-      apiKey.includes("dummy") ||
-      apiKey.includes("your_groq_api_key")
-    ) {
-      return {
-        id: "local-demo-id",
-        model: "local-demo",
-        text: "Hello! How can I help you with your codebase today?\n\n*(Note: To get live AI answers from Groq, please update `GROQ_API_KEY` in your `.env` file).*",
-      };
-    }
+const stripThinkingTags = (content: string): string =>
+  content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+
+const parseXmlToolCalls = (
+  content: string,
+): { toolCalls: ToolCall[]; cleanContent: string } => {
+  const toolCalls: ToolCall[] = [];
+  const regex = /<tool_call>([\s\S]*?)<\/tool_call>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(content)) !== null) {
+    const raw = match[1]?.trim();
+    if (!raw) continue;
 
     try {
-      const client = getGroqClient();
-      const response = await client.chat.completions.create({
-        model: getGroqModel(),
-        messages: [
-          {
-            role: "system",
-            content: instructions,
-          },
-          {
-            role: "user",
-            content: input,
-          },
-        ],
-      });
-
-      const text = response.choices[0]?.message.content?.trim() ?? "";
-
-      if (!text) {
-        throw new Error("LLM returned an empty response");
+      const parsed = JSON.parse(raw) as {
+        name?: string;
+        arguments?: Record<string, unknown> | string;
+      };
+      if (parsed.name) {
+        toolCalls.push({
+          callId: `call_${crypto.randomUUID().slice(0, 8)}`,
+          name: parsed.name,
+          arguments:
+            typeof parsed.arguments === "object"
+              ? JSON.stringify(parsed.arguments)
+              : String(parsed.arguments ?? "{}"),
+        });
       }
-
-      return {
-        id: response.id,
-        model: response.model,
-        text,
-      };
-    } catch (err: any) {
-      console.error("❌ Groq API call failed:", err?.message || err);
-      return {
-        id: "error-id",
-        model: "error-fallback",
-        text: `❌ **Groq API Error**: ${err?.message || "Failed to fetch response from Groq API"}. Please check your \`GROQ_API_KEY\` in \`.env\`.`,
-      };
+    } catch {
+      // Ignored malformed XML chunk
     }
-  },
+  }
+
+  const cleanContent = content
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
+    .trim();
+  return { toolCalls, cleanContent };
 };
 
-export const generateText = (request: LlmRequest): Promise<LlmResponse> =>
-  groqProvider.generate(request);
+const extractFailedGeneration = (err: unknown): string | null => {
+  if (typeof err === "object" && err !== null) {
+    const errorObj = (err as Record<string, unknown>).error as
+      | Record<string, unknown>
+      | undefined;
+    if (typeof errorObj?.failed_generation === "string") {
+      return errorObj.failed_generation;
+    }
+  }
+  const str = String(err);
+  const match = /"failed_generation":\s*"([\s\S]*?)"\s*[,}]/.exec(str);
+  if (match && match[1]) {
+    try {
+      return JSON.parse(`"${match[1]}"`);
+    } catch {
+      return match[1];
+    }
+  }
+  return null;
+};
+
+const recoverToolCallsFromFailedGeneration = (
+  failedGen: string,
+): { toolCalls: ToolCall[]; cleanContent: string } => {
+  if (failedGen.includes("<tool_call>")) {
+    return parseXmlToolCalls(failedGen);
+  }
+
+  try {
+    const parsed = JSON.parse(failedGen.trim()) as {
+      name?: string;
+      arguments?: Record<string, unknown> | string;
+    };
+    if (parsed && typeof parsed.name === "string") {
+      const callId = `call_${crypto.randomUUID().slice(0, 8)}`;
+      const argsStr =
+        typeof parsed.arguments === "object"
+          ? JSON.stringify(parsed.arguments)
+          : String(parsed.arguments || "{}");
+      return {
+        toolCalls: [
+          {
+            callId,
+            name: parsed.name,
+            arguments: argsStr,
+          },
+        ],
+        cleanContent: "",
+      };
+    }
+  } catch {
+    const nameMatch = /"name":\s*"([^"]+)"/.exec(failedGen);
+    const argsMatch = /"arguments":\s*({[\s\S]*})/.exec(failedGen);
+    if (nameMatch && nameMatch[1]) {
+      const callId = `call_${crypto.randomUUID().slice(0, 8)}`;
+      return {
+        toolCalls: [
+          {
+            callId,
+            name: nameMatch[1],
+            arguments: argsMatch?.[1] ?? "{}",
+          },
+        ],
+        cleanContent: "",
+      };
+    }
+  }
+
+  return { toolCalls: [], cleanContent: "" };
+};
+
+export const generateText = async ({
+  instructions,
+  input,
+}: LlmRequest): Promise<LlmResponse> => {
+  try {
+    const response = await client.chat.completions.create({
+      model: env.groqModel,
+      max_tokens: MAX_COMPLETION_TOKENS,
+      messages: [
+        {
+          role: "system",
+          content: instructions,
+        },
+        {
+          role: "user",
+          content: input,
+        },
+      ],
+    });
+
+    const rawText = response.choices[0]?.message.content?.trim() ?? "";
+    const text = stripThinkingTags(rawText);
+
+    if (!text) {
+      throw new Error("LLM returned an empty response");
+    }
+
+    return {
+      id: response.id,
+      model: response.model,
+      text,
+    };
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Groq text generation failed");
+  }
+};
+
+export const groqProvider: LlmProvider = {
+  generate: generateText,
+};
 
 export const generateWithTools = async ({
   instructions,
@@ -113,43 +192,89 @@ export const generateWithTools = async ({
   readonly input: string;
   readonly tools: readonly LlmTool[];
 }): Promise<ToolLlmResponse> => {
-  const client = getGroqClient();
-  const response = await client.chat.completions.create({
-    model: getGroqModel(),
-    messages: [
-      {
-        role: "system",
-        content: instructions,
-      },
-      {
-        role: "user",
-        content: input,
-      },
-    ],
-    tools: tools.map((tool) => ({
-      type: "function" as const,
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters,
-      },
-    })),
-    tool_choice: "auto",
-  });
+  try {
+    const response = await client.chat.completions.create({
+      model: env.groqModel,
+      max_tokens: MAX_COMPLETION_TOKENS,
+      messages: [
+        {
+          role: "system",
+          content: instructions,
+        },
+        {
+          role: "user",
+          content: input,
+        },
+      ],
+      tools: tools.map((tool) => ({
+        type: "function",
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters as Record<string, unknown>,
+        },
+      })),
+      tool_choice: "auto",
+    });
 
-  const message = response.choices[0]?.message;
+    const choice = response.choices[0];
+    const message = choice?.message;
+    const rawContent = stripThinkingTags(message?.content ?? "");
 
-  if (!message) {
-    throw new Error("LLM returned no message");
+    let toolCalls: readonly ToolCall[] = message?.tool_calls
+      ? toToolCalls(message.tool_calls)
+      : [];
+
+    let text = rawContent.trim();
+
+    if (toolCalls.length === 0 && rawContent.includes("<tool_call>")) {
+      const parsed = parseXmlToolCalls(rawContent);
+      if (parsed.toolCalls.length > 0) {
+        toolCalls = parsed.toolCalls;
+        text = parsed.cleanContent;
+      }
+    }
+
+    return {
+      id: response.id,
+      model: response.model,
+      text,
+      toolCalls,
+      message: {
+        role: "assistant",
+        content: message?.content ?? null,
+        ...(message?.tool_calls !== undefined && {
+          tool_calls: message.tool_calls,
+        }),
+      },
+    };
+  } catch (err) {
+    const failedGen = extractFailedGeneration(err);
+    if (failedGen) {
+      const parsed = recoverToolCallsFromFailedGeneration(failedGen);
+      if (parsed.toolCalls.length > 0) {
+        return {
+          id: `recovered-${crypto.randomUUID()}`,
+          model: env.groqModel,
+          text: parsed.cleanContent,
+          toolCalls: parsed.toolCalls,
+          message: {
+            role: "assistant",
+            content: parsed.cleanContent || null,
+            tool_calls: parsed.toolCalls.map((tc) => ({
+              id: tc.callId,
+              type: "function" as const,
+              function: {
+                name: tc.name,
+                arguments: tc.arguments,
+              },
+            })),
+          },
+        };
+      }
+    }
+    throw err;
   }
-
-  return {
-    id: response.id,
-    model: response.model,
-    text: message.content?.trim() ?? "",
-    toolCalls: toToolCalls(message.tool_calls ?? []),
-    message,
-  };
 };
 
 export const continueWithTools = async ({
@@ -158,41 +283,87 @@ export const continueWithTools = async ({
   tools,
 }: {
   readonly instructions: string;
-  readonly messages: Groq.Chat.Completions.ChatCompletionMessageParam[];
+  readonly messages: readonly Groq.Chat.Completions.ChatCompletionMessageParam[];
   readonly tools: readonly LlmTool[];
 }): Promise<ToolLlmResponse> => {
-  const client = getGroqClient();
-  const response = await client.chat.completions.create({
-    model: getGroqModel(),
-    messages: [
-      {
-        role: "system",
-        content: instructions,
-      },
-      ...messages,
-    ],
-    tools: tools.map((tool) => ({
-      type: "function" as const,
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters,
-      },
-    })),
-    tool_choice: "auto",
-  });
+  try {
+    const response = await client.chat.completions.create({
+      model: env.groqModel,
+      max_tokens: MAX_COMPLETION_TOKENS,
+      messages: [
+        {
+          role: "system",
+          content: instructions,
+        },
+        ...messages,
+      ],
+      tools: tools.map((tool) => ({
+        type: "function",
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters as Record<string, unknown>,
+        },
+      })),
+      tool_choice: "auto",
+    });
 
-  const message = response.choices[0]?.message;
+    const choice = response.choices[0];
+    const message = choice?.message;
+    const rawContent = stripThinkingTags(message?.content ?? "");
 
-  if (!message) {
-    throw new Error("LLM returned no message");
+    let toolCalls: readonly ToolCall[] = message?.tool_calls
+      ? toToolCalls(message.tool_calls)
+      : [];
+
+    let text = rawContent.trim();
+
+    if (toolCalls.length === 0 && rawContent.includes("<tool_call>")) {
+      const parsed = parseXmlToolCalls(rawContent);
+      if (parsed.toolCalls.length > 0) {
+        toolCalls = parsed.toolCalls;
+        text = parsed.cleanContent;
+      }
+    }
+
+    return {
+      id: response.id,
+      model: response.model,
+      text,
+      toolCalls,
+      message: {
+        role: "assistant",
+        content: message?.content ?? null,
+        ...(message?.tool_calls !== undefined && {
+          tool_calls: message.tool_calls,
+        }),
+      },
+    };
+  } catch (err) {
+    const failedGen = extractFailedGeneration(err);
+    if (failedGen) {
+      const parsed = recoverToolCallsFromFailedGeneration(failedGen);
+      if (parsed.toolCalls.length > 0) {
+        return {
+          id: `recovered-${crypto.randomUUID()}`,
+          model: env.groqModel,
+          text: parsed.cleanContent,
+          toolCalls: parsed.toolCalls,
+          message: {
+            role: "assistant",
+            content: parsed.cleanContent || null,
+            tool_calls: parsed.toolCalls.map((tc) => ({
+              id: tc.callId,
+              type: "function" as const,
+              function: {
+                name: tc.name,
+                arguments: tc.arguments,
+              },
+            })),
+          },
+        };
+      }
+    }
+    throw err;
   }
-
-  return {
-    id: response.id,
-    model: response.model,
-    text: message.content?.trim() ?? "",
-    toolCalls: toToolCalls(message.tool_calls ?? []),
-    message,
-  };
 };

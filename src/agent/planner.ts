@@ -1,59 +1,89 @@
-export type AgentAction = "direct_answer" | "retrieve" | "tool";
+import type { AgentAction, AgentPlan, PlanRequest } from "../types/agent.js";
 
-export interface PlanRequest {
-  readonly question: string;
-  readonly hasConversationContext: boolean;
-}
+export type { AgentAction, AgentPlan, PlanRequest };
 
-export interface AgentPlan {
+interface PlannerRule {
   readonly action: AgentAction;
   readonly reason: string;
+  readonly matcher: (q: string) => boolean;
 }
 
-
-
-const TOOL_TERMS = new Set([
+const TOOL_TERMS = [
   "calculate",
   "search file",
+  "search code",
   "read file",
+  "write file",
+  "create file",
+  "delete file",
+  "remove file",
+  "edit file",
+  "modify file",
+  "update file",
+  "save file",
+  "generate file",
+  "write code",
+  "code in",
+  "write in",
+  "create",
+  "delete",
+  "remove",
+  "modify",
+  "replace",
+  "update",
+  "change",
+  "edit",
+  "read",
+  "write",
   "run test",
   "execute",
-]);
+  "folder",
+  "directory",
+  "file structure",
+  "folder structure",
+  "files in",
+  "git",
+  "list files",
+  "show files",
+  "check my folder",
+  "check folder",
+  "check files",
+  "what is in",
+  "inspect",
+] as const;
 
-const containsTerm = (question: string, terms: ReadonlySet<string>): boolean =>
-  [...terms].some((term) => question.toLowerCase().includes(term));
+const RETRIEVE_TERMS = [
+  "policy",
+  "pricing",
+  "refund",
+  "procedure",
+  "guideline",
+  "company",
+  "documentation on",
+  "knowledge base",
+] as const;
 
-const DIRECT_ANSWER_TERMS = [
-  "hi",
-  "hello",
-  "hey",
-  "good morning",
-  "good evening",
-  "thanks",
-  "thank you",
-  "what is graphrag",
-  "what is rag",
+const FILE_PATH_REGEX = /(?:\.[\/\\]|[a-zA-Z0-9_-]+[\/\\])[a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+/i;
+
+const RULES: readonly PlannerRule[] = [
+  {
+    action: "tool",
+    reason: "The question requires file system, git, or autonomous workspace tools.",
+    matcher: (q) =>
+      TOOL_TERMS.some((term) => q.includes(term)) || FILE_PATH_REGEX.test(q),
+  },
+  {
+    action: "retrieve",
+    reason: "The question may require external knowledge retrieval.",
+    matcher: (q) => RETRIEVE_TERMS.some((term) => q.includes(term)),
+  },
 ];
 
 export const createPlan = ({ question }: PlanRequest): AgentPlan => {
-  const normalizedQuestion = question.trim().toLowerCase().replace(/[!?.,]/g, "");
+  const normalized = question.trim().toLowerCase();
+  const matched = RULES.find((rule) => rule.matcher(normalized));
 
-  if (containsTerm(normalizedQuestion, TOOL_TERMS)) {
-    return {
-      action: "tool",
-      reason: "The question indicates that a tool may be required.",
-    };
-  }
-
-  if (DIRECT_ANSWER_TERMS.some((term) => normalizedQuestion.includes(term))) {
-    return {
-      action: "direct_answer",
-      reason: "General question or pleasantry that can be answered directly.",
-    };
-  }
-
-  return {
-    action: "retrieve",
-    reason: "The question may require external codebase or document knowledge.",
-  };
+  return matched
+    ? { action: matched.action, reason: matched.reason }
+    : { action: "direct_answer", reason: "The question can be answered directly." };
 };

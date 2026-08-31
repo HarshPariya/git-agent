@@ -1,4 +1,4 @@
-import type { LlmProvider, LlmRequest, LlmResponse } from "./types.js";
+import type { LlmProvider, LlmRequest, LlmResponse } from "../types/llm.js";
 
 export const mockProvider: LlmProvider = {
   async generate({ input }: LlmRequest): Promise<LlmResponse> {

@@ -1,105 +1,71 @@
-import path from "node:path";
 import cors from "cors";
 import express from "express";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { chatHandler } from "./api/chat.js";
+import { healthHandler } from "./api/health.js";
 import { env } from "./config/env.js";
 import { errorHandler } from "./errors/error-handler.js";
 import { logger } from "./logging/logger.js";
 import { requestIdMiddleware } from "./middleware/request-id.js";
-import { getDatabaseHealth, query } from "./db/postgres.js";
-import { runMigrations } from "./db/migrate.js";
+import { securityMiddleware } from "./middleware/security.js";
 
-import { uploadDocumentHandler, listDocumentsHandler, deleteDocumentHandler } from "./api/documents.js";
-
-const app = express();
+export const app = express();
 
 app.disable("x-powered-by");
 
 app.use(cors());
 app.use(requestIdMiddleware);
 app.use(express.json({ limit: "1mb" }));
-app.use(express.raw({ limit: "10mb", type: "*/*" }));
 
-// Serve static frontend website files from public/
-app.use(express.static(path.join(process.cwd(), "public")));
+const publicDir = path.resolve(process.cwd(), "public");
+app.use(express.static(publicDir));
 
-const handleHealth = async (_request: express.Request, response: express.Response) => {
-  const database = await getDatabaseHealth();
-  let schemaReady = false;
-  if (database.status === "healthy") {
-    try {
-      const schema = await query<{
-        code_chunks: string | null;
-        documents: string | null;
-        document_chunks: string | null;
-      }>(`SELECT
-          to_regclass('public.code_chunks')::text AS code_chunks,
-          to_regclass('public.documents')::text AS documents,
-          to_regclass('public.document_chunks')::text AS document_chunks`);
-      const row = schema.rows[0];
-      schemaReady = Boolean(row?.code_chunks && row.documents && row.document_chunks);
-    } catch {
-      schemaReady = false;
-    }
-  }
-  const healthy = database.status === "healthy" && schemaReady;
-  response.status(healthy ? 200 : 503).json({
-    status: healthy ? "ok" : "degraded",
+const SVG_FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#4f46e5"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs><circle cx="50" cy="50" r="48" fill="url(#g)"/><rect x="26" y="36" width="48" height="34" rx="8" fill="#ffffff"/><circle cx="40" cy="50" r="4.5" fill="#4f46e5"/><circle cx="60" cy="50" r="4.5" fill="#4f46e5"/><rect x="46" y="24" width="8" height="12" rx="2" fill="#ffffff"/><circle cx="50" cy="20" r="4" fill="#ffffff"/><path d="M40 60c2.5 3 7.5 4 10 4s7.5-1 10-4" stroke="#4f46e5" stroke-width="2.5" stroke-linecap="round" fill="none"/></svg>`;
+
+app.get("/favicon.ico", (_request, response) => {
+  response.setHeader("Content-Type", "image/svg+xml");
+  response.setHeader("Cache-Control", "public, max-age=86400");
+  response.status(200).send(SVG_FAVICON);
+});
+
+app.get("/api/info", (_request, response) => {
+  response.status(200).json({
+    status: "ok",
+    service: "AI Chatbot Backend API",
     environment: env.nodeEnv,
-    database: {
-      ...database,
-      schemaReady,
-      poolIdleConnections: database.idleConnections,
+    endpoints: {
+      health: "GET /health",
+      chat: "POST /chat",
     },
   });
-};
+});
 
-app.get("/health", handleHealth);
-app.get("/api/health", handleHealth);
-
-app.post("/chat", chatHandler);
-app.post("/api/chat", chatHandler);
-
-app.post("/api/documents/upload", uploadDocumentHandler);
-app.get("/api/documents", listDocumentsHandler);
-app.delete("/api/documents/:id", deleteDocumentHandler);
+app.get("/health", healthHandler);
+app.post("/chat", securityMiddleware, chatHandler);
 
 app.use(errorHandler);
 
-async function startServer(): Promise<void> {
-  if (process.env.DATABASE_URL) {
-    try {
-      await runMigrations();
-    } catch (error) {
-      if (env.nodeEnv === "production") throw error;
-      logger.warn("Database migrations unavailable; using in-memory fallback", {
-        operation: "startup",
-        metadata: { error: error instanceof Error ? error.message : String(error) },
-      });
-    }
-  } else {
-    logger.warn("DATABASE_URL is not configured; persistence is disabled", {
-      operation: "startup",
-    });
-  }
-
+export const startServer = (): void => {
   app.listen(env.port, () => {
-  logger.info("AI chatbot API started", {
-    operation: "startup",
-    metadata: {
-      port: env.port,
-      environment: env.nodeEnv,
-    },
+    logger.info("AI chatbot API started", {
+      operation: "startup",
+      metadata: {
+        port: env.port,
+        environment: env.nodeEnv,
+      },
+    });
   });
-  console.log(`\n🚀 AI Chatbot Website & API running at: http://localhost:${env.port}\n`);
-  });
-}
+};
 
-startServer().catch((error) => {
-  logger.error("AI chatbot startup failed", {
-    operation: "startup",
-    metadata: { error: error instanceof Error ? error.message : String(error) },
-  });
-  process.exitCode = 1;
-});
+const currentFilePath = fileURLToPath(import.meta.url);
+const executedFilePath = process.argv[1] ? path.resolve(process.argv[1]) : "";
+const isDirectExecution =
+  currentFilePath === executedFilePath ||
+  Boolean(
+    executedFilePath &&
+    currentFilePath.endsWith(path.basename(executedFilePath)),
+  );
+
+isDirectExecution && startServer();
