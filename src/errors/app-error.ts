@@ -5,6 +5,8 @@ export type ErrorCode =
   | "NOT_FOUND"
   | "TOOL_ERROR"
   | "LLM_ERROR"
+  | "EXTRACTION_FAILED"
+  | "PERSISTENCE_UNAVAILABLE"
   | "INTERNAL_ERROR";
 
 export class AppError extends Error {

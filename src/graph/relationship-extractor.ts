@@ -101,7 +101,7 @@ function extractFunctionCalls(functionContent: string): string[] {
 
   while ((match = callPattern.exec(functionContent)) !== null) {
     const functionName = match[1];
-    if (!ignoredCalls.has(functionName)) {
+    if (functionName && !ignoredCalls.has(functionName)) {
       calls.add(functionName);
     }
   }
@@ -109,7 +109,7 @@ function extractFunctionCalls(functionContent: string): string[] {
   while ((match = methodCallPattern.exec(functionContent)) !== null) {
     const objectName = match[1];
     const methodName = match[2];
-    if (!ignoredCalls.has(objectName) && !ignoredCalls.has(methodName)) {
+    if (objectName && methodName && !ignoredCalls.has(objectName) && !ignoredCalls.has(methodName)) {
       calls.add(`${objectName}.${methodName}`);
       calls.add(methodName);
     }
@@ -170,7 +170,7 @@ function createCallRelationships(
         const simpleName = calledName.includes(".") ? calledName.split(".")[1] : calledName;
         const possibleTargets = functionEntities.filter((e) => e.name === calledName || e.name === simpleName);
 
-        if (possibleTargets.length === 1) {
+        if (possibleTargets.length === 1 && possibleTargets[0]) {
           const target = possibleTargets[0];
           relationships.push({
             id: createRelationshipId(caller.id, "calls", target.id),

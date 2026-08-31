@@ -20,7 +20,8 @@ function findFirstRelevantRank(
   expected: string[],
 ): number | null {
   for (let index = 0; index < returned.length; index++) {
-    if (expected.includes(returned[index])) {
+    const item = returned[index];
+    if (item !== undefined && expected.includes(item)) {
       return index + 1;
     }
   }
@@ -148,7 +149,7 @@ async function main() {
       sortedLatency.length - 1,
       Math.floor(sortedLatency.length * 0.95),
     );
-    const p95LatencyMs = sortedLatency[p95Index];
+    const p95LatencyMs = sortedLatency[p95Index] ?? 0;
 
     summaryMetrics.push({
       modeName: mode.name,

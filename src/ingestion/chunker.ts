@@ -18,7 +18,7 @@ export interface CodeChunk {
   filePath: string;
   language: SupportedLanguage;
 
-  name?: string;
+  name?: string | undefined;
 
   startLine: number;
   endLine: number;

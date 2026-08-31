@@ -20,12 +20,12 @@ export interface StoredChunkRow {
 }
 
 export interface VectorSearchFilterOptions {
-  repository?: string;
-  language?: string;
-  chunkType?: string;
-  filePathPrefix?: string;
-  metadata?: Record<string, unknown>;
-  limit?: number;
+  repository?: string | undefined;
+  language?: string | undefined;
+  chunkType?: string | undefined;
+  filePathPrefix?: string | undefined;
+  metadata?: Record<string, unknown> | undefined;
+  limit?: number | undefined;
 }
 
 export interface UpsertResultStats {

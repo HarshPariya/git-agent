@@ -13,14 +13,14 @@ export interface CodeGraph {
 }
 
 export interface TraverseOptions {
-  maxDepth?: number;
-  relationshipTypes?: RelationshipType[];
+  maxDepth?: number | undefined;
+  relationshipTypes?: RelationshipType[] | undefined;
 }
 
 export interface TraversalResult {
   entity: GraphEntity;
   depth: number;
-  via?: GraphRelationship;
+  via?: GraphRelationship | undefined;
 }
 
 export function buildGraph(
@@ -150,11 +150,11 @@ export function traverseGraph(
     depth: number;
     via?: GraphRelationship;
   }> = [
-    {
-      entityId: startEntityId,
-      depth: 0,
-    },
-  ];
+      {
+        entityId: startEntityId,
+        depth: 0,
+      },
+    ];
 
   while (queue.length > 0) {
     const current = queue.shift()!;
