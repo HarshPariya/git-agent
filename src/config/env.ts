@@ -19,7 +19,9 @@ const getPort = (): number => {
 };
 
 export const env = Object.freeze({
-  nodeEnv: process.env.NODE_ENV?.trim() || "development",
+  get nodeEnv(): string {
+    return process.env.NODE_ENV?.trim() || "development";
+  },
   port: getPort(),
   groqApiKey: getRequiredEnv("GROQ_API_KEY"),
   groqModel: process.env.GROQ_MODEL?.trim() || "groq/compound",
