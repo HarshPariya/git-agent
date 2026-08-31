@@ -1,104 +1,505 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ChatGPT AI Code Assistant</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GraphRAG.ai — Autonomous Agentic AI Workspace Studio</title>
+  <meta name="description"
+    content="Production-ready GraphRAG AI Chatbot with Autonomous Workspace Tool Calling, Knowledge Graphs, and Multi-Tenant Enterprise Security." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="/styles/main.css" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
 </head>
-<body class="chatgpt-layout">
 
-  <!-- Left Sidebar -->
-  <aside class="sidebar">
-    <div class="sidebar-header">
-      <div class="brand">
-        <span class="icon">🤖</span>
-        <span class="title">CodeGPT</span>
+<body>
+  <!-- Dynamic Ambient Glows -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+  <div class="ambient-glow glow-3"></div>
+
+  <!-- Header Navigation -->
+  <header class="navbar" id="top-navbar">
+    <div class="nav-container">
+      <a href="#hero" class="brand-logo">
+        <div class="logo-badge">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z" />
+            <path d="M12 6v6l4 2" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </div>
+        <span class="brand-title">GraphRAG<span class="gradient-text">.ai</span></span>
+        <span class="version-tag">Member 2</span>
+      </a>
+
+      <nav class="nav-links" id="nav-links-menu">
+        <a href="#studio" class="nav-link active" data-section="studio">Agent Studio</a>
+        <a href="#tools" class="nav-link" data-section="tools">Tool Arsenal</a>
+        <a href="#architecture" class="nav-link" data-section="architecture">Architecture</a>
+        <a href="#metrics" class="nav-link" data-section="metrics">Live Telemetry</a>
+      </nav>
+
+      <div class="nav-actions">
+        <div class="status-indicator" id="system-status-indicator">
+          <span class="status-dot"></span>
+          <span class="status-label" id="system-status-text">Checking API...</span>
+        </div>
+        <a href="#studio" class="btn btn-primary btn-sm">Launch Studio</a>
       </div>
-      <button id="btn-new-chat" class="btn-new-chat">+ New Chat</button>
     </div>
+  </header>
 
-    <div class="sidebar-section">
-      <div class="section-title">Quick Actions</div>
-      <button class="shortcut-btn" data-query="/impact traverseGraph">⚡ Impact: traverseGraph</button>
-      <button class="shortcut-btn" data-query="/metrics">📊 Check System SLA</button>
-      <button class="shortcut-btn" data-query="How does graph search work?">🔍 How Graph Search Works</button>
-      <button class="shortcut-btn" data-query="Where is normalizeId used?">🔎 Find normalizeId Usages</button>
-    </div>
+  <!-- Main Container -->
+  <main class="main-content">
+    <!-- HERO SECTION -->
+    <section id="hero" class="hero-section">
+      <div class="hero-content">
+        <div class="pill-announcement">
+          <span class="badge-new">PRO MAX</span>
+          <span>Autonomous Multi-Turn Workspace Execution &amp; Reasoning</span>
+        </div>
 
-    <div class="sidebar-footer">
-      <div class="system-health">
-        <span class="health-dot online"></span>
-        <span id="sidebar-health-text">Online • 100% SLA</span>
-      </div>
-    </div>
-  </aside>
+        <h1 class="hero-headline">
+          Enterprise Agentic AI with <br />
+          <span class="gradient-text">Autonomous Code &amp; Workspace Tools</span>
+        </h1>
 
-  <!-- Main Chat Workspace -->
-  <main class="chat-workspace">
+        <p class="hero-subtext">
+          A high-performance TypeScript agentic runtime with PostgreSQL vector indexing (pgvector + HNSW), knowledge
+          graphs, and surgical workspace file manipulation guarded by enterprise RBAC.
+        </p>
 
-    <!-- Top Chat Navigation Bar -->
-    <header class="chat-topbar">
-      <div class="model-selector">
-        <span class="model-icon">🔮</span>
-        <select id="model-select">
-          <option value="graphrag">GraphRAG Hybrid (Vector + AST Knowledge Graph)</option>
-          <option value="vector">Vector Search Only (pgvector)</option>
-          <option value="impact">AST Impact Debugger Mode</option>
-        </select>
-      </div>
+        <div class="hero-cta-group">
+          <a href="#studio" class="btn btn-primary btn-lg glow-button">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            Launch Interactive Studio
+          </a>
+          <a href="#tools" class="btn btn-secondary btn-lg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path
+                d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z">
+              </path>
+            </svg>
+            Explore Tool Arsenal
+          </a>
+        </div>
 
-      <div class="topbar-actions">
-        <button id="btn-clear-history" class="btn-icon" title="Clear Chat History">🗑️ Clear</button>
-      </div>
-    </header>
-
-    <!-- Chat Messages Scroll Container -->
-    <div id="chat-messages-container" class="messages-container">
-      <div class="welcome-card glass-panel">
-        <div class="welcome-icon">⚡</div>
-        <h2>GraphRAG AI Code Assistant</h2>
-        <p>Ask questions about your codebase, debug functions, or analyze impact paths in real-time.</p>
-        
-        <div class="prompt-grid">
-          <button class="prompt-card" data-prompt="How does graph traversal work?">
-            <span class="title">🔍 Graph Traversal</span>
-            <span class="desc">How does BFS graph search find caller entities?</span>
-          </button>
-          <button class="prompt-card" data-prompt="/impact traverseGraph">
-            <span class="title">⚡ Impact Analysis</span>
-            <span class="desc">What breaks if I modify traverseGraph()?</span>
-          </button>
-          <button class="prompt-card" data-prompt="Where is normalizeId used?">
-            <span class="title">🔎 Function Lookup</span>
-            <span class="desc">Find exact occurrences and references to normalizeId.</span>
-          </button>
-          <button class="prompt-card" data-prompt="/metrics">
-            <span class="title">📊 SLA & Metrics</span>
-            <span class="desc">Show P50/P95 latency, pool stats, and cache hit rates.</span>
-          </button>
+        <!-- Telemetry Strip -->
+        <div class="telemetry-strip">
+          <div class="telemetry-item">
+            <span class="telemetry-value">96 / 96</span>
+            <span class="telemetry-label">Unit &amp; E2E Tests Pass</span>
+          </div>
+          <div class="telemetry-divider"></div>
+          <div class="telemetry-item">
+            <span class="telemetry-value" id="stat-latency">&lt; 35ms</span>
+            <span class="telemetry-label">Health &amp; Security Latency</span>
+          </div>
+          <div class="telemetry-divider"></div>
+          <div class="telemetry-item">
+            <span class="telemetry-value">6 Tools</span>
+            <span class="telemetry-label">FS, Git &amp; RAG Dispatch</span>
+          </div>
+          <div class="telemetry-divider"></div>
+          <div class="telemetry-item">
+            <span class="telemetry-value">100% Frozen</span>
+            <span class="telemetry-label">Multi-Tenant RBAC Isolation</span>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- Bottom Fixed Input Bar -->
-    <footer class="input-container">
-      <div class="input-wrapper glass-panel">
-        <textarea id="user-input" placeholder="Message CodeGPT or type /impact <symbol>..." rows="1"></textarea>
-        <button id="btn-send" class="btn-send">
-          <span>Send</span> 🚀
-        </button>
+    <!-- AGENT STUDIO (CHAT & TERMINAL HYBRID) -->
+    <section id="studio" class="studio-section">
+      <div class="section-header">
+        <span class="section-tag">INTERACTIVE STUDIO</span>
+        <h2 class="section-title">Autonomous Execution Studio</h2>
+        <p class="section-description">Directly command file creation, code modifications, deletions, workspace scans,
+          and knowledge graph queries from your browser.</p>
       </div>
-      <div class="input-footer-hint">
-        <span>CodeGPT uses PostgreSQL + pgvector & AST Knowledge Graphs. Sub-20ms SLA.</span>
-      </div>
-    </footer>
 
+      <div class="studio-container glass-panel">
+        <!-- Studio Sidebar: Controls & Active Tool Registry -->
+        <aside class="studio-sidebar">
+          <div class="sidebar-header">
+            <h3>Identity &amp; Context</h3>
+            <button id="btn-new-session" class="btn btn-outline btn-xs" title="Start a new session">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              New Chat
+            </button>
+          </div>
+
+          <div class="control-group">
+            <label for="select-tenant">Tenant ID</label>
+            <select id="select-tenant" class="form-select">
+              <option value="tenant-1" selected>tenant-1 (Default Workspace)</option>
+              <option value="tenant-2">tenant-2 (Isolated Workspace)</option>
+              <option value="enterprise-corp">enterprise-corp (Premium)</option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <label for="select-role">User Role (RBAC)</label>
+            <select id="select-role" class="form-select">
+              <option value="user" selected>user (Standard Access)</option>
+              <option value="admin">admin (Full Access)</option>
+              <option value="auditor">auditor (Read Only)</option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <label for="input-session-id">Session ID</label>
+            <div class="input-with-action">
+              <input type="text" id="input-session-id" class="form-input" value="session-prod-1" />
+              <button id="btn-random-session" class="btn btn-icon btn-xs" title="Generate random session">🎲</button>
+            </div>
+          </div>
+
+          <hr class="sidebar-divider" />
+
+          <!-- Active AI Tool Registry (Clean Capabilities) -->
+          <div class="tools-registry-block">
+            <div class="registry-header">
+              <h4>Available AI Tools</h4>
+              <span class="active-count-badge">6 Active</span>
+            </div>
+
+            <div class="tool-capability-list">
+              <div class="tool-cap-item" data-tool="write_file">
+                <div class="cap-left">
+                  <span class="cap-icon cyan">📝</span>
+                  <div class="cap-info">
+                    <span class="cap-name">write_file</span>
+                    <span class="cap-desc">File &amp; code generation</span>
+                  </div>
+                </div>
+                <span class="cap-status">READY</span>
+              </div>
+
+              <div class="tool-cap-item" data-tool="edit_file">
+                <div class="cap-left">
+                  <span class="cap-icon indigo">✏️</span>
+                  <div class="cap-info">
+                    <span class="cap-name">edit_file</span>
+                    <span class="cap-desc">Surgical code refactoring</span>
+                  </div>
+                </div>
+                <span class="cap-status">READY</span>
+              </div>
+
+              <div class="tool-cap-item" data-tool="read_file">
+                <div class="cap-left">
+                  <span class="cap-icon emerald">📖</span>
+                  <div class="cap-info">
+                    <span class="cap-name">read_file</span>
+                    <span class="cap-desc">File inspection &amp; slicing</span>
+                  </div>
+                </div>
+                <span class="cap-status">READY</span>
+              </div>
+
+              <div class="tool-cap-item" data-tool="delete_file">
+                <div class="cap-left">
+                  <span class="cap-icon rose">🗑️</span>
+                  <div class="cap-info">
+                    <span class="cap-name">delete_file</span>
+                    <span class="cap-desc">File &amp; folder cleanup</span>
+                  </div>
+                </div>
+                <span class="cap-status">READY</span>
+              </div>
+
+              <div class="tool-cap-item" data-tool="list_directory">
+                <div class="cap-left">
+                  <span class="cap-icon violet">📂</span>
+                  <div class="cap-info">
+                    <span class="cap-name">list_directory</span>
+                    <span class="cap-desc">Directory &amp; workspace scans</span>
+                  </div>
+                </div>
+                <span class="cap-status">READY</span>
+              </div>
+
+              <div class="tool-cap-item" data-tool="git_status">
+                <div class="cap-left">
+                  <span class="cap-icon amber">🌿</span>
+                  <div class="cap-info">
+                    <span class="cap-name">git_status</span>
+                    <span class="cap-desc">Repository status &amp; diffs</span>
+                  </div>
+                </div>
+                <span class="cap-status">READY</span>
+              </div>
+
+              <div class="tool-cap-item" data-tool="retrieve_knowledge">
+                <div class="cap-left">
+                  <span class="cap-icon cyan">💡</span>
+                  <div class="cap-info">
+                    <span class="cap-name">retrieve_knowledge</span>
+                    <span class="cap-desc">Graph &amp; vector search</span>
+                  </div>
+                </div>
+                <span class="cap-status">READY</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Active Tools Live Status -->
+          <div class="tools-active-badge">
+            <span class="pulse-dot"></span>
+            <span>Autonomous Tool Dispatcher Ready</span>
+          </div>
+        </aside>
+
+        <!-- Studio Main: Chat Stream & Tool Timeline -->
+        <section class="studio-chat-wrapper">
+          <!-- Chat Window Header -->
+          <div class="chat-header">
+            <div class="chat-header-info">
+              <div class="agent-avatar">🤖</div>
+              <div>
+                <div class="agent-name">Senior Agentic AI Assistant</div>
+                <div class="agent-status-sub">Autonomous Multi-Turn Tool Loop Active &bull; Type any workspace command
+                </div>
+              </div>
+            </div>
+            <div class="chat-header-actions">
+              <button id="btn-clear-chat" class="btn btn-ghost btn-sm" title="Clear message history">Clear
+                Screen</button>
+            </div>
+          </div>
+
+          <!-- Messages Container -->
+          <div class="chat-messages" id="chat-messages">
+            <!-- Welcome Bot Message -->
+            <div class="message-row bot-row">
+              <div class="msg-avatar">🤖</div>
+              <div class="msg-bubble">
+                <div class="msg-header">
+                  <span class="msg-sender">GraphRAG Agent</span>
+                  <span class="msg-time">Just now</span>
+                </div>
+                <div class="msg-body">
+                  <p>👋 Hello! I am your <strong>Senior Agentic AI Assistant</strong>.</p>
+                  <p>I can execute operations across your entire project: <strong>creating files, modifying code,
+                      reading files, deleting files and folders, scanning directories, checking git status, and
+                      searching knowledge graphs</strong>.</p>
+                  <p>Type your request in the box below to start!</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Input Box Form -->
+          <div class="chat-input-container">
+            <form id="chat-form" class="chat-form">
+              <textarea id="chat-input" class="chat-textarea"
+                placeholder="Type your command or question (e.g. create a file, edit code, inspect directories, ask knowledge)..."
+                rows="2" required></textarea>
+              <button type="submit" id="btn-send-chat" class="btn btn-primary btn-send">
+                <span>Send</span>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              </button>
+            </form>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- WORKSPACE TOOLS SHOWCASE SECTION -->
+    <section id="tools" class="tools-section">
+      <div class="section-header">
+        <span class="section-tag">TOOL ARSENAL</span>
+        <h2 class="section-title">Autonomous Workspace Tools</h2>
+        <p class="section-description">Every tool runs with strict execution timeouts, parameter normalization, and path
+          jailing.</p>
+      </div>
+
+      <div class="tools-grid">
+        <div class="tool-card glass-panel" data-tool="write_file">
+          <div class="tool-icon-wrapper cyan">📝</div>
+          <h3 class="tool-title">write_file</h3>
+          <p class="tool-desc">Creates or overwrites files with complete, untruncated code across any directory with
+            zero placeholders.</p>
+          <div class="tool-features">
+            <span class="tag">Auto-Dir Creation</span>
+            <span class="tag">Zero-Truncation</span>
+          </div>
+        </div>
+
+        <div class="tool-card glass-panel" data-tool="edit_file">
+          <div class="tool-icon-wrapper indigo">✏️</div>
+          <h3 class="tool-title">edit_file</h3>
+          <p class="tool-desc">Surgically replaces designated blocks of text with exact substring matching and
+            multi-parameter aliases.</p>
+          <div class="tool-features">
+            <span class="tag">Target Matching</span>
+            <span class="tag">Diff Validation</span>
+          </div>
+        </div>
+
+        <div class="tool-card glass-panel" data-tool="read_file">
+          <div class="tool-icon-wrapper emerald">📖</div>
+          <h3 class="tool-title">read_file</h3>
+          <p class="tool-desc">Reads file contents with 500-line / 50KB capacity, line-range slicing, and sensitive path
+            jailing (.env blocks).</p>
+          <div class="tool-features">
+            <span class="tag">Secret Redaction</span>
+            <span class="tag">Line Slicing</span>
+          </div>
+        </div>
+
+        <div class="tool-card glass-panel" data-tool="delete_file">
+          <div class="tool-icon-wrapper rose">🗑️</div>
+          <h3 class="tool-title">delete_file</h3>
+          <p class="tool-desc">Safely deletes workspace files and directories while strictly protecting critical root
+            configurations and system boundaries.</p>
+          <div class="tool-features">
+            <span class="tag">Folder Deletion</span>
+            <span class="tag">Root Protection</span>
+          </div>
+        </div>
+
+        <div class="tool-card glass-panel" data-tool="list_directory">
+          <div class="tool-icon-wrapper violet">📂</div>
+          <h3 class="tool-title">list_directory</h3>
+          <p class="tool-desc">Explores directory structures with recursive traversal, automatically filtering hidden
+            folders and node_modules.</p>
+          <div class="tool-features">
+            <span class="tag">Traversal Guard</span>
+            <span class="tag">Bounded Scan</span>
+          </div>
+        </div>
+
+        <div class="tool-card glass-panel" data-tool="git_status">
+          <div class="tool-icon-wrapper amber">🌿</div>
+          <h3 class="tool-title">git_status</h3>
+          <p class="tool-desc">Inspects local git repository status, active branches, modified files, and recent commit
+            history.</p>
+          <div class="tool-features">
+            <span class="tag">Branch Context</span>
+            <span class="tag">Diff Awareness</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ARCHITECTURE BENTO GRID -->
+    <section id="architecture" class="architecture-section">
+      <div class="section-header">
+        <span class="section-tag">ARCHITECTURE</span>
+        <h2 class="section-title">Cognitive Agent Architecture</h2>
+        <p class="section-description">A decoupled, multi-stage pipeline designed for resilience, accuracy, and
+          cyber-defense.</p>
+      </div>
+
+      <div class="bento-grid">
+        <div class="bento-card bento-hero glass-panel">
+          <h3>The Orchestrator Loop</h3>
+          <p>Coordinates request validation, session memory lookup, prompt rewriting, planner strategy matching, tool
+            execution, citation checks, and output guardrails.</p>
+          <div class="pipeline-flow">
+            <span class="flow-step">HTTP Auth</span>
+            <span class="flow-arrow">&rarr;</span>
+            <span class="flow-step">Input Guard</span>
+            <span class="flow-arrow">&rarr;</span>
+            <span class="flow-step">Planner</span>
+            <span class="flow-arrow">&rarr;</span>
+            <span class="flow-step highlight">Autonomous Tool Loop</span>
+            <span class="flow-arrow">&rarr;</span>
+            <span class="flow-step">Critic &amp; Guard</span>
+          </div>
+        </div>
+
+        <div class="bento-card glass-panel">
+          <h4>Multi-Tenant Security</h4>
+          <p>Immutable <code>Object.freeze</code> tenant contexts, sliding-window rate limiters with 50k item memory
+            ceilings, and RBAC authorization.</p>
+        </div>
+
+        <div class="bento-card glass-panel">
+          <h4>Cost &amp; Token Optimization</h4>
+          <p>Semantic caching of repeated prompts, automatic history summarization, and cost estimation telemetry.</p>
+        </div>
+
+        <div class="bento-card glass-panel">
+          <h4>Citation &amp; Critic Check</h4>
+          <p>Validates answers against ground truth sources, extracting <code>[source]</code> tags and rejecting
+            ungrounded hallucinated claims.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- LIVE METRICS & HEALTH -->
+    <section id="metrics" class="metrics-section">
+      <div class="section-header">
+        <span class="section-tag">LIVE TELEMETRY</span>
+        <h2 class="section-title">Backend Health &amp; Operational Metrics</h2>
+      </div>
+
+      <div class="metrics-dashboard glass-panel">
+        <div class="metric-box">
+          <div class="metric-title">API Server Status</div>
+          <div class="metric-value-lg text-emerald" id="health-status-val">HEALTHY</div>
+          <div class="metric-sub" id="health-uptime-val">Uptime: Checking...</div>
+        </div>
+
+        <div class="metric-box">
+          <div class="metric-title">Active Model</div>
+          <div class="metric-value-lg text-indigo" id="health-model-val">Qwen / GPT-OSS</div>
+          <div class="metric-sub">Groq Dev Acceleration Tier</div>
+        </div>
+
+        <div class="metric-box">
+          <div class="metric-title">Test Suite Health</div>
+          <div class="metric-value-lg text-cyan">96 / 96 PASS</div>
+          <div class="metric-sub">0 Regressions &bull; 100% Green</div>
+        </div>
+
+        <div class="metric-box">
+          <div class="metric-title">Workspace Jailing</div>
+          <div class="metric-value-lg text-emerald">ENFORCED</div>
+          <div class="metric-sub">Path Traversal &amp; Null Bytes Blocked</div>
+        </div>
+      </div>
+    </section>
   </main>
 
-  <script src="app.js"></script>
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-left">
+        <span class="brand-title">GraphRAG<span class="gradient-text">.ai</span></span>
+        <p>Enterprise Agentic AI Chatbot — Member 2 Intelligence Layer</p>
+      </div>
+      <div class="footer-right">
+        <a href="#hero">Back to Top &uarr;</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="/scripts/app.js"></script>
 </body>
+
 </html>

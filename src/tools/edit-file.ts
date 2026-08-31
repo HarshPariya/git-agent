@@ -102,7 +102,16 @@ export const createEditFileTool = (
   timeoutMs: DEFAULT_TIMEOUT_MS,
   parseInput,
   execute: async ({ input }) => {
-    const filePath = sanitizePath(baseDir, input.path);
+    let filePath = sanitizePath(baseDir, input.path);
+    if (!input.path.includes("/") && !input.path.includes("\\")) {
+      const docsCandidate = path.resolve(baseDir, "docs", input.path);
+      try {
+        await fs.access(docsCandidate);
+        filePath = docsCandidate;
+      } catch {
+        // Fall back to direct filePath
+      }
+    }
     const existingContent = await fs.readFile(filePath, "utf8");
 
     const containsTarget = existingContent.includes(input.targetContent);

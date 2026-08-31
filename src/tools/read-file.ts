@@ -77,7 +77,16 @@ export const createReadFileTool = (
   timeoutMs: DEFAULT_TIMEOUT_MS,
   parseInput,
   execute: async ({ input }) => {
-    const filePath = sanitizePath(baseDir, input.path);
+    let filePath = sanitizePath(baseDir, input.path);
+    if (!input.path.includes("/") && !input.path.includes("\\")) {
+      const docsCandidate = path.resolve(baseDir, "docs", input.path);
+      try {
+        await fs.access(docsCandidate);
+        filePath = docsCandidate;
+      } catch {
+        // Fall back to direct
+      }
+    }
     const rawContent = await fs.readFile(filePath, "utf8");
     const boundedContent = rawContent.slice(0, MAX_FILE_BYTES);
     const lines = boundedContent.split("\n");
