@@ -2,85 +2,86 @@ import type { AgentAction, AgentPlan, PlanRequest } from "../types/agent.js";
 
 export type { AgentAction, AgentPlan, PlanRequest };
 
-interface PlannerStrategy {
+interface PlannerRule {
   readonly action: AgentAction;
   readonly reason: string;
-  readonly terms: readonly string[];
+  readonly matcher: (q: string) => boolean;
 }
 
-const STRATEGIES: readonly PlannerStrategy[] = [
-  {
-    action: "retrieve",
-    reason: "The question may require external knowledge.",
-    terms: [
-      "policy",
-      "pricing",
-      "refund",
-      "procedure",
-      "guideline",
-      "company",
-    ],
-  },
+const TOOL_TERMS = [
+  "calculate",
+  "search file",
+  "search code",
+  "read file",
+  "write file",
+  "create file",
+  "delete file",
+  "remove file",
+  "edit file",
+  "modify file",
+  "update file",
+  "save file",
+  "generate file",
+  "write code",
+  "code in",
+  "write in",
+  "create",
+  "delete",
+  "remove",
+  "modify",
+  "replace",
+  "update",
+  "change",
+  "edit",
+  "read",
+  "write",
+  "run test",
+  "execute",
+  "folder",
+  "directory",
+  "file structure",
+  "folder structure",
+  "files in",
+  "git",
+  "list files",
+  "show files",
+  "check my folder",
+  "check folder",
+  "check files",
+  "what is in",
+  "inspect",
+] as const;
+
+const RETRIEVE_TERMS = [
+  "policy",
+  "pricing",
+  "refund",
+  "procedure",
+  "guideline",
+  "company",
+  "documentation on",
+  "knowledge base",
+] as const;
+
+const FILE_PATH_REGEX = /(?:\.[\/\\]|[a-zA-Z0-9_-]+[\/\\])[a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+/i;
+
+const RULES: readonly PlannerRule[] = [
   {
     action: "tool",
-    reason: "The question indicates that a tool may be required.",
-    terms: [
-      "calculate",
-      "search file",
-      "search code",
-      "read file",
-      "write file",
-      "create file",
-      "delete file",
-      "remove file",
-      "edit file",
-      "modify file",
-      "update file",
-      "save file",
-      "generate file",
-      "write code",
-      "code in",
-      "write in",
-      "create",
-      "delete",
-      "remove",
-      "modify",
-      "replace",
-      "update",
-      "change",
-      "edit",
-      "read",
-      "write",
-      "run test",
-      "execute",
-      "folder",
-      "directory",
-      "file structure",
-      "folder structure",
-      "files in",
-      "agent folder",
-      "src folder",
-      "git",
-      "list files",
-      "show files",
-      "check my folder",
-      "check folder",
-      "check files",
-      "what is in",
-      "inspect",
-      "architecture.md",
-      "demo.md",
-      "package.json",
-      "tsconfig",
-    ],
+    reason: "The question requires file system, git, or autonomous workspace tools.",
+    matcher: (q) =>
+      TOOL_TERMS.some((term) => q.includes(term)) || FILE_PATH_REGEX.test(q),
+  },
+  {
+    action: "retrieve",
+    reason: "The question may require external knowledge retrieval.",
+    matcher: (q) => RETRIEVE_TERMS.some((term) => q.includes(term)),
   },
 ];
 
 export const createPlan = ({ question }: PlanRequest): AgentPlan => {
   const normalized = question.trim().toLowerCase();
-  const matched = STRATEGIES.find((strategy) =>
-    strategy.terms.some((term) => normalized.includes(term)),
-  );
+  const matched = RULES.find((rule) => rule.matcher(normalized));
 
   return matched
     ? { action: matched.action, reason: matched.reason }

@@ -174,7 +174,7 @@ export const createAgent = (
                 instructions: buildSystemPrompt(),
                 input: inputPrompt,
                 registry: tools,
-                maxRounds: 6,
+                maxRounds: 12,
                 context: toolContext,
               }),
             MAX_LLM_RETRIES,
