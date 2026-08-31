@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { query, withTransaction, closeDatabase } from "./postgres.js";
+import { query, withTransaction } from "./postgres.js";
 
 export interface DatabaseBackupPayload {
   version: number;

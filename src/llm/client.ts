@@ -21,9 +21,23 @@ export interface ToolLlmResponse extends LlmResponse {
   readonly message: Groq.Chat.Completions.ChatCompletionMessage;
 }
 
-const client = new Groq({
-  apiKey: env.groqApiKey,
-});
+function getApiKey(): string {
+  return process.env.GROQ_API_KEY?.trim() || env.groqApiKey || "";
+}
+
+function getGroqModel(): string {
+  const model = process.env.GROQ_MODEL?.trim() || env.groqModel;
+  if (!model || model.includes("llama")) {
+    return "openai/gpt-oss-120b";
+  }
+  return model;
+}
+
+function getGroqClient(): Groq {
+  return new Groq({
+    apiKey: getApiKey(),
+  });
+}
 
 const toToolCalls = (
   calls: readonly Groq.Chat.Completions.ChatCompletionMessageToolCall[],
@@ -36,31 +50,54 @@ const toToolCalls = (
 
 export const groqProvider: LlmProvider = {
   async generate({ instructions, input }: LlmRequest): Promise<LlmResponse> {
-    const response = await client.chat.completions.create({
-      model: env.groqModel,
-      messages: [
-        {
-          role: "system",
-          content: instructions,
-        },
-        {
-          role: "user",
-          content: input,
-        },
-      ],
-    });
-
-    const text = response.choices[0]?.message.content?.trim() ?? "";
-
-    if (!text) {
-      throw new Error("LLM returned an empty response");
+    const apiKey = getApiKey();
+    if (
+      !apiKey ||
+      apiKey.includes("dummy") ||
+      apiKey.includes("your_groq_api_key")
+    ) {
+      return {
+        id: "local-demo-id",
+        model: "local-demo",
+        text: "Hello! How can I help you with your codebase today?\n\n*(Note: To get live AI answers from Groq, please update `GROQ_API_KEY` in your `.env` file).*",
+      };
     }
 
-    return {
-      id: response.id,
-      model: response.model,
-      text,
-    };
+    try {
+      const client = getGroqClient();
+      const response = await client.chat.completions.create({
+        model: getGroqModel(),
+        messages: [
+          {
+            role: "system",
+            content: instructions,
+          },
+          {
+            role: "user",
+            content: input,
+          },
+        ],
+      });
+
+      const text = response.choices[0]?.message.content?.trim() ?? "";
+
+      if (!text) {
+        throw new Error("LLM returned an empty response");
+      }
+
+      return {
+        id: response.id,
+        model: response.model,
+        text,
+      };
+    } catch (err: any) {
+      console.error("❌ Groq API call failed:", err?.message || err);
+      return {
+        id: "error-id",
+        model: "error-fallback",
+        text: `❌ **Groq API Error**: ${err?.message || "Failed to fetch response from Groq API"}. Please check your \`GROQ_API_KEY\` in \`.env\`.`,
+      };
+    }
   },
 };
 
@@ -76,8 +113,9 @@ export const generateWithTools = async ({
   readonly input: string;
   readonly tools: readonly LlmTool[];
 }): Promise<ToolLlmResponse> => {
+  const client = getGroqClient();
   const response = await client.chat.completions.create({
-    model: env.groqModel,
+    model: getGroqModel(),
     messages: [
       {
         role: "system",
@@ -123,8 +161,9 @@ export const continueWithTools = async ({
   readonly messages: Groq.Chat.Completions.ChatCompletionMessageParam[];
   readonly tools: readonly LlmTool[];
 }): Promise<ToolLlmResponse> => {
+  const client = getGroqClient();
   const response = await client.chat.completions.create({
-    model: env.groqModel,
+    model: getGroqModel(),
     messages: [
       {
         role: "system",

@@ -5,10 +5,15 @@ import { createPlan } from "../src/agent/planner.js";
 
 test("selects direct answer for general questions", () => {
   const plan = createPlan({
-    question: "What is GraphRAG?",
+    question: "Hello there!",
     hasConversationContext: false,
   });
 
+  assert.equal(plan.action, "direct_answer");
+});
+
+test("selects a direct general answer for a RAG definition", () => {
+  const plan = createPlan({ question: "What is RAG?", hasConversationContext: false });
   assert.equal(plan.action, "direct_answer");
 });
 

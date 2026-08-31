@@ -10,16 +10,7 @@ export interface AgentPlan {
   readonly reason: string;
 }
 
-const RETRIEVAL_TERMS = new Set([
-  "policy",
-  "documentation",
-  "document",
-  "pricing",
-  "refund",
-  "procedure",
-  "guideline",
-  "company",
-]);
+
 
 const TOOL_TERMS = new Set([
   "calculate",
@@ -32,26 +23,37 @@ const TOOL_TERMS = new Set([
 const containsTerm = (question: string, terms: ReadonlySet<string>): boolean =>
   [...terms].some((term) => question.toLowerCase().includes(term));
 
+const DIRECT_ANSWER_TERMS = [
+  "hi",
+  "hello",
+  "hey",
+  "good morning",
+  "good evening",
+  "thanks",
+  "thank you",
+  "what is graphrag",
+  "what is rag",
+];
+
 export const createPlan = ({ question }: PlanRequest): AgentPlan => {
-  const normalizedQuestion = question.trim().toLowerCase();
+  const normalizedQuestion = question.trim().toLowerCase().replace(/[!?.,]/g, "");
 
-  switch (true) {
-    case containsTerm(normalizedQuestion, TOOL_TERMS):
-      return {
-        action: "tool",
-        reason: "The question indicates that a tool may be required.",
-      };
-
-    case containsTerm(normalizedQuestion, RETRIEVAL_TERMS):
-      return {
-        action: "retrieve",
-        reason: "The question may require external knowledge.",
-      };
-
-    default:
-      return {
-        action: "direct_answer",
-        reason: "The question can be answered directly.",
-      };
+  if (containsTerm(normalizedQuestion, TOOL_TERMS)) {
+    return {
+      action: "tool",
+      reason: "The question indicates that a tool may be required.",
+    };
   }
+
+  if (DIRECT_ANSWER_TERMS.some((term) => normalizedQuestion.includes(term))) {
+    return {
+      action: "direct_answer",
+      reason: "General question or pleasantry that can be answered directly.",
+    };
+  }
+
+  return {
+    action: "retrieve",
+    reason: "The question may require external codebase or document knowledge.",
+  };
 };

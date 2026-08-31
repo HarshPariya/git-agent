@@ -41,9 +41,11 @@ function findFirstRelevantRank(
     index < returned.length;
     index++
   ) {
+    const item = returned[index];
     if (
+      item !== undefined &&
       expected.includes(
-        returned[index],
+        item,
       )
     ) {
       return index + 1;
@@ -252,7 +254,7 @@ async function main() {
     );
 
   const p95Latency =
-    sortedLatency[p95Index];
+    sortedLatency[p95Index] ?? 0;
 
   console.log(
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",

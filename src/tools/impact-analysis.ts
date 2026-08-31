@@ -15,7 +15,7 @@ export interface ImpactAnalysisReport {
     id: string;
     name: string;
     type: string;
-    filePath?: string;
+    filePath?: string | undefined;
   };
   riskLevel: RiskLevel;
   riskScore: number; // 0 - 100
