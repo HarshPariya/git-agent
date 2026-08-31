@@ -2,9 +2,9 @@
 
 ## 1. Overview & Architecture Scope
 
-**Member 2** owns the complete **Agentic AI, LLM Orchestration, Security, Guardrails, and Application Intelligence Layer** for the AI Chatbot backend.
+**Member 2** owns the complete **Agentic AI, LLM Orchestration, Security, Guardrails, Autonomous Tool Calling, and Application Intelligence Layer** for the AI Chatbot backend.
 
-This layer sits between external clients (HTTP/API) and the underlying data/retrieval infrastructure, providing intelligent multi-tenant conversation management, multi-step planning, tool dispatching, cost optimization, citation verification, and enterprise-grade cyber-attack defenses.
+This layer sits between external clients (HTTP/API) and the underlying data/retrieval infrastructure, providing intelligent multi-tenant conversation management, multi-step planning, autonomous workspace tool calling (read, write, edit, delete, directory inspection, git status), cost optimization, citation verification, and enterprise-grade cyber-attack defenses.
 
 ```
                              [ Client Request ]
@@ -39,11 +39,14 @@ This layer sits between external clients (HTTP/API) and the underlying data/retr
                                      │
             ┌────────────────────────┼────────────────────────┐
             ▼                        ▼                        ▼
-     [ Direct Answer ]      [ Knowledge Retrieval ]     [ Tool Execution ]
+     [ Direct Answer ]      [ Knowledge Retrieval ]     [ Autonomous Tool Loop ]
             │                        │                        │
-            │                        ▼                        │
-            │              (Member 1 Retriever)               │
-            │                        │                        │
+            │                        ▼                        ├── write_file
+            │              (Member 1 Retriever)               ├── read_file
+            │                        │                        ├── edit_file
+            │                        │                        ├── delete_file
+            │                        │                        ├── list_directory
+            │                        │                        └── git_status
             └────────────────────────┼────────────────────────┘
                                      │
                      ┌───────────────▼───────────────┐
@@ -68,7 +71,7 @@ This layer sits between external clients (HTTP/API) and the underlying data/retr
 
 ## 2. Directory & Module Breakdown
 
-All Member 2 source code is modular, type-safe, and decoupled:
+All Member 2 source code is modular, type-safe, production-ready, and cleanly decoupled:
 
 | Directory | Core Purpose | Key Components |
 | :--- | :--- | :--- |
@@ -77,9 +80,9 @@ All Member 2 source code is modular, type-safe, and decoupled:
 | **`src/llm/`** | LLM client & cost management | `client.ts`, `router.ts`, `cost-optimizer.ts`, `prompts.ts`, `mock-client.ts` |
 | **`src/guardrails/`** | Security filters & verification | `input-guard.ts`, `output-guard.ts`, `citation-check.ts` |
 | **`src/security/`** | Authentication, RBAC & rate limits | `tenant-context.ts`, `authorization.ts`, `rate-limit.ts` |
-| **`src/tools/`** | Extensible tool execution | `registry.ts`, `retrieve-knowledge.ts` |
+| **`src/tools/`** | Autonomous workspace tool suite | `registry.ts`, `write-file.ts`, `read-file.ts`, `edit-file.ts`, `delete-file.ts`, `list-directory.ts`, `git-status.ts`, `retrieve-knowledge.ts` |
 | **`src/services/`** | High-level application services | `chat-service.ts`, `citation-service.ts`, `memory-service.ts` |
-| **`src/api/`** | Express route handlers | `chat.ts` |
+| **`src/api/`** | Express route handlers | `chat.ts`, `health.ts` |
 | **`src/middleware/`** | HTTP middleware | `security.ts`, `request-id.ts` |
 | **`src/errors/`** | Standardized error handling | `app-error.ts`, `error-handler.ts` |
 | **`src/logging/`** | Structured JSON logging | `logger.ts` |
@@ -97,12 +100,12 @@ All Member 2 source code is modular, type-safe, and decoupled:
 - **`critic.ts`**: Evaluates answer quality against retrieved context, ensuring numeric claims, entity relationships, and facts are strictly grounded.
 - **`memory.ts`**: In-memory bounded conversation buffer preventing context overflow per tenant and session.
 - **`cache.ts`**: LRU/TTL response cache (`AgentCache`) and concurrent duplicate request joining (`RequestDeduplicator`).
-- **`tool-caller.ts`**: Multi-round function calling loop with execution limits and timeout enforcement.
+- **`tool-caller.ts`**: Multi-round autonomous function calling loop with execution limits, message bounding, and timeout enforcement.
 
-### 3.2. LLM Engine & Cost Optimization (`src/llm/`)
-- **`client.ts` & `router.ts`**: Type-safe integration with Groq SDK supporting both streaming text completions and JSON function calling.
+### 3.2. LLM Engine & Tool Interception (`src/llm/`)
+- **`client.ts` & `router.ts`**: High-performance Groq SDK integration with automatic reasoning tag (`<think>`) stripping, native JSON function calling, XML `<tool_call>` parsing, and `failed_generation` error recovery.
 - **`cost-optimizer.ts`**: In-memory semantic prompt cache, token budget tracker, rate-per-minute governor, and dynamic context summarizer to minimize API costs.
-- **`prompts.ts`**: Structured prompt engineering enforcing truthfulness, strict citation rules, and anti-leak directives.
+- **`prompts.ts`**: Structured prompt engineering enforcing truthfulness, strict citation rules, autonomous tool directives, and anti-leak protections.
 
 ### 3.3. Guardrails & Safety Pipeline (`src/guardrails/`)
 - **`input-guard.ts`**: Rejects prompt injections, jailbreak attempts, delimiter hijacking, and oversized payloads before LLM invocation.
@@ -115,8 +118,14 @@ All Member 2 source code is modular, type-safe, and decoupled:
 - **`rate-limit.ts`**: Bounded capacity (`MAX_RATE_LIMITER_ENTRIES = 50,000`) sliding-window rate limiter protecting against OOM/DoS floods.
 - **`security.ts` (Middleware)**: Validates incoming identity headers (`x-tenant-id`, `x-user-id`, `x-user-role`), runs rate checks, and authorizes requests.
 
-### 3.5. Tool Registry & Knowledge Bridge (`src/tools/`)
+### 3.5. Workspace Tool Suite (`src/tools/`)
 - **`registry.ts`**: Thread-safe tool registry supporting permission enforcement, parameter schema validation, and per-tool timeouts.
+- **`write-file.ts`**: Safely creates or overwrites project files with argument aliases (`content`, `text`, `body`, `file_content`).
+- **`read-file.ts`**: Reads file contents with line range slicing and sensitive path protections (blocks `.env`, `.pem`, `id_rsa`).
+- **`edit-file.ts`**: Replaces specific text blocks with argument aliasing (`old_text` $\rightarrow$ `targetContent`, `new_text` $\rightarrow$ `replacementContent`).
+- **`delete-file.ts`**: Deletes non-critical files while protecting root directories, configuration, and source files.
+- **`list-directory.ts`**: Traverses project folders with recursion limits and hidden/node_modules exclusions.
+- **`git-status.ts`**: Inspects repository status, branches, or recent commit logs safely via `git`.
 - **`retrieve-knowledge.ts`**: Standardized knowledge tool wrapping the external retrieval interface.
 
 ### 3.6. Evaluation & Metrics Suite (`src/evaluation/`)
@@ -166,6 +175,7 @@ export interface Retriever {
 | **Access Layer** | Privilege Escalation | RBAC matrix checks (`src/security/authorization.ts`) |
 | **Infra Layer** | Denial of Service (DoS / OOM) | Bounded rate limiter (50k ceiling) + request deduplication + token budgeting |
 | **Execution** | Unresponsive External Services | Strict per-operation timeouts with guaranteed timer cleanup in `finally` blocks |
+| **File System** | Path Traversal / Poisoning | Path sanitization, null byte rejection, and workspace root jail (`src/tools/*`) |
 | **Information** | Sensitive Stack Trace Leaks | Sanitized error responses with internal logging (`src/errors/error-handler.ts`) |
 
 ---
@@ -178,6 +188,6 @@ Member 2 is verified independently with zero external infrastructure dependencie
 # Compile Member 2 TypeScript
 npm run build:m2
 
-# Run Member 2 Test Suite (88/88 passing tests)
+# Run Member 2 Test Suite (96/96 passing tests)
 npm run test:m2
 ```

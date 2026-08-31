@@ -18,15 +18,17 @@ export const createQueryRewriter = (llm: LlmProvider) => ({
     const trimmedQuestion = question.trim();
     const context = conversationContext?.trim();
 
-    return !context
-      ? trimmedQuestion
-      : (async () => {
-        const result = await llm.generate({
-          instructions: REWRITE_INSTRUCTIONS,
-          input: `Conversation context:\n${context}\n\nLatest question:\n${trimmedQuestion}`,
-        });
-        const rewritten = result.text.trim();
-        return rewritten.length > 0 ? rewritten : trimmedQuestion;
-      })();
+    if (!context) return trimmedQuestion;
+
+    try {
+      const result = await llm.generate({
+        instructions: REWRITE_INSTRUCTIONS,
+        input: `Conversation context:\n${context}\n\nLatest question:\n${trimmedQuestion}`,
+      });
+      const rewritten = result.text.trim();
+      return rewritten.length > 0 ? rewritten : trimmedQuestion;
+    } catch {
+      return trimmedQuestion;
+    }
   },
 });
