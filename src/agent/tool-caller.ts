@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type Groq from "groq-sdk";
 
 import {
@@ -11,8 +12,9 @@ import type {
 } from "../types/tools.js";
 import type { ToolLlmResponse } from "../types/llm.js";
 import type { ToolRegistry } from "../tools/registry.js";
+import { logger } from "../logging/logger.js";
 
-const MAX_OUTPUT_CHARS = 1500;
+const MAX_OUTPUT_CHARS = 2000;
 
 export interface ToolCallingRequest {
   readonly instructions: string;
@@ -45,23 +47,26 @@ export const toLlmTools = (
 export const executeTool = async (
   registry: ToolRegistry,
   call: {
-    readonly callId: string;
+    readonly id?: string;
+    readonly callId?: string;
     readonly name: string;
     readonly arguments: string;
   },
   context: ToolExecutionContext,
 ): Promise<ToolExecutionResult> => {
+  const callId =
+    call.id ?? call.callId ?? `call_${crypto.randomUUID().slice(0, 8)}`;
   try {
     const parsedArgs = JSON.parse(call.arguments || "{}") as unknown;
     const result = await registry.executeTool(call.name, parsedArgs, context);
     return {
       ...result,
-      callId: call.callId,
+      callId,
     };
   } catch (error) {
     return {
       toolName: call.name,
-      callId: call.callId,
+      callId,
       success: false,
       output: undefined,
       error: error instanceof Error ? error.message : "Invalid tool arguments",
@@ -70,11 +75,33 @@ export const executeTool = async (
   }
 };
 
+const boundMessagesWithoutOrphans = (
+  allMessages: readonly Groq.Chat.Completions.ChatCompletionMessageParam[],
+): Groq.Chat.Completions.ChatCompletionMessageParam[] => {
+  if (allMessages.length <= 12) {
+    return [...allMessages];
+  }
+
+  const userMessage = allMessages[0]!;
+  const recentSlice = allMessages.slice(-10);
+
+  // Skip any leading tool messages that lost their assistant parent
+  let validStartIndex = 0;
+  while (
+    validStartIndex < recentSlice.length &&
+    recentSlice[validStartIndex]?.role === "tool"
+  ) {
+    validStartIndex++;
+  }
+
+  return [userMessage, ...recentSlice.slice(validStartIndex)];
+};
+
 export async function runToolCalling({
   instructions,
   input,
   registry,
-  maxRounds,
+  maxRounds = 12,
   context,
   generateLlmWithTools = generateWithTools,
   continueLlmWithTools = continueWithTools,
@@ -120,18 +147,22 @@ export async function runToolCalling({
       ),
     );
 
-    const boundedMessages =
-      messages.length > 10
-        ? [messages[0]!, ...messages.slice(-8)]
-        : messages;
+    const bounded = boundMessagesWithoutOrphans(messages);
 
     try {
       response = await continueLlmWithTools({
         instructions,
-        messages: boundedMessages,
+        messages: bounded,
         tools,
       });
-    } catch {
+    } catch (err) {
+      logger.warn("continueWithTools round failed, ending tool loop", {
+        operation: "tool_loop_continue",
+        metadata: {
+          round,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
       break;
     }
   }
