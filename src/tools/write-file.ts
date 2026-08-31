@@ -6,18 +6,19 @@ import type {
   WriteFileInput,
   WriteFileOutput,
 } from "../types/tools.js";
+import { resolveWorkspaceCandidate } from "./workspace-path.js";
 
 const DEFAULT_PERMISSIONS: readonly ToolPermission[] = ["write"];
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_ALLOWED_BYTES = 50_000;
-const PROTECTED_FILES = new Set([".env", "package.json", "package-lock.json"]);
 
 const parameters = {
   type: "object",
   properties: {
     path: {
       type: "string",
-      description: "Relative path of the file to create or write (e.g. 'src/agent/helper.ts').",
+      description:
+        "Relative path of the file to create or write (e.g. 'src/agent/helper.ts' or 'demo.md').",
     },
     content: {
       type: "string",
@@ -25,32 +26,23 @@ const parameters = {
     },
     overwrite: {
       type: "boolean",
-      description: "Whether to overwrite if file already exists. Defaults to true.",
+      description:
+        "Whether to overwrite if file already exists. Defaults to true.",
     },
   },
   required: ["path", "content"],
   additionalProperties: false,
 } as const;
 
-const sanitizePath = (baseDir: string, requestedPath: string): string => {
-  const containsNull = requestedPath.includes("\0");
-  containsNull && (() => { throw new Error("Path contains illegal null bytes"); })();
-
-  const filename = path.basename(requestedPath);
-  const isProtected = PROTECTED_FILES.has(filename) || filename.startsWith(".env");
-  isProtected && (() => { throw new Error("Access denied: writing to protected system file is disallowed"); })();
-
-  const resolved = path.resolve(baseDir, requestedPath);
-  const relative = path.relative(baseDir, resolved);
-  const isEscaping = relative.startsWith("..") || path.isAbsolute(relative);
-  isEscaping && (() => { throw new Error("Access denied: path escapes workspace root"); })();
-
-  return resolved;
-};
-
-const extractString = (data: Record<string, unknown>, keys: readonly string[]): string => {
+const extractString = (
+  data: Record<string, unknown>,
+  keys: readonly string[],
+): string => {
   for (const key of keys) {
-    if (typeof data[key] === "string" && data[key].length > 0) {
+    if (
+      typeof data[key] === "string" &&
+      (data[key] as string).length > 0
+    ) {
       return data[key] as string;
     }
   }
@@ -58,15 +50,35 @@ const extractString = (data: Record<string, unknown>, keys: readonly string[]): 
 };
 
 const parseInput = (input: unknown): WriteFileInput => {
-  const isObject = typeof input === "object" && input !== null && !Array.isArray(input);
-  !isObject && (() => { throw new Error("Invalid write_file input"); })();
+  const isObject =
+    typeof input === "object" && input !== null && !Array.isArray(input);
+  !isObject &&
+    (() => {
+      throw new Error("Invalid write_file input");
+    })();
 
   const data = input as Record<string, unknown>;
-  const rawPath = extractString(data, ["path", "filePath", "file_path", "filename", "file"]).trim();
-  !rawPath && (() => { throw new Error("File path is required"); })();
+  const rawPath = extractString(data, [
+    "path",
+    "filePath",
+    "file_path",
+    "filename",
+    "file",
+  ]).trim();
+  !rawPath &&
+    (() => {
+      throw new Error("File path is required");
+    })();
 
-  const rawContent = extractString(data, ["content", "text", "file_content", "body", "code"]);
-  const overwrite = typeof data.overwrite === "boolean" ? data.overwrite : true;
+  const rawContent = extractString(data, [
+    "content",
+    "text",
+    "file_content",
+    "body",
+    "code",
+  ]);
+  const overwrite =
+    typeof data.overwrite === "boolean" ? data.overwrite : true;
 
   return { path: rawPath, content: rawContent, overwrite };
 };
@@ -75,22 +87,14 @@ export const createWriteFileTool = (
   baseDir: string = process.cwd(),
 ): ToolDefinition<WriteFileInput, WriteFileOutput> => ({
   name: "write_file",
-  description: "Creates or writes text content to a file in the workspace.",
+  description:
+    "Creates or writes text content to a file in the workspace.",
   parameters,
   permissions: DEFAULT_PERMISSIONS,
   timeoutMs: DEFAULT_TIMEOUT_MS,
   parseInput,
   execute: async ({ input }) => {
-    let filePath = sanitizePath(baseDir, input.path);
-    if (!input.path.includes("/") && !input.path.includes("\\")) {
-      const docsCandidate = path.resolve(baseDir, "docs", input.path);
-      try {
-        await fs.access(docsCandidate);
-        filePath = docsCandidate;
-      } catch {
-        // Fall back to direct filePath
-      }
-    }
+    const filePath = await resolveWorkspaceCandidate(baseDir, input.path, "write");
     const byteLength = Buffer.byteLength(input.content, "utf8");
 
     byteLength > MAX_ALLOWED_BYTES &&

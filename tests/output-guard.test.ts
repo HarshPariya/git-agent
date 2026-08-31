@@ -22,7 +22,7 @@ test("rejects an empty response", () => {
 
 test("rejects an oversized response", () => {
   const result = validateOutput({
-    response: "a".repeat(8_001),
+    response: "a".repeat(65_000),
   });
 
   assert.equal(result.allowed, false);

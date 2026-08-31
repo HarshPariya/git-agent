@@ -21,7 +21,7 @@ test("rejects empty input", () => {
 
 test("rejects oversized input", () => {
   const result = validateInput({
-    message: "a".repeat(4_001),
+    message: "a".repeat(65_000),
   });
 
   assert.equal(result.allowed, false);
