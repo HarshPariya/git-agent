@@ -44,9 +44,11 @@ async function runImpactAnalysisTest() {
     // 2. Explainable Search
     console.log("2. Running Explainable RAG Search...");
     const results = await retriever.retrieve("Where is normalizeId used?");
-    assert(results.length > 0, "Retrieved search results");
+    const firstResult = results[0];
+    assert(firstResult !== undefined, "Retrieved search results contains first element");
+    if (!firstResult) return;
 
-    const explained = explainRetrievedContext(results[0], "normalizeId");
+    const explained = explainRetrievedContext(firstResult, "normalizeId");
     console.log();
     console.log("💡 Explained Result #1:", explained.explanation);
     console.log();

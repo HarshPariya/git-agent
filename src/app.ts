@@ -4,6 +4,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { chatHandler } from "./api/chat.js";
+import {
+  deleteDocumentHandler,
+  listDocumentsHandler,
+  uploadDocumentHandler,
+} from "./api/documents.js";
 import { healthHandler } from "./api/health.js";
 import { env } from "./config/env.js";
 import { errorHandler } from "./errors/error-handler.js";
@@ -18,6 +23,7 @@ app.disable("x-powered-by");
 app.use(cors());
 app.use(requestIdMiddleware);
 app.use(express.json({ limit: "1mb" }));
+app.use(express.raw({ limit: "10mb", type: ["text/plain", "text/markdown", "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"] }));
 
 const publicDir = path.resolve(process.cwd(), "public");
 app.use(express.static(publicDir));
@@ -44,6 +50,10 @@ app.get("/api/info", (_request, response) => {
 
 app.get("/health", healthHandler);
 app.post("/chat", securityMiddleware, chatHandler);
+app.post("/api/chat", securityMiddleware, chatHandler);
+app.post("/api/documents/upload", securityMiddleware, uploadDocumentHandler);
+app.get("/api/documents", securityMiddleware, listDocumentsHandler);
+app.delete("/api/documents/:id", securityMiddleware, deleteDocumentHandler);
 
 app.use(errorHandler);
 

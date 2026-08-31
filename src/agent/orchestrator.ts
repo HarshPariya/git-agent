@@ -23,6 +23,8 @@ import type { ToolExecutionContext, ToolPermission } from "../types/tools.js";
 import { AgentCache, RequestDeduplicator } from "./cache.js";
 import { logger } from "../logging/logger.js";
 import { AppError } from "../errors/app-error.js";
+import { metricsCollector } from "../monitoring/observability.js";
+import { isDocumentSummaryIntent } from "../retrieval/document-retriever.js";
 
 const DEFAULT_USER_PERMISSIONS: readonly ToolPermission[] = ["read", "write"];
 const MAX_QUERY_REWRITE_RETRIES = Number(
@@ -35,8 +37,29 @@ const AGENT_EXECUTION_TIMEOUT_MS = Number(
   process.env.AGENT_EXECUTION_TIMEOUT_MS ?? 120_000,
 );
 
-const formatConversation = (messages: readonly Message[]): string =>
-  messages.map(({ role, content }) => `${role}: ${content}`).join("\n");
+type RetrievalMode = NonNullable<AgentContext["retrievalMode"]>;
+
+const formatConversation = (messages: readonly Message[], mode: RetrievalMode): string =>
+  messages
+    .filter((message) => message.mode === mode)
+    .map(({ role, content }) => `${role}: ${content}`)
+    .join("\n");
+
+const compactMemoryContent = (content: string): string =>
+  content.replace(/\n\n\*\*Sources:\*\*[\s\S]*$/i, "").trim().slice(0, 800);
+
+export const buildSystemObservabilityResponse = (question: string): string => {
+  if (question.trim().toLowerCase() === "/metrics") {
+    return `\`\`\`text\n${metricsCollector.getPrometheusFormat()}\n\`\`\``;
+  }
+  const metrics = metricsCollector.getMetrics();
+  return [
+    `System status: **${metrics.healthScore.status}** (${metrics.healthScore.scorePercentage}%).`,
+    `Retrieval requests: ${metrics.retrieval.totalRequests} total, ${metrics.retrieval.failedRequests} failed.`,
+    `Retrieval latency: ${metrics.retrieval.avgLatencyMs} ms average, ${metrics.retrieval.percentiles.p95Ms} ms p95.`,
+    `Database pool: ${metrics.database.poolTotalConnections} total, ${metrics.database.poolIdleConnections} idle, ${metrics.database.poolWaitingCount} waiting.`,
+  ].join("\n");
+};
 
 const formatKnowledge = (results: readonly RetrievalResult[]): string =>
   results
@@ -165,14 +188,24 @@ export const createAgent = (
     userQuery: string,
     toolContext: ToolExecutionContext,
     agentContext: { tenantId: string; sessionId: string },
+    mode: RetrievalMode,
   ): Promise<LlmResponse> => {
     switch (action) {
+      case "retrieve":
+        // Generate only after grounded evidence is available. This prevents an
+        // ungrounded draft and ensures deterministic symbol paths bypass the LLM.
+        return {
+          id: "retrieval-pending",
+          model: "retrieval-router",
+          text: "Retrieved evidence is required before answering.",
+        };
+
       case "tool": {
         try {
           const toolResult = await withRetry(
             () =>
               runToolCalling({
-                instructions: buildSystemPrompt(),
+                instructions: buildSystemPrompt(mode),
                 input: inputPrompt,
                 registry: tools,
                 maxRounds: 12,
@@ -191,7 +224,8 @@ export const createAgent = (
           }
         } catch {
           // Upstream LLM rate limited or unreachable — execute requested tool autonomously
-        } const lowerQ = userQuery.toLowerCase().trim();
+        }
+        const lowerQ = userQuery.toLowerCase().trim();
 
         // 1. Git status (highest precedence when query mentions git)
         if (lowerQ.includes("git")) {
@@ -660,7 +694,7 @@ export const createAgent = (
         return withRetry(
           () =>
             llm.generate({
-              instructions: buildSystemPrompt(),
+              instructions: buildSystemPrompt(mode),
               input: inputPrompt,
             }),
           MAX_LLM_RETRIES,
@@ -675,12 +709,14 @@ export const createAgent = (
     action: string,
     query: string,
     agentContext: { tenantId: string; sessionId: string },
+    mode: RetrievalMode,
+    documentIds?: readonly string[],
   ): Promise<readonly RetrievalResult[]> => {
     switch (action) {
       case "retrieve":
         try {
           return await withRetry(
-            () => retriever.search({ query }),
+            () => retriever.search({ query, tenantId: agentContext.tenantId, mode, ...(documentIds !== undefined && { documentIds }) }),
             MAX_RETRIEVAL_RETRIES,
             "retrieval",
             agentContext,
@@ -700,6 +736,7 @@ export const createAgent = (
     rewrittenQuestion: string,
     conversationContext: string | undefined,
     agentContext: { tenantId: string; sessionId: string },
+    mode: RetrievalMode,
   ): Promise<LlmResponse> => {
     if (results.length === 0) return initialResult;
 
@@ -710,7 +747,7 @@ export const createAgent = (
       currentResult = await withRetry(
         () =>
           generateWithOptimizer(
-            buildSystemPrompt(),
+            buildSystemPrompt(mode),
             buildUserPrompt({
               question: rewrittenQuestion,
               retrievedContext: [
@@ -734,7 +771,7 @@ export const createAgent = (
         const regenerated = await withRetry(
           () =>
             llm.generate({
-              instructions: buildSystemPrompt(),
+              instructions: buildSystemPrompt(mode),
               input: buildUserPrompt({
                 question: rewrittenQuestion,
                 retrievedContext: [
@@ -772,7 +809,7 @@ export const createAgent = (
           const regenerated = await withRetry(
             () =>
               llm.generate({
-                instructions: buildSystemPrompt(),
+                instructions: buildSystemPrompt(mode),
                 input: buildUserPrompt({
                   question: rewrittenQuestion,
                   retrievedContext: [
@@ -815,13 +852,26 @@ export const createAgent = (
       tenantId,
       sessionId,
       question,
+      documentIds,
+      retrievalMode,
     }: AgentContext): Promise<AgentExecutionResult> {
       const agentContext = { tenantId, sessionId };
-      const cachedResult = cache.get({ tenantId, sessionId, question });
+      const selectedMode: RetrievalMode = retrievalMode ??
+        (documentIds && documentIds.length > 0 ? "document" : "general");
+      if (selectedMode === "system") {
+        return {
+          text: buildSystemObservabilityResponse(question),
+          model: "system-observability",
+          responseId: `system-observability-${Date.now()}`,
+          sources: [],
+        };
+      }
+      const requestKey = `${selectedMode}:${documentIds?.join(",") ?? ""}:${question}`;
+      const cachedResult = cache.get({ tenantId, sessionId, question: requestKey });
       if (cachedResult) return cachedResult;
 
       return deduplicator.execute(
-        { tenantId, sessionId, question },
+        { tenantId, sessionId, question: requestKey },
         async () => {
           const input = validateInput({ message: question });
           !input.allowed &&
@@ -834,9 +884,12 @@ export const createAgent = (
             })();
 
           const history = memory.get(tenantId, sessionId);
+          const summaryIntent = selectedMode === "document" && isDocumentSummaryIntent(question);
+          const standaloneEntityLookup = /^[a-z0-9_$.-]+$/i.test(question.trim());
+          const modeHistory = formatConversation(history, selectedMode);
           const conversationContext =
-            history.length > 0
-              ? costOptimizer.summarizeIfNeeded(formatConversation(history))
+            !summaryIntent && !standaloneEntityLookup && modeHistory.length > 0
+              ? costOptimizer.summarizeIfNeeded(modeHistory)
               : undefined;
 
           const rewrittenQuestion = await withTimeout(
@@ -861,6 +914,9 @@ export const createAgent = (
             question: rewrittenQuestion,
             hasConversationContext: conversationContext !== undefined,
           });
+          const action = selectedMode === "code" || selectedMode === "document" || selectedMode === "mixed"
+            ? "retrieve"
+            : plan.action;
 
           const inputPrompt = buildUserPrompt({
             question: rewrittenQuestion,
@@ -874,26 +930,47 @@ export const createAgent = (
           };
 
           const initialResult = await executeInitialGeneration(
-            plan.action,
+            action,
             inputPrompt,
             rewrittenQuestion,
             toolContext,
             agentContext,
+            selectedMode,
           );
 
           const results = await executeRetrieval(
-            plan.action,
+            action,
             rewrittenQuestion,
             agentContext,
+            selectedMode,
+            documentIds,
           );
 
-          const finalResult = await verifyAndRefineAnswer(
-            initialResult,
-            results,
-            rewrittenQuestion,
-            conversationContext,
-            agentContext,
+          const symbolEvidence = results.filter(
+            (result) => result.metadata?.type === "symbol_lookup" && result.metadata.pathValidated === "true",
           );
+          const fileEvidence = results.filter((result) => result.metadata?.type === "file_lookup");
+          const deterministicEvidence = symbolEvidence.length > 0 || fileEvidence.length > 0;
+          const finalResult = deterministicEvidence
+            ? {
+                id: `symbol-lookup-${Date.now()}`,
+                model: "deterministic-repository-lookup",
+                text: symbolEvidence.length > 0
+                  ? symbolEvidence.map((result, index) =>
+                      `\`${result.metadata?.symbol ?? "The symbol"}\` is implemented in \`${result.metadata?.filePath ?? result.source}\` at lines ${result.metadata?.startLine ?? "?"}-${result.metadata?.endLine ?? result.metadata?.startLine ?? "?"} [S${index + 1}].`,
+                    ).join("\n")
+                  : fileEvidence[0]?.source === "repository-index"
+                  ? fileEvidence[0].content
+                  : fileEvidence.map((result) => `\`${result.metadata?.requestedFilename ?? "File"}\` exists at \`${result.metadata?.filePath ?? result.source}\`.`).join("\n"),
+              }
+            : await verifyAndRefineAnswer(
+                initialResult,
+                results,
+                rewrittenQuestion,
+                conversationContext,
+                agentContext,
+                selectedMode,
+              );
 
           const output = validateOutput({ response: finalResult.text });
           (!output.allowed || output.response === undefined) &&
@@ -905,10 +982,11 @@ export const createAgent = (
               );
             })();
 
-          memory.add(tenantId, sessionId, { role: "user", content: question });
+          memory.add(tenantId, sessionId, { role: "user", content: question, mode: selectedMode });
           memory.add(tenantId, sessionId, {
             role: "assistant",
-            content: output.response!,
+            content: compactMemoryContent(output.response!),
+            mode: selectedMode,
           });
 
           logger.info("Agent execution completed", {
@@ -919,7 +997,7 @@ export const createAgent = (
               model: finalResult.model,
               responseId: finalResult.id,
               sourcesCount: results.length,
-              planAction: plan.action,
+              planAction: action,
             },
           });
 
@@ -927,10 +1005,14 @@ export const createAgent = (
             text: output.response!,
             model: finalResult.model,
             responseId: finalResult.id,
-            sources: results,
+            sources: selectedMode === "document"
+              ? results.filter((result) => result.sourceType === "document")
+              : selectedMode === "code"
+              ? results.filter((result) => result.sourceType !== "document")
+              : results,
           };
 
-          cache.set({ tenantId, sessionId, question }, executionResult);
+          cache.set({ tenantId, sessionId, question: requestKey }, executionResult);
           return executionResult;
         },
       );

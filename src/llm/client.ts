@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import Groq from "groq-sdk";
 
 import { env } from "../config/env.js";
+import { mockProvider } from "./mock-client.js";
 import type {
   LlmProvider,
   LlmRequest,
@@ -205,35 +206,45 @@ export const generateText = async ({
   instructions,
   input,
 }: LlmRequest): Promise<LlmResponse> => {
-  return callGroqWithFallback(async (selectedModel) => {
-    const response = await client.chat.completions.create({
-      model: selectedModel,
-      max_tokens: MAX_COMPLETION_TOKENS,
-      messages: [
-        {
-          role: "system",
-          content: instructions,
-        },
-        {
-          role: "user",
-          content: input,
-        },
-      ],
+  if (process.env.NODE_ENV === "test" || env.nodeEnv === "test") {
+    return mockProvider.generate({ instructions, input });
+  }
+  try {
+    return await callGroqWithFallback(async (selectedModel) => {
+      const response = await client.chat.completions.create({
+        model: selectedModel,
+        max_tokens: MAX_COMPLETION_TOKENS,
+        messages: [
+          {
+            role: "system",
+            content: instructions,
+          },
+          {
+            role: "user",
+            content: input,
+          },
+        ],
+      });
+
+      const rawText = response.choices[0]?.message.content?.trim() ?? "";
+      const text = stripThinkingTags(rawText);
+
+      if (!text) {
+        throw new Error("LLM returned an empty response");
+      }
+
+      return {
+        id: response.id,
+        model: response.model,
+        text,
+      };
     });
-
-    const rawText = response.choices[0]?.message.content?.trim() ?? "";
-    const text = stripThinkingTags(rawText);
-
-    if (!text) {
-      throw new Error("LLM returned an empty response");
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
     }
-
-    return {
-      id: response.id,
-      model: response.model,
-      text,
-    };
-  });
+    throw new Error("Groq text generation failed");
+  }
 };
 
 export const groqProvider: LlmProvider = {

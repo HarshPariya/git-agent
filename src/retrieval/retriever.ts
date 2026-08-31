@@ -1,4 +1,5 @@
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { parseRepository } from "../ingestion/parser.js";
 import { chunkRepository, type CodeChunk } from "../ingestion/chunker.js";
 import { extractEntities } from "../graph/entity-extractor.js";
@@ -25,25 +26,25 @@ import { metricsCollector } from "../monitoring/observability.js";
 import { setHnswSearchPrecision } from "../db/hnsw-tuning.js";
 
 export interface RetrieverOptions {
-  limit?: number;
-  vectorWeight?: number;
-  graphWeight?: number;
-  graphMaxDepth?: number;
-  filterOptions?: VectorSearchFilterOptions;
+  limit?: number | undefined;
+  vectorWeight?: number | undefined;
+  graphWeight?: number | undefined;
+  graphMaxDepth?: number | undefined;
+  filterOptions?: VectorSearchFilterOptions | undefined;
 }
 
 export interface RetrievedContext {
   rank: number;
   name: string;
-  type?: string;
-  filePath?: string;
-  startLine?: number;
-  endLine?: number;
-  content?: string;
+  type?: string | undefined;
+  filePath?: string | undefined;
+  startLine?: number | undefined;
+  endLine?: number | undefined;
+  content?: string | undefined;
   score: number;
   vectorScore: number;
   graphScore: number;
-  rerankScore?: number;
+  rerankScore?: number | undefined;
   sources: Array<"vector" | "graph">;
 }
 
@@ -53,6 +54,14 @@ export interface RetrieverStats {
   chunks: number;
   graphNodes: number;
   graphEdges: number;
+}
+
+export function parseRequestedFilename(query: string): string | undefined {
+  return query.match(/(?:^|[\s"'`])([a-z0-9_$.-]+\.[a-z0-9]+)(?=$|[\s?.,!"'`])/i)?.[1];
+}
+
+export function parseRequestedSymbol(query: string): string | undefined {
+  return query.match(/\bwhere\s+is\s+([a-z_$][a-z0-9_$]*)\s+(?:implemented|defined|declared|located)\b/i)?.[1];
 }
 
 export class CodeRetriever {
@@ -109,13 +118,17 @@ export class CodeRetriever {
     console.log(`✓ Graph nodes: ${this.graph.nodes.size}`);
     console.log(`✓ Graph edges: ${this.graph.edges.length}`);
 
-    console.log("💾 Persisting vector embeddings to PostgreSQL + pgvector...");
-    await upsertChunks(
-      this.repositoryName,
-      this.chunks,
-      currentHash,
-      this.fileCount,
-    );
+    try {
+      console.log("💾 Persisting vector embeddings to PostgreSQL + pgvector...");
+      await upsertChunks(
+        this.repositoryName,
+        this.chunks,
+        currentHash,
+        this.fileCount,
+      );
+    } catch (err: any) {
+      console.warn("⚠️ Postgres vector upsert skipped (running in AST graph mode):", err?.message || err);
+    }
 
     this.initialized = true;
     console.log("✓ Code Retriever ready.");
@@ -135,19 +148,75 @@ export class CodeRetriever {
     const requestedLimit = validateTopK(options.limit);
     const startTotal = Date.now();
 
-    try {
-      await setHnswSearchPrecision(100);
+    // Location questions containing a literal filename are deterministic and
+    // should not depend on vector similarity or graph entities.
+    const requestedFilename = parseRequestedFilename(sanitizedQuery)?.toLowerCase();
+    const exactFileChunks = requestedFilename ? this.chunks.filter((chunk) => {
+      const basename = path.basename(chunk.filePath).toLowerCase();
+      return basename === requestedFilename;
+    }) : [];
+    const partialFileChunks = requestedFilename && exactFileChunks.length === 0
+      ? this.chunks.filter((chunk) => path.basename(chunk.filePath).toLowerCase().includes(requestedFilename))
+      : [];
+    const fileLookupChunks = exactFileChunks.length > 0 ? exactFileChunks : partialFileChunks;
 
-      const startVector = Date.now();
-      const vectorResults = await pgVectorSearch(sanitizedQuery, {
-        repository: options.filterOptions?.repository ?? this.repositoryName,
-        language: options.filterOptions?.language,
-        chunkType: options.filterOptions?.chunkType,
-        filePathPrefix: options.filterOptions?.filePathPrefix,
-        metadata: options.filterOptions?.metadata,
-        limit: 15,
-      });
-      const vectorMs = Date.now() - startVector;
+    if (fileLookupChunks.length > 0) {
+      const uniqueFiles = new Map<string, CodeChunk>();
+      for (const chunk of fileLookupChunks) {
+        if (!uniqueFiles.has(chunk.filePath)) uniqueFiles.set(chunk.filePath, chunk);
+      }
+      return [...uniqueFiles.values()].slice(0, requestedLimit).map((chunk, index) => ({
+        rank: index + 1,
+        name: chunk.name ?? path.basename(chunk.filePath),
+        type: chunk.type,
+        filePath: chunk.filePath,
+        startLine: chunk.startLine,
+        endLine: chunk.endLine,
+        content: chunk.content,
+        score: 1,
+        vectorScore: 1,
+        graphScore: 0,
+        rerankScore: 1,
+        sources: ["vector"],
+      }));
+    }
+
+    if (requestedFilename) {
+      return [{
+        rank: 1,
+        name: requestedFilename,
+        type: "file",
+        filePath: "repository-index",
+        startLine: 0,
+        endLine: 0,
+        content: `No ${requestedFilename} file exists in the indexed repository.`,
+        score: 1,
+        vectorScore: 0,
+        graphScore: 0,
+        rerankScore: 1,
+        sources: ["vector"],
+      }];
+    }
+
+    try {
+      let vectorResults: any[] = [];
+      let vectorMs = 0;
+
+      try {
+        await setHnswSearchPrecision(100);
+        const startVector = Date.now();
+        vectorResults = await pgVectorSearch(sanitizedQuery, {
+          repository: options.filterOptions?.repository ?? this.repositoryName,
+          language: options.filterOptions?.language,
+          chunkType: options.filterOptions?.chunkType,
+          filePathPrefix: options.filterOptions?.filePathPrefix,
+          metadata: options.filterOptions?.metadata,
+          limit: 15,
+        });
+        vectorMs = Date.now() - startVector;
+      } catch (err: any) {
+        console.warn("⚠️ Postgres vector search skipped (using graph & AST chunk search).");
+      }
 
       const startGraph = Date.now();
       const hybridResults = await hybridSearch(
@@ -200,6 +269,56 @@ export class CodeRetriever {
       metricsCollector.recordRetrieval(totalMs, 0, 0, 0, false);
       throw err;
     }
+  }
+
+  async search(request: { readonly query: string; readonly limit?: number }): Promise<readonly { readonly content: string; readonly source: string; readonly score: number; readonly metadata?: Readonly<Record<string, string>> }[]> {
+    if (!this.initialized) {
+      return [];
+    }
+    const requestedSymbol = parseRequestedSymbol(request.query);
+    if (requestedSymbol) {
+      const matches = this.chunks.filter(
+        (chunk) => chunk.name?.toLowerCase() === requestedSymbol.toLowerCase() && existsSync(chunk.filePath),
+      );
+      return matches.slice(0, request.limit ?? 10).map((chunk) => {
+        const relativePath = path.relative(this.rootDirectory, chunk.filePath).replace(/\\/g, "/");
+        return {
+          content: chunk.content,
+          source: relativePath,
+          score: 1,
+          metadata: {
+            type: "symbol_lookup",
+            symbol: requestedSymbol,
+            filePath: relativePath,
+            startLine: String(chunk.startLine),
+            endLine: String(chunk.endLine),
+            pathValidated: "true",
+            retrievalSources: "ast",
+          },
+        };
+      });
+    }
+    const results = await this.retrieve(request.query, { limit: request.limit });
+    const requestedFilename = parseRequestedFilename(request.query);
+    return results.map((r) => {
+      const metadata: Record<string, string> = {
+        type: requestedFilename ? "file_lookup" : r.type || "",
+        startLine: String(r.startLine || 0),
+        endLine: String(r.endLine || 0),
+        retrievalSources: r.sources.join(","),
+      };
+      if (requestedFilename) metadata.requestedFilename = requestedFilename;
+      if (requestedFilename && r.filePath && r.filePath !== "repository-index") {
+        metadata.filePath = r.filePath;
+        metadata.pathValidated = "true";
+      }
+      return {
+        content: r.content || r.name,
+        source: r.filePath || r.name,
+        score: r.score,
+        metadata,
+      };
+    });
   }
 
   getStats(): RetrieverStats {

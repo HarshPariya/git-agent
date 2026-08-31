@@ -53,6 +53,12 @@ const SUPPORTED_EXTENSIONS = new Set([
   ".cjs",
   ".py",
   ".json",
+  ".html",
+  ".css",
+  ".md",
+  ".sql",
+  ".yml",
+  ".yaml",
 ]);
 
 export function detectLanguage(filePath: string): SupportedLanguage {
@@ -86,6 +92,9 @@ function findBlockEnd(lines: string[], startIndex: number): number {
 
   for (let index = startIndex; index < lines.length; index++) {
     const line = lines[index];
+    if (!line) {
+      continue;
+    }
 
     for (const character of line) {
       if (character === "{") {
@@ -120,7 +129,7 @@ function extractImports(
         /^import\s+(.+?)\s+from\s+["'](.+?)["']/,
       );
 
-      if (fromMatch) {
+      if (fromMatch && fromMatch[1] && fromMatch[2]) {
         const rawNames = fromMatch[1];
         const source = fromMatch[2];
 
@@ -141,7 +150,7 @@ function extractImports(
 
       const sideEffectMatch = trimmed.match(/^import\s+["'](.+?)["']/);
 
-      if (sideEffectMatch) {
+      if (sideEffectMatch && sideEffectMatch[1]) {
         imports.push({
           source: sideEffectMatch[1],
           names: [],
@@ -159,7 +168,7 @@ function extractImports(
         /^from\s+([\w.]+)\s+import\s+(.+)$/,
       );
 
-      if (fromMatch) {
+      if (fromMatch && fromMatch[1] && fromMatch[2]) {
         imports.push({
           source: fromMatch[1],
           names: fromMatch[2]
@@ -174,7 +183,7 @@ function extractImports(
 
       const importMatch = trimmed.match(/^import\s+(.+)$/);
 
-      if (importMatch) {
+      if (importMatch && importMatch[1]) {
         const modules = importMatch[1]
           .split(",")
           .map((name) => name.trim())
@@ -194,7 +203,7 @@ function extractImports(
   return imports;
 }
 
-function extractJavaScriptFunctions(lines: string[]): ParsedFunction[] {
+export function extractJavaScriptFunctions(lines: string[]): ParsedFunction[] {
   const functions: ParsedFunction[] = [];
 
   const patterns = [
@@ -204,12 +213,16 @@ function extractJavaScriptFunctions(lines: string[]): ParsedFunction[] {
   ];
 
   for (let index = 0; index < lines.length; index++) {
-    const trimmed = lines[index].trim();
+    const line = lines[index];
+    if (!line) {
+      continue;
+    }
+    const trimmed = line.trim();
 
     for (const pattern of patterns) {
       const match = trimmed.match(pattern);
 
-      if (!match) {
+      if (!match || !match[1]) {
         continue;
       }
 
@@ -234,9 +247,12 @@ function extractPythonFunctions(lines: string[]): ParsedFunction[] {
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
+    if (!line) {
+      continue;
+    }
     const match = line.match(/^(\s*)def\s+([A-Za-z_]\w*)\s*\(/);
 
-    if (!match) {
+    if (!match || !match[1] || !match[2]) {
       continue;
     }
 
@@ -245,13 +261,16 @@ function extractPythonFunctions(lines: string[]): ParsedFunction[] {
 
     for (let nextIndex = index + 1; nextIndex < lines.length; nextIndex++) {
       const nextLine = lines[nextIndex];
+      if (!nextLine) {
+        break;
+      }
 
       if (nextLine.trim() === "") {
         endIndex = nextIndex;
         continue;
       }
 
-      const nextIndentation = nextLine.match(/^\s*/)?.[0].length ?? 0;
+      const nextIndentation = nextLine.match(/^\s*/)?.[0]?.length ?? 0;
 
       if (nextIndentation <= indentation) {
         break;
@@ -271,17 +290,21 @@ function extractPythonFunctions(lines: string[]): ParsedFunction[] {
   return functions;
 }
 
-function extractJavaScriptClasses(lines: string[]): ParsedClass[] {
+export function extractJavaScriptClasses(lines: string[]): ParsedClass[] {
   const classes: ParsedClass[] = [];
 
   for (let index = 0; index < lines.length; index++) {
-    const trimmed = lines[index].trim();
+    const line = lines[index];
+    if (!line) {
+      continue;
+    }
+    const trimmed = line.trim();
 
     const match = trimmed.match(
       /^(?:export\s+)?(?:default\s+)?class\s+([A-Za-z_$][\w$]*)/,
     );
 
-    if (!match) {
+    if (!match || !match[1]) {
       continue;
     }
 
@@ -303,9 +326,12 @@ function extractPythonClasses(lines: string[]): ParsedClass[] {
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
+    if (!line) {
+      continue;
+    }
     const match = line.match(/^(\s*)class\s+([A-Za-z_]\w*)/);
 
-    if (!match) {
+    if (!match || !match[1] || !match[2]) {
       continue;
     }
 
@@ -314,13 +340,16 @@ function extractPythonClasses(lines: string[]): ParsedClass[] {
 
     for (let nextIndex = index + 1; nextIndex < lines.length; nextIndex++) {
       const nextLine = lines[nextIndex];
+      if (!nextLine) {
+        break;
+      }
 
       if (nextLine.trim() === "") {
         endIndex = nextIndex;
         continue;
       }
 
-      const nextIndentation = nextLine.match(/^\s*/)?.[0].length ?? 0;
+      const nextIndentation = nextLine.match(/^\s*/)?.[0]?.length ?? 0;
 
       if (nextIndentation <= indentation) {
         break;

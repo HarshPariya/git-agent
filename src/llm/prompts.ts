@@ -34,7 +34,16 @@ You operate as an autonomous coding assistant capable of understanding questions
 7. **Security**: Maintain strict security hygiene. Never expose raw API keys, passwords, private keys, or environment secrets.
 `.trim();
 
-export const buildSystemPrompt = (): string => SYSTEM_PROMPT;
+const RAG_MODE_PROMPTS: Readonly<Record<string, string>> = {
+  document: "You are a document assistant. Answer only from selected-document evidence. Never use or cite code evidence. If the fact is absent, say it is not available in the document.",
+  code: "You are a code-repository assistant. Ground answers only in retrieved repository evidence and reproduce retrieved file paths exactly.",
+  mixed: "You are a mixed code and document assistant. Clearly distinguish repository evidence from uploaded-document evidence.",
+  general: "Answer general questions directly. Do not invent RAG citations.",
+  system: "Answer only from supplied application observability data. Do not search documents or repository code.",
+};
+
+export const buildSystemPrompt = (mode?: string): string =>
+  [SYSTEM_PROMPT, mode ? RAG_MODE_PROMPTS[mode] : undefined].filter(Boolean).join("\n\n");
 
 export const buildUserPrompt = ({
   question,

@@ -15,21 +15,21 @@ import {
 } from "./graph-search.js";
 
 export interface HybridSearchOptions {
-  limit?: number;
+  limit?: number | undefined;
 
-  graphLimit?: number;
+  graphLimit?: number | undefined;
 
-  graphMaxDepth?: number;
+  graphMaxDepth?: number | undefined;
 
-  vectorWeight?: number;
-  graphWeight?: number;
+  vectorWeight?: number | undefined;
+  graphWeight?: number | undefined;
 }
 
 export interface HybridSearchResult {
-  chunk?: CodeChunk;
+  chunk?: CodeChunk | undefined;
 
   name: string;
-  filePath?: string;
+  filePath?: string | undefined;
 
   vectorScore: number;
   graphScore: number;
@@ -40,9 +40,9 @@ export interface HybridSearchResult {
     "vector" | "graph"
   >;
 
-  graphDepth?: number;
+  graphDepth?: number | undefined;
 
-  graphMatchType?: string;
+  graphMatchType?: string | undefined;
 }
 
 function normalizeVectorScores(
