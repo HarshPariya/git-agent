@@ -1,14 +1,7 @@
-import type { Message } from "../agent/memory.js";
+import type { Message } from "../types/agent.js";
+import type { MemoryStore } from "../types/services.js";
 
-export interface MemoryStore {
-  get(tenantId: string, sessionId: string): Promise<readonly Message[]>;
-  add(
-    tenantId: string,
-    sessionId: string,
-    message: Message
-  ): Promise<void>;
-  clear(tenantId: string, sessionId: string): Promise<void>;
-}
+export type { MemoryStore };
 
 export class InMemoryStore implements MemoryStore {
   private readonly sessions = new Map<string, Message[]>();
@@ -19,7 +12,7 @@ export class InMemoryStore implements MemoryStore {
 
   async get(
     tenantId: string,
-    sessionId: string
+    sessionId: string,
   ): Promise<readonly Message[]> {
     return this.sessions.get(this.key(tenantId, sessionId)) ?? [];
   }
@@ -27,7 +20,7 @@ export class InMemoryStore implements MemoryStore {
   async add(
     tenantId: string,
     sessionId: string,
-    message: Message
+    message: Message,
   ): Promise<void> {
     const key = this.key(tenantId, sessionId);
     const messages = this.sessions.get(key) ?? [];
@@ -38,7 +31,7 @@ export class InMemoryStore implements MemoryStore {
 
   async clear(
     tenantId: string,
-    sessionId: string
+    sessionId: string,
   ): Promise<void> {
     this.sessions.delete(this.key(tenantId, sessionId));
   }
