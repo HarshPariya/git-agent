@@ -173,7 +173,7 @@ export const generateText = async ({
       text,
     };
   } catch (error) {
-    if (env.nodeEnv === "test") {
+    if (process.env.NODE_ENV === "test" || env.nodeEnv === "test") {
       return mockProvider.generate({ instructions, input });
     }
     if (error instanceof Error) {
