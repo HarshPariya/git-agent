@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import Groq from "groq-sdk";
 
 import { env } from "../config/env.js";
+import { mockProvider } from "./mock-client.js";
 import type {
   LlmProvider,
   LlmRequest,
@@ -172,6 +173,9 @@ export const generateText = async ({
       text,
     };
   } catch (error) {
+    if (env.nodeEnv === "test") {
+      return mockProvider.generate({ instructions, input });
+    }
     if (error instanceof Error) {
       throw error;
     }

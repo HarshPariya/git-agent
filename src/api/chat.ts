@@ -9,6 +9,9 @@ import { MockRetriever } from "../retrieval/mock-retriever.js";
 import { UnifiedRetriever } from "../retrieval/unified-retriever.js";
 import { routeQuery } from "../agent/retrieval-router.js";
 
+import { env } from "../config/env.js";
+import { mockProvider } from "../llm/mock-client.js";
+
 const codeRetriever = new CodeRetriever(process.cwd());
 const unifiedRetriever = new UnifiedRetriever(codeRetriever);
 const memory = new ConversationMemory();
@@ -27,7 +30,7 @@ const initializeRetriever = (): Promise<boolean> => {
 const getAgent = async () => createAgent(
   memory,
   (await initializeRetriever()) ? unifiedRetriever : new MockRetriever(),
-  groqProvider,
+  env.nodeEnv === "test" ? mockProvider : groqProvider,
 );
 
 const validateField = (value: unknown, field: string): string => {
