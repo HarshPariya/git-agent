@@ -103,7 +103,7 @@ export class RepositoryIndexer {
     this.watcher = fsSync.watch(
       this.rootDirectory,
       { recursive: true },
-      (eventType, filename) => {
+      (_eventType, filename) => {
         if (!filename) {
           return;
         }

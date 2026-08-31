@@ -1,5 +1,5 @@
-import { CodeRetriever, type RetrievedContext } from "./retriever.js";
-import { analyzeImpact, type ImpactAnalysisReport } from "../tools/impact-analysis.js";
+import type { RetrievedContext } from "./retriever.js";
+import type { ImpactAnalysisReport } from "../tools/impact-analysis.js";
 
 export interface ExplainableRetrievedContext extends RetrievedContext {
   explanation: {

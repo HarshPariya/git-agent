@@ -29,6 +29,15 @@
       <button class="shortcut-btn" data-query="Where is normalizeId used?">🔎 Find normalizeId Usages</button>
     </div>
 
+    <div class="sidebar-section">
+      <div class="section-title">Knowledge Documents</div>
+      <button id="btn-upload-doc" class="shortcut-btn upload-doc-btn">
+        <span>📎 Upload Document</span>
+      </button>
+      <input type="file" id="file-input" accept=".pdf,.docx,.txt,.md" style="display: none;" />
+      <div id="uploaded-docs-list" class="uploaded-docs-list"></div>
+    </div>
+
     <div class="sidebar-footer">
       <div class="system-health">
         <span class="health-dot online"></span>
@@ -42,13 +51,10 @@
 
     <!-- Top Chat Navigation Bar -->
     <header class="chat-topbar">
-      <div class="model-selector">
-        <span class="model-icon">🔮</span>
-        <select id="model-select">
-          <option value="graphrag">GraphRAG Hybrid (Vector + AST Knowledge Graph)</option>
-          <option value="vector">Vector Search Only (pgvector)</option>
-          <option value="impact">AST Impact Debugger Mode</option>
-        </select>
+      <div class="permanent-rag-badge">
+        <span class="badge-icon">⚡</span>
+        <span class="badge-title">GraphRAG Hybrid</span>
+        <span class="badge-sub">(Vector + AST Knowledge Graph + Document RAG)</span>
       </div>
 
       <div class="topbar-actions">
@@ -60,8 +66,8 @@
     <div id="chat-messages-container" class="messages-container">
       <div class="welcome-card glass-panel">
         <div class="welcome-icon">⚡</div>
-        <h2>GraphRAG AI Code Assistant</h2>
-        <p>Ask questions about your codebase, debug functions, or analyze impact paths in real-time.</p>
+        <h2>GraphRAG AI Code & Document Assistant</h2>
+        <p>Ask questions about your codebase, debug functions, analyze impact paths, or chat with uploaded PDF/DOCX specifications in real-time.</p>
         
         <div class="prompt-grid">
           <button class="prompt-card" data-prompt="How does graph traversal work?">
@@ -87,6 +93,7 @@
     <!-- Bottom Fixed Input Bar -->
     <footer class="input-container">
       <div class="input-wrapper glass-panel">
+        <button id="btn-attach" class="btn-attach" title="Upload Document (.pdf, .docx, .txt, .md)">📎</button>
         <textarea id="user-input" placeholder="Message CodeGPT or type /impact <symbol>..." rows="1"></textarea>
         <button id="btn-send" class="btn-send">
           <span>Send</span> 🚀

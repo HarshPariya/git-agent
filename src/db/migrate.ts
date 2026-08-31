@@ -42,7 +42,7 @@ export async function runMigrations(
 
   for (const file of files) {
     const match = file.match(/^(\d+)_/);
-    if (!match) {
+    if (!match || !match[1]) {
       continue;
     }
 

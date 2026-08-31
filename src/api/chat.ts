@@ -4,19 +4,41 @@ import { createAgent } from "../agent/orchestrator.js";
 import { ConversationMemory } from "../agent/memory.js";
 import { AppError } from "../errors/app-error.js";
 import { groqProvider } from "../llm/client.js";
+import { CodeRetriever } from "../retrieval/retriever.js";
 import { MockRetriever } from "../retrieval/mock-retriever.js";
 
 interface ChatBody {
   readonly tenantId?: unknown;
   readonly message?: unknown;
   readonly sessionId?: unknown;
+  readonly documentIds?: unknown;
+  readonly retrievalMode?: unknown;
 }
 
-const agent = createAgent(
-  new ConversationMemory(),
-  new MockRetriever(),
-  groqProvider,
-);
+import { UnifiedRetriever } from "../retrieval/unified-retriever.js";
+import { routeQuery } from "../agent/retrieval-router.js";
+
+const codeRetriever = new CodeRetriever(process.cwd());
+const unifiedRetriever = new UnifiedRetriever(codeRetriever);
+let isRetrieverInitialized = false;
+
+const memory = new ConversationMemory();
+
+async function getAgent() {
+  if (!isRetrieverInitialized) {
+    try {
+      await codeRetriever.initialize();
+      isRetrieverInitialized = true;
+    } catch (err) {
+      console.warn("⚠️ Failed to initialize CodeRetriever, using fallback:", err);
+    }
+  }
+  return createAgent(
+    memory,
+    isRetrieverInitialized ? unifiedRetriever : new MockRetriever(),
+    groqProvider,
+  );
+}
 
 const getBody = (body: unknown): ChatBody =>
   typeof body === "object" && body !== null ? (body as ChatBody) : {};
@@ -51,17 +73,42 @@ export async function chatHandler(
 ): Promise<void> {
   try {
     const body = getBody(request.body);
-    const tenantId = getString(body.tenantId, "Tenant ID");
+    const tenantId =
+      body.tenantId !== undefined && body.tenantId !== null
+        ? getString(body.tenantId, "Tenant ID")
+        : "default-tenant";
     const message = getString(body.message, "Message");
-    const sessionId = getString(body.sessionId, "Session ID");
+    const sessionId =
+      body.sessionId !== undefined && body.sessionId !== null
+        ? getString(body.sessionId, "Session ID")
+        : "default-session";
 
+    const documentIds =
+      Array.isArray(body.documentIds) && body.documentIds.every((id: unknown) => typeof id === "string")
+        ? (body.documentIds as string[])
+        : undefined;
+
+    const route = routeQuery({
+      query: message,
+      hasUploadedDocuments: Boolean(documentIds?.length),
+      ...(documentIds !== undefined && { documentIds }),
+    });
+
+    console.log(
+      `[ROUTER] query="${message}" mode=${route.mode} reason="${route.reason}" selectedDocumentIds=${JSON.stringify(documentIds || [])}`,
+    );
+
+    const agent = await getAgent();
     const result = await agent.run({
       tenantId,
       sessionId,
       question: message,
+      ...(documentIds !== undefined && { documentIds }),
+      retrievalMode: route.mode,
     });
 
     response.status(200).json({
+      content: result.text,
       message: result.text,
       model: result.model,
       responseId: result.responseId,

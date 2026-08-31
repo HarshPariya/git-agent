@@ -68,3 +68,20 @@ test("runs the retrieval pipeline and returns sources", async () => {
   assert.equal(result.responseId, "pipeline-refund");
   assert.match(result.text, /\[refund-policy\.pdf page 4\]/i);
 });
+
+test("serves system metrics deterministically without RAG citations", async () => {
+  const agent = createTestAgent();
+
+  const result = await agent.run({
+    tenantId: "tenant-1",
+    sessionId: "pipeline-system",
+    question: "/metrics",
+    documentIds: ["selected-document"],
+    retrievalMode: "system",
+  });
+
+  assert.equal(result.model, "system-observability");
+  assert.equal(result.sources.length, 0);
+  assert.match(result.text, /rag_retrieval_requests_total/);
+  assert.doesNotMatch(result.text, /provided documents/i);
+});

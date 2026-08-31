@@ -7,6 +7,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const healthText = document.getElementById("sidebar-health-text");
 
   let chatHistory = [];
+  const activeDocumentIds = new Set();
 
   // Health Polling
   async function checkHealth() {
@@ -128,17 +129,25 @@ document.addEventListener("DOMContentLoaded", () => {
     chatContainer.scrollTop = chatContainer.scrollHeight;
 
     try {
+      const docIdsArray = Array.from(activeDocumentIds);
+      console.log("[UI] selectedDocumentIds=", docIdsArray);
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: query, history: chatHistory }),
+        body: JSON.stringify({
+          message: query,
+          history: chatHistory,
+          ...(docIdsArray.length > 0 && { documentIds: docIdsArray }),
+        }),
       });
 
       const data = await res.json();
       document.getElementById(typingId)?.remove();
 
-      appendRow("assistant", data.content);
-      chatHistory.push({ role: "assistant", content: data.content });
+      const botText = data.content || data.message || data.text || "Hello! How can I assist you with your codebase today?";
+      appendRow("assistant", botText);
+      chatHistory.push({ role: "assistant", content: botText });
     } catch (err) {
       document.getElementById(typingId)?.remove();
       appendRow("assistant", `❌ **Error**: ${err.message}`);
@@ -211,6 +220,114 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btnNewChat) btnNewChat.addEventListener("click", clearFn);
   }
 
+  // Document Upload Elements
+  const btnUploadDoc = document.getElementById("btn-upload-doc");
+  const btnAttach = document.getElementById("btn-attach");
+  const fileInput = document.getElementById("file-input");
+  const uploadedDocsList = document.getElementById("uploaded-docs-list");
+
+  // Document Upload Handlers
+  const triggerUpload = () => fileInput?.click();
+  if (btnUploadDoc) btnUploadDoc.addEventListener("click", triggerUpload);
+  if (btnAttach) btnAttach.addEventListener("click", triggerUpload);
+
+  if (fileInput) {
+    fileInput.addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const filename = file.name;
+      const mimeType = file.type || "text/plain";
+
+      // Show uploading indicator in chat
+      appendRow("assistant", `⏳ **Uploading & Indexing Document**: \`${filename}\` (${(file.size / 1024).toFixed(1)} KB)...`);
+
+      try {
+        const buffer = await file.arrayBuffer();
+        const res = await fetch(`/api/documents/upload?filename=${encodeURIComponent(filename)}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": mimeType,
+            "x-tenant-id": "default-tenant",
+          },
+          body: buffer,
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error?.message || data.message || "Upload failed");
+        }
+
+        const storageLabel = data.document.storage === "postgres"
+          ? "PostgreSQL/pgvector"
+          : "temporary in-memory fallback";
+        appendRow("assistant", `✅ **Document Successfully Indexed!**\n- **Filename**: \`${data.document.filename}\`\n- **Status**: \`${data.document.status.toUpperCase()}\`\n- **Quality**: \`${data.document.quality.toUpperCase()}\` (Score: ${data.document.score})\n- **Vector Chunks**: \`${data.document.chunks}\` chunks indexed in ${storageLabel}.\n\nYou can now ask questions about the contents of \`${filename}\`!`);
+
+        loadDocuments();
+      } catch (err) {
+        appendRow("assistant", `❌ **Document Upload Error**: ${err.message}`);
+      } finally {
+        fileInput.value = "";
+      }
+    });
+  }
+
+  async function loadDocuments() {
+    if (!uploadedDocsList) return;
+    try {
+      const res = await fetch("/api/documents", {
+        headers: { "x-tenant-id": "default-tenant" },
+      });
+      const data = await res.json();
+      const docs = data.documents || [];
+
+      activeDocumentIds.clear();
+
+      if (docs.length === 0) {
+        uploadedDocsList.innerHTML = `<span style="font-size: 0.75rem; color: var(--text-muted);">No documents uploaded yet.</span>`;
+        return;
+      }
+
+      docs.forEach((d) => activeDocumentIds.add(d.id));
+
+      uploadedDocsList.innerHTML = docs
+        .map(
+          (d) => `
+          <div class="doc-item active-doc" data-id="${d.id}">
+            <span class="doc-name" title="${escapeHtml(d.filename)}">📄 ${escapeHtml(d.filename)}</span>
+            <button class="btn-delete-doc" data-id="${d.id}" title="Delete document">🗑️</button>
+          </div>
+        `,
+        )
+        .join("");
+
+      // Add delete click handlers
+      uploadedDocsList.querySelectorAll(".btn-delete-doc").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          const id = e.currentTarget.getAttribute("data-id");
+          if (!id) return;
+
+          try {
+            const deleteResponse = await fetch(`/api/documents/${id}`, {
+              method: "DELETE",
+              headers: { "x-tenant-id": "default-tenant" },
+            });
+            if (!deleteResponse.ok) {
+              const errorBody = await deleteResponse.json().catch(() => ({}));
+              throw new Error(errorBody.error?.message || "Document deletion failed");
+            }
+            loadDocuments();
+          } catch (err) {
+            console.error("Delete doc error:", err);
+          }
+        });
+      });
+    } catch (err) {
+      console.warn("Load documents error:", err);
+    }
+  }
+
+  loadDocuments();
   checkHealth();
   setInterval(checkHealth, 5000);
 });
