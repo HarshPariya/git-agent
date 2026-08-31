@@ -166,9 +166,9 @@ test("filename lookup is deterministic for exact hits and absence", async () => 
   const critic = await codeRetriever.search({ query: "Where is critic.ts?", limit: 4 });
   assert.ok(critic[0]?.source.replace(/\\/g, "/").endsWith("/src/agent/critic.ts"));
 
-  const missing = await codeRetriever.search({ query: "Where is agent.ts?", limit: 4 });
+  const missing = await codeRetriever.search({ query: "Where is legacy-agent.ts?", limit: 4 });
   assert.equal(missing.length, 1);
-  assert.match(missing[0]?.content ?? "", /No agent\.ts file exists/i);
+  assert.match(missing[0]?.content ?? "", /No legacy-agent\.ts file exists/i);
   assert.equal(missing[0]?.source, "repository-index");
 });
 
