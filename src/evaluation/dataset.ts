@@ -1,10 +1,6 @@
-export interface EvaluationCase {
-  readonly id: string;
-  readonly question: string;
-  readonly expectedResponseId: string;
-  readonly expectRetrieval: boolean;
-  readonly expectedSource?: string;
-}
+import type { EvaluationCase } from "../types/evaluation.js";
+
+export type { EvaluationCase };
 
 export const evaluationDataset: readonly EvaluationCase[] = [
   {
@@ -19,6 +15,7 @@ export const evaluationDataset: readonly EvaluationCase[] = [
     expectedResponseId: "mock-refund",
     expectRetrieval: true,
     expectedSource: "refund-policy.pdf",
+    expectedCitations: ["refund-policy.pdf"],
   },
   {
     id: "product-pricing",
@@ -26,5 +23,6 @@ export const evaluationDataset: readonly EvaluationCase[] = [
     expectedResponseId: "mock-pricing",
     expectRetrieval: true,
     expectedSource: "product-a-pricing.pdf",
+    expectedCitations: ["product-a-pricing.pdf"],
   },
 ];

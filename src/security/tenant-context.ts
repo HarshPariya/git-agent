@@ -1,7 +1,6 @@
-export interface TenantContext {
-  readonly tenantId: string;
-  readonly userId: string;
-}
+import type { TenantContext } from "../types/security.js";
+
+export type { TenantContext };
 
 export const createTenantContext = (
   tenantId: string,
@@ -10,9 +9,10 @@ export const createTenantContext = (
   const normalizedTenantId = tenantId.trim();
   const normalizedUserId = userId.trim();
 
-  if (!normalizedTenantId || !normalizedUserId) {
-    throw new Error("Invalid tenant context");
-  }
+  (!normalizedTenantId || !normalizedUserId) &&
+    (() => {
+      throw new Error("Invalid tenant context");
+    })();
 
   return Object.freeze({
     tenantId: normalizedTenantId,

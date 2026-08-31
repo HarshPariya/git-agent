@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { createAgent } from "../src/agent/orchestrator.js";
 import { ConversationMemory } from "../src/agent/memory.js";
-import type { LlmProvider } from "../src/llm/types.js";
+import type { LlmProvider } from "../src/types/llm.js";
 import { MockRetriever } from "../src/retrieval/mock-retriever.js";
 
 const mockLlm: LlmProvider = {

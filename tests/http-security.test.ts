@@ -16,8 +16,15 @@ const makeRequest = async (
       throw new Error("Test server address is unavailable");
     }
 
-    return await fetch(`http://127.0.0.1:${address.port}${path}`, init);
+    return await fetch(`http://127.0.0.1:${address.port}${path}`, {
+      ...init,
+      headers: {
+        connection: "close",
+        ...init?.headers,
+      },
+    });
   } finally {
+    server.closeAllConnections?.();
     server.close();
   }
 };

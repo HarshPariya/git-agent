@@ -1,64 +1,46 @@
-export interface OutputGuardRequest {
-  readonly response: string;
-}
+import type {
+  OutputGuardRequest,
+  OutputGuardResult,
+} from "../types/guardrails.js";
 
-export interface OutputGuardResult {
-  readonly allowed: boolean;
-  readonly response?: string;
-  readonly reason?: string;
-}
+export type { OutputGuardRequest, OutputGuardResult };
 
-const MAX_RESPONSE_LENGTH = 8_000;
+const DEFAULT_MAX_RESPONSE_LENGTH = 8_000;
+const MAX_RESPONSE_LENGTH = Number(
+  process.env.MAX_RESPONSE_LENGTH ?? DEFAULT_MAX_RESPONSE_LENGTH,
+);
 
 const SENSITIVE_PATTERNS = [
   /api[_\s-]?key\s*[:=]\s*\S+/i,
+  /api[_\s-]?key\s+is\s+\S+/i,
   /secret\s*[:=]\s*\S+/i,
+  /secret\s+is\s+\S+/i,
   /password\s*[:=]\s*\S+/i,
+  /password\s+is\s+\S+/i,
   /system prompt/i,
   /internal instructions/i,
 ] as const;
 
-const containsSensitiveContent = (response: string): boolean =>
-  SENSITIVE_PATTERNS.some((pattern) => pattern.test(response));
+type OutputRule = (res: string) => string | null;
+
+const OUTPUT_RULES: readonly OutputRule[] = [
+  (res) => (!res ? "The generated response is empty." : null),
+  (res) =>
+    res.length > MAX_RESPONSE_LENGTH
+      ? "The generated response exceeds the maximum allowed length."
+      : null,
+  (res) =>
+    SENSITIVE_PATTERNS.some((pattern) => pattern.test(res))
+      ? "The generated response contains restricted information."
+      : null,
+];
 
 export const validateOutput = ({
   response,
 }: OutputGuardRequest): OutputGuardResult => {
-  const normalizedResponse = response.trim();
-
-  switch (normalizedResponse.length) {
-    case 0:
-      return {
-        allowed: false,
-        reason: "The generated response is empty.",
-      };
-
-    default:
-      break;
-  }
-
-  switch (normalizedResponse.length > MAX_RESPONSE_LENGTH) {
-    case true:
-      return {
-        allowed: false,
-        reason: "The generated response exceeds the maximum allowed length.",
-      };
-
-    default:
-      break;
-  }
-
-  switch (containsSensitiveContent(normalizedResponse)) {
-    case true:
-      return {
-        allowed: false,
-        reason: "The generated response contains restricted information.",
-      };
-
-    default:
-      return {
-        allowed: true,
-        response: normalizedResponse,
-      };
-  }
+  const normalized = response.trim();
+  const failure = OUTPUT_RULES.map((rule) => rule(normalized)).find(Boolean);
+  return failure
+    ? { allowed: false, reason: failure }
+    : { allowed: true, response: normalized };
 };

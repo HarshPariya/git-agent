@@ -10,7 +10,7 @@ import { ToolRegistry } from "../tools/registry.js";
 import type {
   ToolExecutionContext,
   ToolExecutionResult,
-} from "../tools/types.js";
+} from "../types/tools.js";
 
 export interface ToolCallingRequest {
   readonly instructions: string;
@@ -82,9 +82,10 @@ export async function runToolCalling({
   });
 
   for (let round = 0; response.toolCalls.length > 0; round += 1) {
-    if (round >= maxRounds) {
-      throw new Error("Maximum tool-call rounds exceeded");
-    }
+    round >= maxRounds &&
+      (() => {
+        throw new Error("Maximum tool-call rounds exceeded");
+      })();
 
     messages.push(response.message);
 

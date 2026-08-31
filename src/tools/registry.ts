@@ -4,7 +4,7 @@ import type {
   ToolPermission,
   ToolExecutionContext,
   ToolExecutionResult,
-} from "./types.js";
+} from "../types/tools.js";
 import { logger } from "../logging/logger.js";
 
 type RegisteredTool = ToolDefinition<never, unknown>;
@@ -13,50 +13,41 @@ export class ToolRegistry {
   private readonly tools = new Map<string, RegisteredTool>();
 
   register<TInput, TOutput>(tool: ToolDefinition<TInput, TOutput>): void {
-    switch (this.tools.has(tool.name)) {
-      case true:
+    this.tools.has(tool.name) &&
+      (() => {
         throw new Error(`Tool already registered: ${tool.name}`);
-
-      case false:
-        this.tools.set(tool.name, tool as unknown as RegisteredTool);
-        return;
-    }
+      })();
+    this.tools.set(tool.name, tool as unknown as RegisteredTool);
   }
 
   get<TInput, TOutput>(name: string): ToolDefinition<TInput, TOutput> {
-    const tool = this.tools.get(name);
-
-    switch (tool) {
-      case undefined:
+    const tool =
+      this.tools.get(name) ??
+      (() => {
         throw new Error(`Unknown tool: ${name}`);
-
-      default:
-        return tool as unknown as ToolDefinition<TInput, TOutput>;
-    }
+      })();
+    return tool as unknown as ToolDefinition<TInput, TOutput>;
   }
 
   getRuntime(name: string, context: ToolExecutionContext): RuntimeTool {
-    const tool = this.tools.get(name);
-
-    switch (tool) {
-      case undefined:
+    const tool =
+      this.tools.get(name) ??
+      (() => {
         throw new Error(`Unknown tool: ${name}`);
-
-      default:
-        this.checkPermissions(tool.permissions, context.userPermissions);
-        return {
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters,
-          permissions: tool.permissions,
-          timeoutMs: tool.timeoutMs,
-          execute: async (input) =>
-            tool.execute({
-              input: tool.parseInput(input),
-              permissions: context.userPermissions,
-            }),
-        };
-    }
+      })();
+    this.checkPermissions(tool.permissions, context.userPermissions);
+    return {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+      permissions: tool.permissions,
+      timeoutMs: tool.timeoutMs,
+      execute: async (input) =>
+        tool.execute({
+          input: tool.parseInput(input),
+          permissions: context.userPermissions,
+        }),
+    };
   }
 
   list(context?: ToolExecutionContext): readonly RuntimeTool[] {
@@ -81,24 +72,22 @@ export class ToolRegistry {
     required: readonly ToolPermission[],
     user: readonly ToolPermission[],
   ): boolean {
-    if (required.length === 0) {
-      return true;
-    }
-    if (user.length === 0) {
-      return false;
-    }
-    return required.every((p) => user.includes(p));
+    return (
+      required.length === 0 ||
+      (user.length > 0 && required.every((p) => user.includes(p)))
+    );
   }
 
   private checkPermissions(
     required: readonly ToolPermission[],
     user: readonly ToolPermission[],
   ): void {
-    if (!this.hasPermission(required, user)) {
-      throw new Error(
-        `Insufficient permissions for tool. Required: ${required.join(", ")}, User: ${user.join(", ")}`,
-      );
-    }
+    !this.hasPermission(required, user) &&
+      (() => {
+        throw new Error(
+          `Insufficient permissions for tool. Required: ${required.join(", ")}, User: ${user.join(", ")}`,
+        );
+      })();
   }
 
   async executeTool<TOutput>(
@@ -141,25 +130,23 @@ export class ToolRegistry {
       },
     });
 
+    let timer: NodeJS.Timeout | undefined;
     try {
       const parsedInput = tool.parseInput(input);
       const timeoutMs = tool.timeoutMs ?? 30_000;
-
       const executePromise = tool.execute({
         input: parsedInput,
         permissions: context.userPermissions,
       });
 
-      const output = await Promise.race([
-        executePromise,
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error("Tool execution timeout")),
-            timeoutMs,
-          ),
-        ),
-      ]);
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("Tool execution timeout")),
+          timeoutMs,
+        );
+      });
 
+      const output = await Promise.race([executePromise, timeoutPromise]);
       const result: ToolExecutionResult<TOutput> = {
         toolName: name,
         callId: crypto.randomUUID(),
@@ -179,7 +166,6 @@ export class ToolRegistry {
           sessionId: context.sessionId,
         },
       });
-
       return result;
     } catch (error) {
       const result: ToolExecutionResult<TOutput> = {
@@ -202,8 +188,9 @@ export class ToolRegistry {
           sessionId: context.sessionId,
         },
       });
-
       return result;
+    } finally {
+      timer && clearTimeout(timer);
     }
   }
 }
