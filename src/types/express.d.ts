@@ -1,4 +1,4 @@
-import type { TenantContext } from "../security/tenant-context.js";
+import type { TenantContext } from "./security.js";
 
 declare global {
   namespace Express {

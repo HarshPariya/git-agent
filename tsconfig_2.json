@@ -5,6 +5,8 @@
     "outDir": "./dist-member2"
   },
   "include": [
+    "src/types/**/*.ts",
+    "src/types/**/*.d.ts",
     "src/agent/**/*.ts",
     "src/llm/**/*.ts",
     "src/guardrails/input-guard.ts",
@@ -18,7 +20,6 @@
     "src/logging/**/*.ts",
     "src/middleware/**/*.ts",
     "src/config/env.ts",
-    "src/types/**/*.d.ts",
     "src/services/citation-service.ts",
     "src/tools/registry.ts",
     "src/tools/retrieve-knowledge.ts",
@@ -37,8 +38,12 @@
     "tests/planner.test.ts",
     "tests/query-rewriter.test.ts",
     "tests/security-layer.test.ts",
+    "tests/security.test.ts",
     "tests/tool-caller.test.ts",
-    "tests/tools.test.ts"
+    "tests/tools.test.ts",
+    "tests/failure-cases.test.ts",
+    "tests/performance.test.ts",
+    "tests/e2e.test.ts"
   ],
   "exclude": [
     "node_modules",

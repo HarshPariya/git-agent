@@ -1,13 +1,6 @@
-export interface CriticRequest {
-  readonly question: string;
-  readonly answer: string;
-  readonly context: string;
-}
+import type { CriticRequest, CriticResult } from "../types/agent.js";
 
-export interface CriticResult {
-  readonly passed: boolean;
-  readonly reason: string;
-}
+export type { CriticRequest, CriticResult };
 
 const normalize = (value: string): readonly string[] =>
   value
@@ -22,7 +15,6 @@ const getNumbers = (value: string): readonly string[] =>
 const hasConflictingNumbers = (answer: string, context: string): boolean => {
   const answerNumbers = new Set(getNumbers(answer));
   const contextNumbers = new Set(getNumbers(context));
-
   return (
     answerNumbers.size > 0 &&
     contextNumbers.size > 0 &&
@@ -35,6 +27,45 @@ const getOverlap = (
   contextTokens: ReadonlySet<string>,
 ): number => answerTokens.filter((token) => contextTokens.has(token)).length;
 
+type ValidationRule = (ctx: {
+  normalizedAnswer: string;
+  normalizedContext: string;
+  questionTokens: readonly string[];
+  answerTokens: readonly string[];
+  contextTokens: Set<string>;
+}) => CriticResult | null;
+
+const CRITIC_RULES: readonly ValidationRule[] = [
+  ({ normalizedAnswer }) =>
+    !normalizedAnswer
+      ? { passed: false, reason: "The answer is empty." }
+      : null,
+  ({ normalizedContext }) =>
+    !normalizedContext
+      ? { passed: false, reason: "No supporting context was provided." }
+      : null,
+  ({ normalizedAnswer, normalizedContext }) =>
+    hasConflictingNumbers(normalizedAnswer, normalizedContext)
+      ? {
+        passed: false,
+        reason:
+          "The answer contains numeric claims that conflict with the provided context.",
+      }
+      : null,
+  ({ questionTokens, answerTokens }) =>
+    getOverlap(questionTokens, new Set(answerTokens)) === 0
+      ? { passed: false, reason: "The answer does not address the question." }
+      : null,
+  ({ answerTokens, contextTokens }) =>
+    getOverlap(answerTokens, contextTokens) === 0
+      ? {
+        passed: false,
+        reason:
+          "The answer does not contain information supported by the provided context.",
+      }
+      : null,
+];
+
 export const evaluateAnswer = ({
   question,
   answer,
@@ -42,68 +73,20 @@ export const evaluateAnswer = ({
 }: CriticRequest): CriticResult => {
   const normalizedAnswer = answer.trim();
   const normalizedContext = context.trim();
-  const questionTokens = normalize(question);
-  const answerTokens = normalize(normalizedAnswer);
-  const contextTokens = new Set(normalize(normalizedContext));
+  const state = {
+    normalizedAnswer,
+    normalizedContext,
+    questionTokens: normalize(question),
+    answerTokens: normalize(normalizedAnswer),
+    contextTokens: new Set(normalize(normalizedContext)),
+  };
 
-  switch (normalizedAnswer.length) {
-    case 0:
-      return {
-        passed: false,
-        reason: "The answer is empty.",
-      };
-
-    default:
-      break;
-  }
-
-  switch (normalizedContext.length) {
-    case 0:
-      return {
-        passed: false,
-        reason: "No supporting context was provided.",
-      };
-
-    default:
-      break;
-  }
-
-  switch (hasConflictingNumbers(normalizedAnswer, normalizedContext)) {
-    case true:
-      return {
-        passed: false,
-        reason:
-          "The answer contains numeric claims that conflict with the provided context.",
-      };
-
-    default:
-      break;
-  }
-
-  switch (getOverlap(questionTokens, new Set(answerTokens))) {
-    case 0:
-      return {
-        passed: false,
-        reason: "The answer does not address the question.",
-      };
-
-    default:
-      break;
-  }
-
-  switch (getOverlap(answerTokens, contextTokens) > 0) {
-    case true:
-      return {
-        passed: true,
-        reason:
-          "The answer contains information supported by the provided context.",
-      };
-
-    default:
-      return {
-        passed: false,
-        reason:
-          "The answer does not contain information supported by the provided context.",
-      };
-  }
+  const failure = CRITIC_RULES.map((rule) => rule(state)).find(Boolean);
+  return (
+    failure ?? {
+      passed: true,
+      reason:
+        "The answer contains information supported by the provided context.",
+    }
+  );
 };

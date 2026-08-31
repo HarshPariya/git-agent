@@ -1,35 +1,26 @@
-import type { AgentExecutionResult } from "../agent/types.js";
-import type { EvaluationCase } from "./dataset.js";
-import {
-  calculateMetrics,
-  type EvaluationMetrics,
-  type EvaluationObservation,
-} from "./metrics.js";
+import { extractCitations } from "../guardrails/citation-check.js";
+import type { AgentExecutionResult } from "../types/agent.js";
+import type {
+  EvaluationCase,
+  EvaluationObservation,
+  EvaluationReport,
+  EvaluationResult,
+} from "../types/evaluation.js";
+import { calculateMetrics } from "./metrics.js";
 
-export interface EvaluationResult {
-  readonly caseId: string;
-  readonly passed: boolean;
-  readonly expectedResponseId: string;
-  readonly actualResponseId: string;
-  readonly expectedRetrieval: boolean;
-  readonly actualRetrieval: boolean;
-  readonly expectedSource?: string;
-  readonly actualSources: readonly string[];
-}
+export type { EvaluationReport, EvaluationResult };
 
 const evaluateCase = (
   evaluationCase: EvaluationCase,
   result: AgentExecutionResult,
 ): EvaluationResult => {
   const actualRetrieval = result.sources.length > 0;
-
   const actualSources = result.sources.map(({ source }) => source);
+  const actualCitations = extractCitations(result.text);
 
   const responseMatches =
     result.responseId === evaluationCase.expectedResponseId;
-
   const retrievalMatches = actualRetrieval === evaluationCase.expectRetrieval;
-
   const sourceMatches =
     evaluationCase.expectedSource === undefined ||
     actualSources.includes(evaluationCase.expectedSource);
@@ -45,30 +36,36 @@ const evaluateCase = (
       expectedSource: evaluationCase.expectedSource,
     }),
     actualSources,
+    ...(evaluationCase.expectedCitations !== undefined && {
+      expectedCitations: evaluationCase.expectedCitations,
+    }),
+    ...(actualCitations.length > 0 && { actualCitations }),
   };
 };
-
-export interface EvaluationReport {
-  readonly results: readonly EvaluationResult[];
-  readonly metrics: EvaluationMetrics;
-}
 
 export const evaluateDataset = async (
   cases: readonly EvaluationCase[],
   run: (evaluationCase: EvaluationCase) => Promise<AgentExecutionResult>,
 ): Promise<EvaluationReport> => {
-  const results: EvaluationResult[] = [];
-
-  for (const evaluationCase of cases) {
-    const result = await run(evaluationCase);
-    results.push(evaluateCase(evaluationCase, result));
-  }
+  const results = await Promise.all(
+    cases.map(async (evaluationCase) =>
+      evaluateCase(evaluationCase, await run(evaluationCase)),
+    ),
+  );
 
   const observations: EvaluationObservation[] = results.map(
-    ({ passed, expectedRetrieval, actualRetrieval }) => ({
+    ({
       passed,
       expectedRetrieval,
       actualRetrieval,
+      expectedCitations,
+      actualCitations,
+    }) => ({
+      passed,
+      expectedRetrieval,
+      actualRetrieval,
+      ...(expectedCitations !== undefined && { expectedCitations }),
+      ...(actualCitations !== undefined && { actualCitations }),
     }),
   );
 

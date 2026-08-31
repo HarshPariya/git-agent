@@ -1,51 +1,29 @@
-export interface Message {
-  readonly role: "user" | "assistant";
-  readonly content: string;
-}
+import type { Memory, Message } from "../types/agent.js";
 
-export interface Memory {
-  get(tenantId: string, sessionId: string): readonly Message[];
-  add(
-    tenantId: string,
-    sessionId: string,
-    message: Message
-  ): void;
-  clear(tenantId: string, sessionId: string): void;
-}
+export type { Memory, Message };
 
 const DEFAULT_MAX_MESSAGES = 20;
 
 export class ConversationMemory implements Memory {
   private readonly conversations = new Map<string, Message[]>();
 
-  constructor(
-    private readonly maxMessages = DEFAULT_MAX_MESSAGES
-  ) {}
+  constructor(private readonly maxMessages = DEFAULT_MAX_MESSAGES) { }
 
   private key(tenantId: string, sessionId: string): string {
     return `${tenantId}:${sessionId}`;
   }
 
-  get(
-    tenantId: string,
-    sessionId: string
-  ): readonly Message[] {
+  get(tenantId: string, sessionId: string): readonly Message[] {
     return this.conversations.get(this.key(tenantId, sessionId)) ?? [];
   }
 
-  add(
-    tenantId: string,
-    sessionId: string,
-    message: Message
-  ): void {
+  add(tenantId: string, sessionId: string, message: Message): void {
     const key = this.key(tenantId, sessionId);
     const messages = this.conversations.get(key) ?? [];
 
     messages.push(message);
-
-    if (messages.length > this.maxMessages) {
-      messages.splice(0, messages.length - this.maxMessages);
-    }
+    const excess = messages.length - this.maxMessages;
+    excess > 0 && messages.splice(0, excess);
 
     this.conversations.set(key, messages);
   }

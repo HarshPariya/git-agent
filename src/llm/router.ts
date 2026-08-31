@@ -5,7 +5,7 @@ import {
   type LlmTool,
   type ToolLlmResponse,
 } from "./client.js";
-import type { LlmProvider, LlmRequest, LlmResponse } from "./types.js";
+import type { LlmProvider, LlmRequest, LlmResponse } from "../types/llm.js";
 
 export type { LlmProvider, LlmRequest, LlmResponse };
 export type { LlmTool, ToolLlmResponse };
