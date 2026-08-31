@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createQueryRewriter } from "../src/agent/query-rewriter.js";
-import type { LlmProvider } from "../src/llm/types.js";
+import type { LlmProvider } from "../src/types/llm.js";
 
 const mockLlm: LlmProvider = {
   async generate() {

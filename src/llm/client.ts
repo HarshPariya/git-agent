@@ -1,25 +1,16 @@
 import Groq from "groq-sdk";
 
 import { env } from "../config/env.js";
-import type { LlmProvider, LlmRequest, LlmResponse } from "./types.js";
+import type {
+  LlmProvider,
+  LlmRequest,
+  LlmResponse,
+  LlmTool,
+  ToolCall,
+  ToolLlmResponse,
+} from "../types/llm.js";
 
-export interface LlmTool {
-  readonly type: "function";
-  readonly name: string;
-  readonly description: string;
-  readonly parameters: Readonly<Record<string, unknown>>;
-}
-
-export interface ToolCall {
-  readonly callId: string;
-  readonly name: string;
-  readonly arguments: string;
-}
-
-export interface ToolLlmResponse extends LlmResponse {
-  readonly toolCalls: readonly ToolCall[];
-  readonly message: Groq.Chat.Completions.ChatCompletionMessage;
-}
+export type { LlmTool, ToolCall, ToolLlmResponse };
 
 const client = new Groq({
   apiKey: env.groqApiKey,
@@ -52,9 +43,10 @@ export const groqProvider: LlmProvider = {
 
     const text = response.choices[0]?.message.content?.trim() ?? "";
 
-    if (!text) {
-      throw new Error("LLM returned an empty response");
-    }
+    !text &&
+      (() => {
+        throw new Error("LLM returned an empty response");
+      })();
 
     return {
       id: response.id,
@@ -101,16 +93,17 @@ export const generateWithTools = async ({
 
   const message = response.choices[0]?.message;
 
-  if (!message) {
-    throw new Error("LLM returned no message");
-  }
+  !message &&
+    (() => {
+      throw new Error("LLM returned no message");
+    })();
 
   return {
     id: response.id,
     model: response.model,
-    text: message.content?.trim() ?? "",
-    toolCalls: toToolCalls(message.tool_calls ?? []),
-    message,
+    text: message?.content?.trim() ?? "",
+    toolCalls: toToolCalls(message?.tool_calls ?? []),
+    message: message!,
   };
 };
 
@@ -145,15 +138,16 @@ export const continueWithTools = async ({
 
   const message = response.choices[0]?.message;
 
-  if (!message) {
-    throw new Error("LLM returned no message");
-  }
+  !message &&
+    (() => {
+      throw new Error("LLM returned no message");
+    })();
 
   return {
     id: response.id,
     model: response.model,
-    text: message.content?.trim() ?? "",
-    toolCalls: toToolCalls(message.tool_calls ?? []),
-    message,
+    text: message?.content?.trim() ?? "",
+    toolCalls: toToolCalls(message?.tool_calls ?? []),
+    message: message!,
   };
 };

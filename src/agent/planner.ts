@@ -1,57 +1,33 @@
-export type AgentAction = "direct_answer" | "retrieve" | "tool";
+import type { AgentAction, AgentPlan, PlanRequest } from "../types/agent.js";
 
-export interface PlanRequest {
-  readonly question: string;
-  readonly hasConversationContext: boolean;
-}
+export type { AgentAction, AgentPlan, PlanRequest };
 
-export interface AgentPlan {
+interface PlannerStrategy {
   readonly action: AgentAction;
   readonly reason: string;
+  readonly terms: readonly string[];
 }
 
-const RETRIEVAL_TERMS = new Set([
-  "policy",
-  "documentation",
-  "document",
-  "pricing",
-  "refund",
-  "procedure",
-  "guideline",
-  "company",
-]);
-
-const TOOL_TERMS = new Set([
-  "calculate",
-  "search file",
-  "read file",
-  "run test",
-  "execute",
-]);
-
-const containsTerm = (question: string, terms: ReadonlySet<string>): boolean =>
-  [...terms].some((term) => question.toLowerCase().includes(term));
+const STRATEGIES: readonly PlannerStrategy[] = [
+  {
+    action: "tool",
+    reason: "The question indicates that a tool may be required.",
+    terms: ["calculate", "search file", "read file", "run test", "execute"],
+  },
+  {
+    action: "retrieve",
+    reason: "The question may require external knowledge.",
+    terms: ["policy", "documentation", "document", "pricing", "refund", "procedure", "guideline", "company"],
+  },
+];
 
 export const createPlan = ({ question }: PlanRequest): AgentPlan => {
-  const normalizedQuestion = question.trim().toLowerCase();
+  const normalized = question.trim().toLowerCase();
+  const matched = STRATEGIES.find((strategy) =>
+    strategy.terms.some((term) => normalized.includes(term)),
+  );
 
-  switch (true) {
-    case containsTerm(normalizedQuestion, TOOL_TERMS):
-      return {
-        action: "tool",
-        reason: "The question indicates that a tool may be required.",
-      };
-
-    case containsTerm(normalizedQuestion, RETRIEVAL_TERMS):
-      return {
-        action: "retrieve",
-        reason: "The question may require external knowledge.",
-      };
-
-    default:
-      return {
-        action: "direct_answer",
-        reason: "The question can be answered directly.",
-      };
-  }
+  return matched
+    ? { action: matched.action, reason: matched.reason }
+    : { action: "direct_answer", reason: "The question can be answered directly." };
 };

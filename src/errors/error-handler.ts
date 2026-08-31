@@ -1,5 +1,4 @@
 import type { NextFunction, Request, Response } from "express";
-
 import { logger } from "../logging/logger.js";
 import { AppError } from "./app-error.js";
 
@@ -7,9 +6,7 @@ const getLogContext = (
   request: Request,
   metadata: Readonly<Record<string, unknown>>,
 ) => ({
-  ...(request.requestId !== undefined && {
-    requestId: request.requestId,
-  }),
+  ...(request.requestId !== undefined && { requestId: request.requestId }),
   operation: request.path,
   metadata,
 });
@@ -20,36 +17,25 @@ export const errorHandler = (
   response: Response,
   _next: NextFunction,
 ): void => {
-  if (error instanceof AppError) {
-    logger.warn(
-      "Application error",
-      getLogContext(request, {
-        code: error.code,
-        statusCode: error.statusCode,
-      }),
-    );
+  const isAppError = error instanceof AppError;
+  const status = isAppError ? error.statusCode : 500;
+  const code = isAppError ? error.code : "INTERNAL_ERROR";
+  const message = isAppError
+    ? error.message
+    : "An unexpected error occurred.";
 
-    response.status(error.statusCode).json({
-      error: {
-        code: error.code,
-        message: error.message,
-      },
-    });
+  const logMessage = isAppError
+    ? "Application error"
+    : "Unhandled application error";
+  const logDetails = isAppError
+    ? { code, statusCode: status }
+    : { error: error instanceof Error ? error.message : "Unknown error" };
 
-    return;
-  }
+  isAppError
+    ? logger.warn(logMessage, getLogContext(request, logDetails))
+    : logger.error(logMessage, getLogContext(request, logDetails));
 
-  logger.error(
-    "Unhandled application error",
-    getLogContext(request, {
-      error: error instanceof Error ? error.message : "Unknown error",
-    }),
-  );
-
-  response.status(500).json({
-    error: {
-      code: "INTERNAL_ERROR",
-      message: "An unexpected error occurred.",
-    },
+  response.status(status).json({
+    error: { code, message },
   });
 };

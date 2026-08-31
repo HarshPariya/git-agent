@@ -7,16 +7,24 @@ import {
   type ToolLlmResponse,
 } from "../llm/router.js";
 import { ToolRegistry } from "../tools/registry.js";
+import type {
+  ToolExecutionContext,
+  ToolExecutionResult,
+} from "../types/tools.js";
 
 export interface ToolCallingRequest {
   readonly instructions: string;
   readonly input: string;
   readonly registry: ToolRegistry;
   readonly maxRounds: number;
+  readonly context: ToolExecutionContext;
 }
 
-const toLlmTools = (registry: ToolRegistry): readonly LlmTool[] =>
-  registry.list().map((tool) => ({
+const toLlmTools = (
+  registry: ToolRegistry,
+  context: ToolExecutionContext,
+): readonly LlmTool[] =>
+  registry.list(context).map((tool) => ({
     type: "function",
     name: tool.name,
     description: tool.description,
@@ -26,25 +34,28 @@ const toLlmTools = (registry: ToolRegistry): readonly LlmTool[] =>
 const executeTool = async (
   registry: ToolRegistry,
   call: ToolLlmResponse["toolCalls"][number],
-): Promise<{
-  readonly callId: string;
-  readonly output: string;
-}> => {
+  context: ToolExecutionContext,
+): Promise<ToolExecutionResult> => {
   try {
     const input: unknown = JSON.parse(call.arguments);
-    const tool = registry.getRuntime(call.name);
-    const result = await tool.execute(input);
+    const result = await registry.executeTool(call.name, input, context);
 
     return {
+      toolName: call.name,
       callId: call.callId,
-      output: JSON.stringify(result),
+      success: result.success,
+      output: result.output,
+      error: result.error,
+      durationMs: result.durationMs,
     };
   } catch (error) {
     return {
+      toolName: call.name,
       callId: call.callId,
-      output: JSON.stringify({
-        error: error instanceof Error ? error.message : "Tool execution failed",
-      }),
+      success: false,
+      output: undefined,
+      error: error instanceof Error ? error.message : "Tool execution failed",
+      durationMs: 0,
     };
   }
 };
@@ -54,8 +65,9 @@ export async function runToolCalling({
   input,
   registry,
   maxRounds,
+  context,
 }: ToolCallingRequest): Promise<ToolLlmResponse> {
-  const tools = toLlmTools(registry);
+  const tools = toLlmTools(registry, context);
   const messages: Groq.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: "user",
@@ -70,25 +82,28 @@ export async function runToolCalling({
   });
 
   for (let round = 0; response.toolCalls.length > 0; round += 1) {
-    if (round >= maxRounds) {
-      throw new Error("Maximum tool-call rounds exceeded");
-    }
+    round >= maxRounds &&
+      (() => {
+        throw new Error("Maximum tool-call rounds exceeded");
+      })();
 
     messages.push(response.message);
 
     const outputs = await Promise.all(
-      response.toolCalls.map((call) => executeTool(registry, call)),
+      response.toolCalls.map((call) => executeTool(registry, call, context)),
     );
 
     messages.push(
       ...outputs.map(
-        ({
-          callId,
-          output,
-        }): Groq.Chat.Completions.ChatCompletionToolMessageParam => ({
+        (result): Groq.Chat.Completions.ChatCompletionToolMessageParam => ({
           role: "tool",
-          tool_call_id: callId,
-          content: output,
+          tool_call_id: result.callId,
+          content: JSON.stringify({
+            success: result.success,
+            output: result.output,
+            error: result.error,
+            durationMs: result.durationMs,
+          }),
         }),
       ),
     );
