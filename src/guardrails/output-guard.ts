@@ -17,8 +17,10 @@ const SENSITIVE_PATTERNS = [
   /secret\s+is\s+\S+/i,
   /password\s*[:=]\s*\S+/i,
   /password\s+is\s+\S+/i,
-  /system prompt/i,
-  /internal instructions/i,
+  /(?:here\s+is|revealing|leaked|dumped|my)\s+(?:the\s+)?system\s+prompt/i,
+  /(?:here\s+are|revealing|leaked|dumped|my)\s+(?:the\s+)?internal\s+instructions/i,
+  /system\s+prompt\s*:\s*\.\.\./i,
+  /system\s+prompt\s*[:=]\s*(?:you\s+are|instructions)/i,
 ] as const;
 
 type OutputRule = (res: string) => string | null;

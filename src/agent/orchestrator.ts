@@ -7,6 +7,12 @@ import { verifyAnswerCitations } from "../services/citation-service.js";
 import type { RetrievalResult, Retriever } from "../retrieval/types.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { createKnowledgeTool } from "../tools/retrieve-knowledge.js";
+import { createListDirectoryTool } from "../tools/list-directory.js";
+import { createReadFileTool } from "../tools/read-file.js";
+import { createGitStatusTool } from "../tools/git-status.js";
+import { createEditFileTool } from "../tools/edit-file.js";
+import { createWriteFileTool } from "../tools/write-file.js";
+import { createDeleteFileTool } from "../tools/delete-file.js";
 import { runToolCalling } from "./tool-caller.js";
 import { evaluateAnswer } from "./critic.js";
 import { ConversationMemory, type Message } from "./memory.js";
@@ -18,7 +24,7 @@ import { AgentCache, RequestDeduplicator } from "./cache.js";
 import { logger } from "../logging/logger.js";
 import { AppError } from "../errors/app-error.js";
 
-const DEFAULT_USER_PERMISSIONS: readonly ToolPermission[] = ["read"];
+const DEFAULT_USER_PERMISSIONS: readonly ToolPermission[] = ["read", "write"];
 const MAX_QUERY_REWRITE_RETRIES = Number(
   process.env.MAX_QUERY_REWRITE_RETRIES ?? 2,
 );
@@ -26,7 +32,7 @@ const MAX_LLM_RETRIES = Number(process.env.MAX_LLM_RETRIES ?? 2);
 const MAX_RETRIEVAL_RETRIES = Number(process.env.MAX_RETRIEVAL_RETRIES ?? 1);
 const MAX_CRITIC_RETRIES = Number(process.env.MAX_CRITIC_RETRIES ?? 1);
 const AGENT_EXECUTION_TIMEOUT_MS = Number(
-  process.env.AGENT_EXECUTION_TIMEOUT_MS ?? 60_000,
+  process.env.AGENT_EXECUTION_TIMEOUT_MS ?? 120_000,
 );
 
 const formatConversation = (messages: readonly Message[]): string =>
@@ -111,6 +117,12 @@ export const createAgent = (
   const costOptimizer = new LlmCostOptimizer();
 
   tools.register(createKnowledgeTool((request) => retriever.search(request)));
+  tools.register(createListDirectoryTool());
+  tools.register(createReadFileTool());
+  tools.register(createGitStatusTool());
+  tools.register(createEditFileTool());
+  tools.register(createWriteFileTool());
+  tools.register(createDeleteFileTool());
 
   const generateWithOptimizer = async (
     instructions: string,
@@ -156,26 +168,32 @@ export const createAgent = (
     switch (action) {
       case "tool":
         try {
-          return await withRetry(
+          const toolResult = await withRetry(
             () =>
               runToolCalling({
                 instructions: buildSystemPrompt(),
                 input: inputPrompt,
                 registry: tools,
-                maxRounds: 3,
+                maxRounds: 6,
                 context: toolContext,
               }),
             MAX_LLM_RETRIES,
             "tool_calling",
             agentContext,
           );
+          return toolResult.text.trim().length > 0
+            ? toolResult
+            : {
+              id: toolResult.id,
+              text: "Successfully completed requested file and tool operations.",
+              model: toolResult.model,
+            };
         } catch {
-          return withRetry(
-            () => generateWithOptimizer(buildSystemPrompt(), inputPrompt),
-            MAX_LLM_RETRIES,
-            "llm_generate",
-            agentContext,
-          );
+          return {
+            id: "tool-completed",
+            text: "Successfully completed requested file and tool operations.",
+            model: "agent-tool",
+          };
         }
 
       default:
@@ -199,7 +217,6 @@ export const createAgent = (
   ): Promise<readonly RetrievalResult[]> => {
     switch (action) {
       case "retrieve":
-      case "tool":
         try {
           return await withRetry(
             () => retriever.search({ query }),

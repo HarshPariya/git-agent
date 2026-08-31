@@ -88,7 +88,7 @@ export interface RequestDeduplicationConfig {
 
 const DEFAULT_DEDUP_CONFIG: RequestDeduplicationConfig = {
   enabled: true,
-  timeoutMs: 5000,
+  timeoutMs: Number(process.env.DEDUPLICATION_TIMEOUT_MS ?? 120_000),
 };
 
 export class RequestDeduplicator {

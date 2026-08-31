@@ -23,8 +23,16 @@
     "src/services/citation-service.ts",
     "src/tools/registry.ts",
     "src/tools/retrieve-knowledge.ts",
+    "src/tools/list-directory.ts",
+    "src/tools/read-file.ts",
+    "src/tools/git-status.ts",
+    "src/tools/edit-file.ts",
+    "src/tools/write-file.ts",
+    "src/tools/delete-file.ts",
     "src/retrieval/types.ts",
     "src/retrieval/mock-retriever.ts",
+    "src/api/**/*.ts",
+    "src/app.ts",
     "tests/agent-integration.test.ts",
     "tests/agent-pipeline.test.ts",
     "tests/citation-check.test.ts",
@@ -61,11 +69,7 @@
     "src/retrieval/reranker.ts",
     "src/retrieval/retriever.ts",
     "src/retrieval/vector-search.ts",
-    "src/tools/graph-search.ts",
     "src/tools/impact-analysis.ts",
-    "src/tools/read-file.ts",
-    "src/tools/propose-edit.ts",
-    "src/tools/run-test.ts",
     "src/tools/search-code.ts"
   ]
 }
