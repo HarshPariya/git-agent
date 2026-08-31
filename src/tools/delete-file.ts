@@ -6,27 +6,10 @@ import type {
   ToolDefinition,
   ToolPermission,
 } from "../types/tools.js";
+import { resolveWorkspaceCandidate } from "./workspace-path.js";
 
 const DEFAULT_PERMISSIONS: readonly ToolPermission[] = ["write"];
 const DEFAULT_TIMEOUT_MS = 10_000;
-const PROTECTED_FILES = new Set([
-  "package.json",
-  "package-lock.json",
-  "tsconfig.json",
-  "tsconfig_2.json",
-  ".env",
-  ".env.local",
-  ".gitignore",
-]);
-
-const PROTECTED_DIRS = new Set([
-  "",
-  ".",
-  "src",
-  "public",
-  "node_modules",
-  ".git",
-]);
 
 const parameters = {
   type: "object",
@@ -39,42 +22,6 @@ const parameters = {
   },
   required: ["path"],
 } as const;
-
-const sanitizePath = (baseDir: string, requestedPath: string): string => {
-  const containsNull = requestedPath.includes("\0");
-  containsNull &&
-    (() => {
-      throw new Error("Path contains illegal null bytes");
-    })();
-
-  const filename = path.basename(requestedPath);
-  const isProtected =
-    PROTECTED_FILES.has(filename) || filename.startsWith(".env");
-  isProtected &&
-    (() => {
-      throw new Error(
-        "Access denied: deleting protected project file is prohibited",
-      );
-    })();
-
-  const resolved = path.resolve(baseDir, requestedPath);
-  const relative = path.relative(baseDir, resolved);
-  const isEscaping = relative.startsWith("..") || path.isAbsolute(relative);
-  isEscaping &&
-    (() => {
-      throw new Error("Access denied: path escapes workspace root");
-    })();
-
-  const isProtectedDir = PROTECTED_DIRS.has(relative.replace(/\\/g, "/"));
-  isProtectedDir &&
-    (() => {
-      throw new Error(
-        "Access denied: deleting root system directory is prohibited",
-      );
-    })();
-
-  return resolved;
-};
 
 const extractString = (
   data: Record<string, unknown>,
@@ -125,18 +72,7 @@ export const createDeleteFileTool = (
   timeoutMs: DEFAULT_TIMEOUT_MS,
   parseInput,
   execute: async ({ input }) => {
-    let targetPath = sanitizePath(baseDir, input.path);
-
-    // If requested path without directory exists in docs/, resolve to docs/
-    if (!input.path.includes("/") && !input.path.includes("\\")) {
-      const docsCandidate = path.resolve(baseDir, "docs", input.path);
-      try {
-        await fs.access(docsCandidate);
-        targetPath = docsCandidate;
-      } catch {
-        // Fall back to direct targetPath
-      }
-    }
+    const targetPath = await resolveWorkspaceCandidate(baseDir, input.path, "delete");
 
     try {
       const stat = await fs.stat(targetPath);
@@ -149,12 +85,12 @@ export const createDeleteFileTool = (
         };
       }
     } catch {
-      // If stat fails, attempt direct unlink/rm
+      // If stat fails, attempt direct unlink
     }
 
     await fs.unlink(targetPath);
 
-    // Optional: if parent dir is a custom empty dir (e.g. harsh), clean it up
+    // Optional: clean parent directory if custom empty dir
     const parentDir = path.dirname(targetPath);
     const parentRel = path.relative(baseDir, parentDir).replace(/\\/g, "/");
     const preservedDirs = new Set(["", "src", "docs", "public", "tests", "migrations", "dist", "dist-member2", "node_modules", ".git"]);
