@@ -41,6 +41,7 @@ body.chatgpt-layout {
   flex-direction: column;
   justify-content: space-between;
   padding: 1rem;
+  overflow-y: auto;
 }
 
 .sidebar-header {
@@ -84,6 +85,64 @@ body.chatgpt-layout {
   flex-direction: column;
   gap: 0.4rem;
   margin-top: 1rem;
+}
+
+.module-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-card);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.module-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.module-card strong {
+  color: var(--text-main);
+  font-size: 0.82rem;
+}
+
+.module-card small {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.module-status {
+  color: #34d399;
+  font-weight: 700;
+}
+
+.module-status.offline {
+  color: #fb7185;
+}
+
+.pipeline-connector {
+  padding: 4px 0;
+  color: var(--accent-cyan);
+  font-size: 0.65rem;
+  text-align: center;
+}
+
+.active-route-label {
+  margin-left: auto;
+  padding: 5px 9px;
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  border-radius: 999px;
+  color: var(--accent-cyan);
+  background: rgba(34, 211, 238, 0.06);
+  font-size: 0.7rem;
+  white-space: nowrap;
 }
 
 .section-title {

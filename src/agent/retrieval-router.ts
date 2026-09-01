@@ -16,6 +16,9 @@ const CODE_KEYWORDS = [
   "code", "file", "function", "class", "method", "variable", "src/", "public/",
   "import", "export", "interface", "type", "ast", "repo", "repository", "folder",
   "implementation", "handler", "route", "endpoint", "where is", "how does",
+  "architecture", "archtecture", "architect", "design", "structure", "overview",
+  "readme", "create", "write", "generate", "make", "edit", "modify", "delete",
+  "git", "system design", ".md", ".ts", ".js", ".json",
 ];
 
 const DOCUMENT_KEYWORDS = [
