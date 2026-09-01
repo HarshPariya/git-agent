@@ -24,6 +24,8 @@ import {
 } from "../guardrails/retrieval-limits.js";
 import { metricsCollector } from "../monitoring/observability.js";
 import { setHnswSearchPrecision } from "../db/hnsw-tuning.js";
+import { toRepositoryPath } from "./repository-path.js";
+import { updateRetrievalRuntimeStatus } from "./runtime-status.js";
 
 export interface RetrieverOptions {
   limit?: number | undefined;
@@ -57,6 +59,22 @@ export interface RetrieverStats {
 }
 
 export function parseRequestedFilename(query: string): string | undefined {
+  const normalized = query.trim().toLowerCase();
+  const isActionIntent =
+    /^(?:create|write|generate|make|add|build|edit|modify|update|delete|remove)\b/i.test(normalized) ||
+    /\b(?:create|write|generate|make|add|build|edit|modify|update|delete|remove)\s+(?:a\s+|new\s+)?(?:file\s+)?/i.test(normalized);
+
+  if (isActionIntent) {
+    return undefined;
+  }
+
+  const isLocationIntent =
+    /\b(?:where|find|locate|location|path)\b/i.test(normalized) &&
+    !/\b(?:show|read|display|contents?|lines?|functions?|classes?|interfaces?|symbols?|relationship|related|explain|works?|what does)\b/i.test(normalized);
+  if (!isLocationIntent) {
+    return undefined;
+  }
+
   return query.match(/(?:^|[\s"'`])([a-z0-9_$.-]+\.[a-z0-9]+)(?=$|[\s?.,!"'`])/i)?.[1];
 }
 
@@ -65,6 +83,11 @@ export function parseRequestedSymbol(query: string): string | undefined {
 }
 
 export class CodeRetriever {
+  private static readonly snapshots = new Map<string, {
+    chunks: CodeChunk[];
+    graph: CodeGraph;
+    fileCount: number;
+  }>();
   private readonly rootDirectory: string;
   private readonly repositoryName: string;
 
@@ -79,9 +102,27 @@ export class CodeRetriever {
   }
 
   async initialize(): Promise<void> {
+    const snapshotKey = `${this.rootDirectory}::${this.repositoryName}`;
+    const snapshot = CodeRetriever.snapshots.get(snapshotKey);
+    if (snapshot) {
+      this.chunks = snapshot.chunks;
+      this.graph = snapshot.graph;
+      this.fileCount = snapshot.fileCount;
+      this.initialized = true;
+      updateRetrievalRuntimeStatus({
+        graph: "ready",
+        files: snapshot.fileCount,
+        chunks: snapshot.chunks.length,
+      });
+      return;
+    }
     console.log("🔍 Initializing Code Retriever...");
 
-    const parsedFiles = await parseRepository(this.rootDirectory);
+    updateRetrievalRuntimeStatus({ graph: "initializing", vector: "initializing", lastError: undefined });
+    const parsedFiles = (await parseRepository(this.rootDirectory)).map((file) => ({
+      ...file,
+      filePath: toRepositoryPath(this.rootDirectory, file.filePath),
+    }));
     validateRepositoryScan(parsedFiles.length, 0);
 
     this.fileCount = parsedFiles.length;
@@ -112,6 +153,12 @@ export class CodeRetriever {
     }
 
     this.graph = buildGraph(entities, relationships);
+    updateRetrievalRuntimeStatus({
+      graph: "ready",
+      files: parsedFiles.length,
+      chunks: this.chunks.length,
+      lastRefreshAt: new Date().toISOString(),
+    });
 
     console.log(`✓ Parsed files: ${parsedFiles.length}`);
     console.log(`✓ Code chunks: ${this.chunks.length}`);
@@ -126,12 +173,57 @@ export class CodeRetriever {
         currentHash,
         this.fileCount,
       );
+      updateRetrievalRuntimeStatus({ vector: "ready" });
     } catch (err: any) {
+      updateRetrievalRuntimeStatus({ vector: "degraded", lastError: err?.message || String(err) });
       console.warn("⚠️ Postgres vector upsert skipped (running in AST graph mode):", err?.message || err);
     }
 
     this.initialized = true;
+    CodeRetriever.snapshots.set(snapshotKey, {
+      chunks: this.chunks,
+      graph: this.graph,
+      fileCount: this.fileCount,
+    });
     console.log("✓ Code Retriever ready.");
+  }
+
+  /** Refreshes the in-memory AST graph after incremental file indexing. */
+  async refreshGraph(): Promise<void> {
+    updateRetrievalRuntimeStatus({ graph: "initializing" });
+    try {
+      const parsedFiles = (await parseRepository(this.rootDirectory)).map((file) => ({
+        ...file,
+        filePath: toRepositoryPath(this.rootDirectory, file.filePath),
+      }));
+      validateRepositoryScan(parsedFiles.length, 0);
+      const chunks = chunkRepository(parsedFiles);
+      const entities = extractEntities(parsedFiles);
+      const relationships = extractRelationships(parsedFiles, entities);
+      const repositoryHash = computeRepositoryHash(parsedFiles);
+      await saveGraphCache({ repositoryHash, entities, relationships });
+      this.fileCount = parsedFiles.length;
+      this.chunks = chunks;
+      this.graph = buildGraph(entities, relationships);
+      this.initialized = true;
+      CodeRetriever.snapshots.set(`${this.rootDirectory}::${this.repositoryName}`, {
+        chunks: this.chunks,
+        graph: this.graph,
+        fileCount: this.fileCount,
+      });
+      updateRetrievalRuntimeStatus({
+        graph: "ready",
+        files: parsedFiles.length,
+        chunks: chunks.length,
+        lastRefreshAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      updateRetrievalRuntimeStatus({
+        graph: "unavailable",
+        lastError: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   async retrieve(
@@ -236,6 +328,7 @@ export class CodeRetriever {
       const startRerank = Date.now();
       const reranked = rerankResults(sanitizedQuery, hybridResults, {
         limit: requestedLimit,
+        maxPerFile: 3,
       });
       const rerankMs = Date.now() - startRerank;
 
@@ -278,13 +371,14 @@ export class CodeRetriever {
     const requestedSymbol = parseRequestedSymbol(request.query);
     if (requestedSymbol) {
       const matches = this.chunks.filter(
-        (chunk) => chunk.name?.toLowerCase() === requestedSymbol.toLowerCase() && existsSync(chunk.filePath),
+        (chunk) => chunk.name?.toLowerCase() === requestedSymbol.toLowerCase() &&
+          existsSync(path.resolve(this.rootDirectory, chunk.filePath)),
       );
       return matches.slice(0, request.limit ?? 10).map((chunk) => {
-        const relativePath = path.relative(this.rootDirectory, chunk.filePath).replace(/\\/g, "/");
+        const relativePath = chunk.filePath.replace(/\\/g, "/");
         return {
           content: chunk.content,
-          source: relativePath,
+          source: path.resolve(this.rootDirectory, relativePath),
           score: 1,
           metadata: {
             type: "symbol_lookup",
@@ -314,7 +408,9 @@ export class CodeRetriever {
       }
       return {
         content: r.content || r.name,
-        source: r.filePath || r.name,
+        source: r.filePath && r.filePath !== "repository-index"
+          ? path.resolve(this.rootDirectory, r.filePath)
+          : r.filePath || r.name,
         score: r.score,
         metadata,
       };

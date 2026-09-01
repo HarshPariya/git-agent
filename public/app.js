@@ -53,20 +53,31 @@ document.addEventListener("DOMContentLoaded", () => {
   // Format Markdown with Copy Code Buttons
   function formatMarkdown(text) {
     if (!text) return "";
-    let html = escapeHtml(text);
+    const cleanText = text
+      .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
+      .replace(/<function=[\w]+>[\s\S]*?<\/function>/gi, "")
+      .replace(/<parameter=[\w]+>[\s\S]*?<\/parameter>/gi, "")
+      .replace(/<\/?(?:function|parameter|tools|tool_call)\b[^>]*>/gi, "")
+      .trim();
+    let html = escapeHtml(cleanText);
+    const codeBlocks = [];
 
     // Format ```code blocks with Copy button
     html = html.replace(
-      /```(?:typescript|js|json)?\n([\s\S]*?)\n```/g,
-      (match, code) => `
+      /```([a-zA-Z0-9_-]*)\r?\n([\s\S]*?)\r?\n```/g,
+      (_match, language, code) => {
+        const token = `@@CODE_BLOCK_${codeBlocks.length}@@`;
+        codeBlocks.push(`
         <div class="code-wrapper">
           <div class="code-header">
-            <span>TypeScript Code Snippet</span>
+            <span>${language || "code"}</span>
             <button class="btn-copy" onclick="copyCode(this)">📋 Copy</button>
           </div>
           <pre><code>${code}</code></pre>
         </div>
-      `,
+      `);
+        return token;
+      },
     );
 
     // Format `code` inline
@@ -86,8 +97,31 @@ document.addEventListener("DOMContentLoaded", () => {
       /^#### (.*$)/gim,
       '<h4 style="margin: 8px 0 4px 0; font-family: var(--font-display); font-size: 0.95em; color: var(--text-main);">$1</h4>',
     );
+
+    // Render standard Markdown tables instead of exposing pipe syntax.
+    const tableBlocks = [];
+    html = html.replace(
+      /(^\|.+\|\r?\n^\|(?:\s*:?-+:?\s*\|)+\r?\n(?:^\|.+\|(?:\r?\n|$))+)/gm,
+      (tableText) => {
+        const rows = tableText.trim().split(/\r?\n/);
+        const parseCells = (row) => row.slice(1, -1).split("|").map((cell) => cell.trim());
+        const headers = parseCells(rows[0]);
+        const bodyRows = rows.slice(2).map(parseCells);
+        const table = `<div class="markdown-table-wrapper"><table class="markdown-table"><thead><tr>${headers.map((cell) => `<th>${cell}</th>`).join("")}</tr></thead><tbody>${bodyRows.map((cells) => `<tr>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+        const token = `@@TABLE_BLOCK_${tableBlocks.length}@@`;
+        tableBlocks.push(table);
+        return token;
+      },
+    );
     // Format newlines
     html = html.replace(/\n/g, "<br>");
+
+    for (const [index, block] of codeBlocks.entries()) {
+      html = html.replace(`@@CODE_BLOCK_${index}@@`, block);
+    }
+    for (const [index, table] of tableBlocks.entries()) {
+      html = html.replace(`@@TABLE_BLOCK_${index}@@`, table);
+    }
 
     return html;
   }
@@ -187,10 +221,19 @@ document.addEventListener("DOMContentLoaded", () => {
         activeRouteLabel.textContent = `Member 1: ${data.pipeline.retrievalMode} → Member 2: agent`;
         activeRouteLabel.title = data.pipeline.routeReason || "Automatically routed";
       }
-      const sourceText = Array.isArray(data.sources) && data.sources.length > 0
-        ? `\n\n**Sources:** ${data.sources
-          .map((source) => `${source.source}${source.page ? ` (p. ${source.page})` : ""}`)
-          .join(", ")}`
+      const uniqueSources = new Map();
+      if (Array.isArray(data.sources)) {
+        for (const source of data.sources) {
+          const rawPath = String(source.source || "").replace(/\\/g, "/");
+          const repositoryPath = rawPath.match(/(?:^|\/)(src|public|tests|docs)\/.*$/i)?.[0]?.replace(/^\//, "") || rawPath;
+          const label = `${repositoryPath}${source.page ? ` (p. ${source.page})` : ""}`;
+          if (label && !uniqueSources.has(label)) uniqueSources.set(label, label);
+        }
+      }
+      const visibleSources = [...uniqueSources.values()].slice(0, 5);
+      const hiddenSourceCount = uniqueSources.size - visibleSources.length;
+      const sourceText = visibleSources.length > 0
+        ? `\n\n**Sources:** ${visibleSources.join(", ")}${hiddenSourceCount > 0 ? `, +${hiddenSourceCount} more` : ""}`
         : "";
       appendRow("assistant", `${botText}${sourceText}`);
       chatHistory.push({ role: "assistant", content: botText });
