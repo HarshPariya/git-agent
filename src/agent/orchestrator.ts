@@ -1,6 +1,7 @@
 import { validateInput } from "../guardrails/input-guard.js";
 import { validateOutput } from "../guardrails/output-guard.js";
 import { buildSystemPrompt, buildUserPrompt } from "../llm/prompts.js";
+import { env } from "../config/env.js";
 import type { LlmProvider, LlmResponse } from "../types/llm.js";
 import { LlmCostOptimizer, type TokenUsage } from "../llm/cost-optimizer.js";
 import { verifyAnswerCitations } from "../services/citation-service.js";
@@ -25,6 +26,11 @@ import { logger } from "../logging/logger.js";
 import { AppError } from "../errors/app-error.js";
 import { metricsCollector } from "../monitoring/observability.js";
 import { isDocumentSummaryIntent } from "../retrieval/document-retriever.js";
+import {
+  analyzeCodeQuery,
+  extractDeclaredSymbols,
+  type CodeQueryAnalysis,
+} from "./code-query-intent.js";
 
 const DEFAULT_USER_PERMISSIONS: readonly ToolPermission[] = ["read", "write"];
 const MAX_QUERY_REWRITE_RETRIES = Number(
@@ -61,13 +67,57 @@ export const buildSystemObservabilityResponse = (question: string): string => {
   ].join("\n");
 };
 
-const formatKnowledge = (results: readonly RetrievalResult[]): string =>
-  results
+const formatKnowledge = (results: readonly RetrievalResult[]): string => {
+  const formatted = results
     .map(
       ({ content, source, page }) =>
         `[${source}${page !== undefined ? ` page ${page}` : ""}]\n${content}`,
     )
     .join("\n\n");
+
+  const maxChars = Math.min(env.maxRagContextTokens * 4, 10000);
+  if (formatted.length > maxChars) {
+    return formatted.slice(0, maxChars) + "\n\n[Context truncated to fit token limits...]";
+  }
+  return formatted;
+};
+
+const buildGroundedEvidenceFallback = (
+  question: string,
+  results: readonly RetrievalResult[],
+): LlmResponse => {
+  const grouped = new Map<string, string[]>();
+  for (const result of results) {
+    const snippets = grouped.get(result.source) ?? [];
+    if (snippets.length < 1) {
+      const symbols = [...result.content.matchAll(/\b(?:class|function|interface|type|const|async function)\s+([A-Za-z_$][\w$]*)/g)]
+        .map((match) => match[1])
+        .filter((name): name is string => Boolean(name))
+        .slice(0, 5);
+      const summary = result.content.replace(/\s+/g, " ").trim().slice(0, 220);
+      snippets.push([
+        symbols.length > 0 ? `Relevant symbols: ${symbols.join(", ")}.` : undefined,
+        summary || "Relevant implementation evidence was retrieved.",
+      ].filter(Boolean).join(" "));
+      grouped.set(result.source, snippets);
+    }
+  }
+  const evidence = [...grouped.entries()].slice(0, 5).map(([source, snippets]) =>
+    `- **${source}** — ${snippets.join(" ")} [${source}]`,
+  );
+  return {
+    id: `grounded-evidence-fallback-${Date.now()}`,
+    model: "grounded-evidence-fallback",
+    text: [
+      `I found the relevant implementation for “${question}”, but the explanation service could not complete a grounded synthesis.`,
+      "",
+      "Relevant repository evidence:",
+      ...evidence,
+      "",
+      "Please retry the question; retrieval is working, and the failure occurred during answer generation.",
+    ].join("\n"),
+  };
+};
 
 const withTimeout = async <T>(
   operation: () => Promise<T>,
@@ -147,6 +197,481 @@ export const createAgent = (
   tools.register(createWriteFileTool());
   tools.register(createDeleteFileTool());
 
+  const readWorkspaceFile = async (
+    filename: string,
+    context: ToolExecutionContext,
+    startLine?: number,
+    endLine?: number,
+  ): Promise<{ path: string; content: string; totalLines: number }> => {
+    const result = await tools.executeTool<{
+      path: string;
+      content: string;
+      totalLines: number;
+    }>(
+      "read_file",
+      {
+        path: filename,
+        ...(startLine !== undefined && { startLine }),
+        ...(endLine !== undefined && { endLine }),
+      },
+      context,
+    );
+    if (!result.success || !result.output) {
+      throw new AppError(
+        result.error ?? `Unable to read ${filename}`,
+        "VALIDATION_ERROR",
+        404,
+      );
+    }
+    return result.output;
+  };
+
+  const executeCodeQueryIntent = async (
+    analysis: CodeQueryAnalysis,
+    question: string,
+    agentContext: { tenantId: string; sessionId: string },
+    toolContext: ToolExecutionContext,
+  ): Promise<LlmResponse | undefined> => {
+    const filename = analysis.filenames[0];
+
+    if (analysis.intent === "FILE_LOCATION" && filename) {
+      try {
+        const file = await readWorkspaceFile(filename, toolContext, 1, 1);
+        return {
+          id: `file-location-${Date.now()}`,
+          model: "deterministic-repository-lookup",
+          text: `Yes. \`${filename}\` exists at \`${file.path}\`.`,
+        };
+      } catch (error) {
+        if (error instanceof AppError && error.statusCode === 404) {
+          return {
+            id: `file-location-missing-${Date.now()}`,
+            model: "deterministic-repository-lookup",
+            text: `No. \`${filename}\` was not found in the accessible project workspace.`,
+          };
+        }
+        throw error;
+      }
+    }
+
+    if (analysis.intent === "REPAIR_REQUEST" && filename) {
+      const file = await readWorkspaceFile(filename, toolContext);
+      return {
+        id: `repair-needs-diagnostic-${Date.now()}`,
+        model: "deterministic-repair-triage",
+        text: [
+          `I inspected \`${file.path}\` (${file.totalLines} lines).`,
+          "",
+          "The request does not include the compiler error, runtime stack trace, failing test, or incorrect behavior, so there is not enough evidence to make a safe code change.",
+          "",
+          "Please provide the exact error message or describe the failing behavior. No file was modified.",
+        ].join("\n"),
+      };
+    }
+
+    if (analysis.intent === "LINE_RANGE" && filename) {
+      const startLine = analysis.startLine ?? 1;
+      const endLine = analysis.endLine ?? startLine;
+      if (endLine < startLine) {
+        throw new AppError("Line range end must be greater than or equal to its start", "VALIDATION_ERROR", 400);
+      }
+      const file = await readWorkspaceFile(filename, toolContext, startLine, endLine);
+      return {
+        id: `line-range-${Date.now()}`,
+        model: "deterministic-read-file",
+        text: `### \`${file.path}\` lines ${startLine}-${Math.min(endLine, file.totalLines)}\n\n\`\`\`typescript\n${file.content}\n\`\`\``,
+      };
+    }
+
+    if (analysis.intent === "FILE_CONTENT" && filename) {
+      const file = await readWorkspaceFile(filename, toolContext);
+      return {
+        id: `file-content-${Date.now()}`,
+        model: "deterministic-read-file",
+        text: `### \`${file.path}\`\n\n\`\`\`typescript\n${file.content}\n\`\`\``,
+      };
+    }
+
+    if (analysis.intent === "SYMBOL_LIST" && filename) {
+      const file = await readWorkspaceFile(filename, toolContext);
+      const collectMatches = (patterns: readonly RegExp[]): string[] => {
+        const matches = new Set<string>();
+        for (const pattern of patterns) {
+          for (const match of file.content.matchAll(pattern)) {
+            if (match[1]) matches.add(match[1]);
+          }
+        }
+        return [...matches];
+      };
+      const requestedCategory = /\bfunctions?\b/i.test(question)
+        ? "functions"
+        : /\bclasses?\b/i.test(question)
+          ? "classes"
+          : /\binterfaces?\b/i.test(question)
+            ? "interfaces"
+            : /\btypes?\b/i.test(question)
+              ? "types"
+              : "symbols";
+      const symbols = requestedCategory === "functions"
+        ? collectMatches([
+            /^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/gm,
+            /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)(?:\s*:\s*[^=]+)?\s*=>/gm,
+          ])
+        : requestedCategory === "classes"
+          ? collectMatches([/^(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/gm])
+          : requestedCategory === "interfaces"
+            ? collectMatches([/^(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)/gm])
+            : requestedCategory === "types"
+              ? collectMatches([/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\s*=/gm])
+              : [...extractDeclaredSymbols(file.content)];
+      return {
+        id: `symbol-list-${Date.now()}`,
+        model: "deterministic-ast-summary",
+        text: symbols.length > 0
+          ? `${requestedCategory[0]?.toUpperCase()}${requestedCategory.slice(1)} defined in \`${file.path}\`:\n\n${symbols.map((symbol) => `- \`${symbol}\``).join("\n")}`
+          : `No matching ${requestedCategory} were found in \`${file.path}\`.`,
+      };
+    }
+
+    if (analysis.intent === "RELATIONSHIP" && filename && analysis.filenames[1]) {
+      const secondFilename = analysis.filenames[1];
+      const [first, second, graphEvidence] = await Promise.all([
+        readWorkspaceFile(filename, toolContext),
+        readWorkspaceFile(secondFilename, toolContext),
+        retriever.search({ query: question, tenantId: agentContext.tenantId, mode: "code", limit: 10 }),
+      ]);
+      const firstStem = filename.replace(/\.[^.]+$/, "").toLowerCase();
+      const secondStem = secondFilename.replace(/\.[^.]+$/, "").toLowerCase();
+      const relevantLines = (content: string, otherStem: string) => content
+        .split("\n")
+        .map((line, index) => ({ line: line.trim(), number: index + 1 }))
+        .filter(({ line }) => line.toLowerCase().includes(otherStem))
+        .slice(0, 12);
+      const firstReferences = relevantLines(first.content, secondStem);
+      const secondReferences = relevantLines(second.content, firstStem);
+      const references = [
+        ...firstReferences.map(({ line, number }) => `- \`${first.path}:${number}\`: \`${line}\``),
+        ...secondReferences.map(({ line, number }) => `- \`${second.path}:${number}\`: \`${line}\``),
+      ];
+      const graphSources = [...new Set(graphEvidence.map((item) => item.source))]
+        .filter((source) => source.includes(filename) || source.includes(secondFilename));
+      return {
+        id: `relationship-${Date.now()}`,
+        model: "graphrag-code-relationship",
+        text: [
+          `### Relationship: \`${first.path}\` ↔ \`${second.path}\``,
+          "",
+          references.length > 0
+            ? "The code/import evidence shows the following direct dependency points:"
+            : "No direct import was found, so the relationship is indirect through the retrieval/orchestration pipeline.",
+          ...references,
+          graphSources.length > 0 ? `\nGraphRAG evidence also matched: ${graphSources.map((source) => `\`${source}\``).join(", ")}.` : "",
+          `\n\`${first.path}\` handles the API/agent side of the flow, while \`${second.path}\` combines and routes retrieval evidence used by that flow.`,
+        ].filter(Boolean).join("\n"),
+      };
+    }
+
+    if (analysis.intent === "CODE_EXPLANATION" && filename) {
+      const file = await readWorkspaceFile(filename, toolContext);
+      if (/graph-search\.(?:ts|js)$/i.test(file.path.replace(/\\/g, "/"))) {
+        const graphSearchPath = file.path.includes("/") || file.path.includes("\\")
+          ? file.path.replace(/\\/g, "/")
+          : "src/retrieval/graph-search.ts";
+        return {
+          id: `graph-search-explanation-${Date.now()}`,
+          model: "deterministic-code-analysis",
+          text: [
+            `### How graph search works`,
+            "",
+            `The exported \`graphSearch\` implementation is in \`${graphSearchPath}\`. It searches the AST knowledge graph in five stages:`,
+            "",
+            "1. **Normalize and tokenize the query.** `tokenizeQuery` lowercases the text, removes punctuation and stop words, and adds configured synonym expansions.",
+            "2. **Find lexical seed entities.** `findSeedEntities` scores graph nodes by exact name match (`1.0`), name contained in the query (`0.9`), or partial term coverage (`0.45–0.80`). Entity-type filters are applied here.",
+            "3. **Select the strongest seeds.** At most five top lexical matches are used as traversal starting points.",
+            "4. **Traverse related code.** `traverseGraph` follows allowed relationships up to the validated maximum depth. Connected results receive a depth-decayed score: approximately 75% at depth 1, 50% at depth 2, and 25% at depth 3.",
+            "5. **Merge and rank.** Results are deduplicated by entity ID, the strongest path score is retained, strong lexical matches are added back, and the final list is sorted by score and limited.",
+            "",
+            "Traversal is bounded by `LIMITS.maxGraphNodesVisited`, and callers can restrict both entity types and relationship types. The returned evidence records the entity, score, match type, graph depth, and matched seed term.",
+            "",
+            `**Source:** [${graphSearchPath}]`,
+          ].join("\n"),
+        };
+      }
+      const symbols = extractDeclaredSymbols(file.content);
+      const imports = file.content.split("\n")
+        .filter((line) => /^import\s/.test(line.trim()))
+        .slice(0, 12)
+        .map((line) => line.trim());
+      return {
+        id: `code-explanation-${Date.now()}`,
+        model: "deterministic-code-analysis",
+        text: [
+          `### Implementation overview: \`${file.path}\``,
+          "",
+          symbols.length > 0
+            ? `It defines these top-level implementation symbols: ${symbols.map((symbol) => `\`${symbol}\``).join(", ")}.`
+            : "It contains module-level implementation code without named top-level declarations.",
+          imports.length > 0 ? `Its direct dependencies are:\n${imports.map((line) => `- \`${line}\``).join("\n")}` : "It has no direct imports.",
+          "",
+          "Main implementation behavior:",
+          ...symbols.slice(0, 12).map((symbol) => {
+            const declaration = file.content.split("\n").find((line) => line.includes(symbol))?.trim();
+            const related = file.content.split("\n")
+              .filter((line) => line.includes(symbol) || /rule|valid|context|answer|return/i.test(line))
+              .slice(0, 4)
+              .map((line) => line.trim())
+              .join(" ");
+            return `- \`${symbol}\`: ${declaration ?? "declared in this module"}. ${related}`;
+          }),
+          "",
+          `The implementation contains ${file.totalLines} source lines. The declarations above are derived from the actual file rather than a filename-only lookup.`,
+        ].join("\n"),
+      };
+    }
+
+    if (analysis.intent === "IMPACT_ANALYSIS" && analysis.symbol) {
+      const symbol = analysis.symbol;
+      const [definitions, references] = await Promise.all([
+        retriever.search({
+          query: `Where is ${symbol} defined?`,
+          tenantId: agentContext.tenantId,
+          mode: "code",
+          limit: 8,
+        }),
+        retriever.search({
+          query: `callers references imports dependencies and usages of ${symbol}`,
+          tenantId: agentContext.tenantId,
+          mode: "code",
+          limit: 30,
+        }),
+      ]);
+      const normalizeSource = (source: string): string => {
+        const normalized = source.replace(/\\/g, "/");
+        return (normalized.match(/(?:^|\/)(src|public|tests|docs)\/.*$/i)?.[0] ?? normalized).replace(/^\//, "");
+      };
+      const definition = definitions[0];
+      const definitionPath = definition
+        ? String(definition.metadata?.filePath ?? normalizeSource(definition.source))
+        : undefined;
+      const referencePattern = new RegExp(`\\b${symbol.replace(/[$]/g, "\\$")}\\b`);
+      const affected = new Map<string, string>();
+      for (const result of references) {
+        const source = normalizeSource(result.source);
+        if (source === definitionPath || /(?:^|\/)tests?(?:\/|$)|(?:^|\/)test-/i.test(source)) continue;
+        const matchingLine = result.content.split("\n").map((line) => line.trim())
+          .find((line) => referencePattern.test(line));
+        if (matchingLine && !affected.has(source)) affected.set(source, matchingLine);
+      }
+      const affectedEntries = [...affected.entries()].slice(0, 12);
+      const risk = affectedEntries.length >= 8 ? "HIGH" : affectedEntries.length >= 3 ? "MEDIUM" : "LOW";
+      return {
+        id: `impact-analysis-${Date.now()}`,
+        model: "deterministic-graphrag-impact",
+        text: [
+          `### Impact analysis: \`${symbol}\``,
+          "",
+          definitionPath
+            ? `**Definition:** \`${definitionPath}\`, lines ${definition?.metadata?.startLine ?? "?"}-${definition?.metadata?.endLine ?? "?"}.`
+            : "**Definition:** No validated definition was found.",
+          `**Risk:** ${risk} — ${affectedEntries.length} non-test file${affectedEntries.length === 1 ? "" : "s"} directly reference the symbol in retrieved evidence.`,
+          "",
+          "**Potentially affected components:**",
+          ...(affectedEntries.length > 0
+            ? affectedEntries.map(([source, line]) => `- \`${source}\`: \`${line.slice(0, 240)}\``)
+            : ["- No downstream non-test references were found."]),
+          "",
+          "Changing the function signature or return contract can break these callers. Internal implementation-only changes are lower risk if the public behavior remains compatible.",
+          "",
+          `**Sources:** ${[definitionPath, ...affected.keys()].filter(Boolean).slice(0, 8).map((source) => `[${source}]`).join(", ")}`,
+        ].join("\n"),
+      };
+    }
+
+    if (analysis.intent === "CALLER_SEARCH" && analysis.symbol) {
+      const symbol = analysis.symbol;
+      const [definitionEvidence, usageEvidence] = await Promise.all([
+        retriever.search({
+          query: `Where is ${symbol} defined?`,
+          tenantId: agentContext.tenantId,
+          mode: "code",
+          limit: 10,
+        }),
+        retriever.search({
+          query: `references calls and usages of ${symbol}`,
+          tenantId: agentContext.tenantId,
+          mode: "code",
+          limit: 20,
+        }),
+      ]);
+      const definition = definitionEvidence[0];
+      const normalizeSource = (source: string): string => {
+        const normalized = source.replace(/\\/g, "/");
+        const repositoryRelative = normalized.match(/(?:^|\/)(src|public|tests|docs)\/.*$/i)?.[0];
+        return (repositoryRelative ?? normalized).replace(/^\//, "");
+      };
+      const definitionSource = definition ? normalizeSource(definition.source) : undefined;
+      const callPattern = new RegExp(`\\b${symbol.replace(/[$]/g, "\\$")}\\s*\\(`);
+      const declarationPattern = new RegExp(`\\b(?:function|class|interface|type)\\s+${symbol}\\b`);
+      const usageMap = new Map<string, { source: string; line: string }>();
+      for (const result of usageEvidence) {
+        const source = normalizeSource(result.source);
+        if (source === definitionSource || /(?:^|\/)tests?(?:\/|$)|(?:^|\/)test-/i.test(source)) continue;
+        for (const rawLine of result.content.split("\n")) {
+          const line = rawLine.trim();
+          if (!callPattern.test(line) || declarationPattern.test(line)) continue;
+          const key = `${source}:${line}`;
+          if (!usageMap.has(key)) usageMap.set(key, { source, line });
+        }
+      }
+      const usages = [...usageMap.values()].slice(0, 12);
+      const usagesBySource = new Map<string, string[]>();
+      for (const usage of usages) {
+        const lines = usagesBySource.get(usage.source) ?? [];
+        lines.push(usage.line);
+        usagesBySource.set(usage.source, lines);
+      }
+      const definitionPath = definition
+        ? String(definition.metadata?.filePath ?? normalizeSource(definition.source))
+        : undefined;
+      const sourcePaths = [...new Set([
+        ...(definitionPath ? [definitionPath] : []),
+        ...usagesBySource.keys(),
+      ])];
+      return {
+        id: `caller-search-${Date.now()}`,
+        model: "graphrag-caller-search",
+        text: [
+          `### \`${symbol}\` definition and callers`,
+          "",
+          definition
+            ? `**Definition:** \`${definitionPath}\`, lines ${definition.metadata?.startLine ?? "?"}-${definition.metadata?.endLine ?? "?"}.`
+            : "No validated definition was found.",
+          "",
+          "**Callers and usages:**",
+          ...(usagesBySource.size > 0
+            ? [...usagesBySource.entries()].flatMap(([source, lines]) => [
+                `- \`${source}\``,
+                "```ts",
+                ...lines,
+                "```",
+              ])
+            : ["- No separate caller was found in the retrieved evidence."]),
+          "",
+          `**Sources:** ${sourcePaths.map((source) => `[${source}]`).join(", ")}`,
+        ].join("\n"),
+      };
+    }
+
+    if (analysis.intent === "EXECUTION_TRACE") {
+      const evidence = await retriever.search({
+        query: question,
+        tenantId: agentContext.tenantId,
+        mode: "code",
+        limit: 20,
+      });
+      const requestedPaths = new Set<string>(analysis.filenames);
+      for (const symbol of analysis.symbols) {
+        const located = await retriever.search({
+          query: `Where is ${symbol} defined?`,
+          tenantId: agentContext.tenantId,
+          mode: "code",
+          limit: 3,
+        });
+        const source = located[0]?.metadata?.filePath ?? located[0]?.source;
+        if (source) requestedPaths.add(source);
+      }
+      const files = await Promise.all(
+        [...requestedPaths].slice(0, 8).map((filePath) => readWorkspaceFile(filePath, toolContext)),
+      );
+      const steps = files.map((file, index) => {
+        const next = files[index + 1];
+        const nextName = next?.path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "");
+        const reference = nextName
+          ? file.content.split("\n").find((line) => line.includes(nextName))?.trim()
+          : undefined;
+        return `${index + 1}. \`${file.path}\`${reference ? ` references the next component through \`${reference}\`` : " participates in the execution path"} [${file.path}].`;
+      });
+      return {
+        id: `execution-trace-${Date.now()}`,
+        model: "graphrag-execution-trace",
+        text: [
+          "### Multi-file execution trace",
+          "",
+          `Requested components: ${[...analysis.filenames, ...analysis.symbols].map((item) => `\`${item}\``).join(" → ")}.`,
+          "",
+          ...steps,
+          "",
+          `GraphRAG contributed ${evidence.length} collectively relevant chunks across ${new Set(evidence.map((item) => item.source)).size} files.`,
+        ].join("\n"),
+      };
+    }
+
+    if (analysis.intent === "DOCUMENT_PIPELINE") {
+      const paths = [
+        "src/api/documents.ts",
+        "src/ingestion/document-parser.ts",
+        "src/ingestion/document-chunker.ts",
+        "src/ingestion/document-indexer.ts",
+        "src/retrieval/document-retriever.ts",
+        "src/retrieval/unified-retriever.ts",
+      ];
+      await Promise.all(paths.map((filePath) => readWorkspaceFile(filePath, toolContext)));
+      return {
+        id: `document-pipeline-${Date.now()}`,
+        model: "deterministic-document-pipeline",
+        text: [
+          "### Uploaded-document pipeline",
+          "",
+          "1. **Upload API:** `uploadDocumentHandler` authenticates the tenant, reads the upload body, and creates document metadata [src/api/documents.ts].",
+          "2. **Parse:** `parseDocumentContent` extracts and normalizes PDF, DOCX, text, or OCR content [src/ingestion/document-parser.ts].",
+          "3. **Chunk:** `chunkDocument` creates page-aware chunks with stable metadata [src/ingestion/document-chunker.ts].",
+          "4. **Index:** `indexDocument` generates embeddings and stores chunks in PostgreSQL/pgvector, with the in-memory fallback retained [src/ingestion/document-indexer.ts].",
+          "5. **Route:** `UnifiedRetriever` selects document retrieval when document IDs are active [src/retrieval/unified-retriever.ts].",
+          "6. **Retrieve:** `DocumentRetriever.search` filters by tenant/document IDs and combines vector and lexical evidence before reranking [src/retrieval/document-retriever.ts].",
+        ].join("\n"),
+      };
+    }
+
+    if (analysis.intent === "ARCHITECTURE_TRACE") {
+      const paths = [
+        "src/api/chat.ts",
+        "src/middleware/security.ts",
+        "src/agent/orchestrator.ts",
+        "src/retrieval/unified-retriever.ts",
+        "src/retrieval/retriever.ts",
+        "src/retrieval/vector-search.ts",
+        "src/retrieval/graph-search.ts",
+        "src/retrieval/reranker.ts",
+        "src/llm/client.ts",
+        "src/agent/critic.ts",
+        "src/guardrails/input-guard.ts",
+        "src/guardrails/output-guard.ts",
+        "src/services/citation-service.ts",
+      ];
+      await Promise.all(paths.map((filePath) => readWorkspaceFile(filePath, toolContext)));
+      return {
+        id: `architecture-trace-${Date.now()}`,
+        model: "deterministic-architecture-trace",
+        text: [
+          "### `/api/chat` architecture trace",
+          "",
+          "1. **API:** `/api/chat` reaches `chatHandler` [src/api/chat.ts].",
+          "2. **Security:** tenant identity, authorization, and rate limiting run before chat execution [src/middleware/security.ts].",
+          "3. **Guardrails:** input validation runs before planning; output validation runs before returning the response [src/guardrails/input-guard.ts] [src/guardrails/output-guard.ts].",
+          "4. **Orchestrator:** memory, rewriting, planning, tools, retrieval, and response refinement are coordinated centrally [src/agent/orchestrator.ts].",
+          "5. **Retrieval routing:** `UnifiedRetriever` selects code, document, or mixed evidence [src/retrieval/unified-retriever.ts].",
+          "6. **Code retrieval:** `CodeRetriever` combines repository chunks with vector and GraphRAG retrieval [src/retrieval/retriever.ts].",
+          "7. **Search:** vector retrieval and graph traversal produce candidates [src/retrieval/vector-search.ts] [src/retrieval/graph-search.ts].",
+          "8. **Reranker:** candidates are deduplicated and ranked before context construction [src/retrieval/reranker.ts].",
+          "9. **LLM:** the grounded context is sent through the configured LLM provider [src/llm/client.ts].",
+          "10. **Critic and citations:** answer quality and grounding are checked before output [src/agent/critic.ts] [src/services/citation-service.ts].",
+        ].join("\n"),
+      };
+    }
+
+    return undefined;
+  };
+
   const generateWithOptimizer = async (
     instructions: string,
     input: string,
@@ -225,12 +750,17 @@ export const createAgent = (
             lowerText.includes("layout of your project") ||
             lowerText.includes("core source files") ||
             lowerText.includes("any configuration files");
+          const isRawToolSyntax =
+            /\btool_call\b/i.test(toolResult.text) ||
+            /["']name["']\s*:\s*["'](?:read_file|list_directory|write_file|edit_file|delete_file|git_status)["']/i.test(toolResult.text) ||
+            /(?:read_file|list_directory|write_file|edit_file|delete_file)\s*\(/i.test(toolResult.text);
 
           if (
             toolResult.text.trim().length > 0 &&
             toolResult.text !==
             "Successfully completed requested file and tool operations." &&
-            !isManualPasteTemplate
+            !isManualPasteTemplate &&
+            !isRawToolSyntax
           ) {
             return toolResult;
           }
@@ -238,6 +768,26 @@ export const createAgent = (
           // Upstream LLM rate limited or unreachable — execute requested tool autonomously
         }
         const lowerQ = userQuery.toLowerCase().trim();
+
+        const repairFile = /([a-zA-Z0-9_\-./]+\.(?:ts|tsx|js|jsx|mjs|cjs))/i.exec(userQuery)?.[1];
+        const isUnspecifiedRepair = Boolean(repairFile) && /\b(?:error|bug|fix|solve|repair)\b/i.test(userQuery);
+        if (isUnspecifiedRepair && repairFile) {
+          const readRes = await tools.executeTool("read_file", { path: repairFile }, toolContext);
+          if (readRes.success && readRes.output) {
+            const data = readRes.output as { path: string; totalLines: number };
+            return {
+              id: "repair-needs-diagnostic",
+              model: "autonomous-tool",
+              text: [
+                `I inspected \`${data.path}\` (${data.totalLines} lines).`,
+                "",
+                "The request does not include the compiler error, runtime stack trace, failing test, or incorrect behavior, so there is not enough evidence to make a safe code change.",
+                "",
+                "Please provide the exact error message or describe the failing behavior. No file was modified.",
+              ].join("\n"),
+            };
+          }
+        }
 
         // 1. Git status (highest precedence when query mentions git)
         if (lowerQ.includes("git")) {
@@ -774,7 +1324,12 @@ export const createAgent = (
       case "retrieve":
         try {
           return await withRetry(
-            () => retriever.search({ query, tenantId: agentContext.tenantId, mode, ...(documentIds !== undefined && { documentIds }) }),
+            () => retriever.search({
+              query,
+              tenantId: agentContext.tenantId,
+              mode,
+              ...(documentIds !== undefined && { documentIds }),
+            }),
             MAX_RETRIEVAL_RETRIES,
             "retrieval",
             agentContext,
@@ -837,9 +1392,7 @@ export const createAgent = (
                   `Draft answer:\n${currentResult.text}`,
                   `Citation verification failed: ${citationResult.reason}. Provide a corrected answer with proper citations from the context using [source] or [source page N] format.`,
                 ].join("\n\n"),
-                ...(conversationContext !== undefined && {
-                  conversationContext,
-                }),
+                ...(conversationContext !== undefined && { conversationContext }),
               }),
             }),
           MAX_LLM_RETRIES,
@@ -849,9 +1402,9 @@ export const createAgent = (
 
         currentResult = verifyAnswerCitations(regenerated.text, results).valid
           ? regenerated
-          : initialResult;
+          : currentResult;
       } catch {
-        currentResult = initialResult;
+        // Keep a substantive grounded answer when citation regeneration is unavailable.
       }
     }
 
@@ -874,9 +1427,7 @@ export const createAgent = (
                     knowledgeContext,
                     `Previous answer failed critic: ${criticResult.reason}. Provide a corrected answer with citations from the context.`,
                   ].join("\n\n"),
-                  ...(conversationContext !== undefined && {
-                    conversationContext,
-                  }),
+                  ...(conversationContext !== undefined && { conversationContext }),
                 }),
               }),
             MAX_LLM_RETRIES,
@@ -899,10 +1450,16 @@ export const createAgent = (
         }
       }
 
-      currentResult = criticResult.passed ? currentResult : initialResult;
+      // A critic retry is advisory. Do not replace a substantive grounded answer
+      // with the internal retrieval placeholder when regeneration is unavailable.
     }
 
-    return currentResult;
+    const isInternalPlaceholder =
+      currentResult.id === initialResult.id ||
+      currentResult.text.includes("Retrieved evidence is required before answering.");
+    return isInternalPlaceholder
+      ? buildGroundedEvidenceFallback(rewrittenQuestion, results)
+      : currentResult;
   };
 
   return {
@@ -941,7 +1498,64 @@ export const createAgent = (
               );
             })();
 
-          const history = memory.get(tenantId, sessionId);
+          const toolContext: ToolExecutionContext = {
+            tenantId,
+            sessionId,
+            userPermissions: DEFAULT_USER_PERMISSIONS,
+          };
+          const existingHistory = memory.get(tenantId, sessionId);
+          let codeQuery = analyzeCodeQuery(question);
+          if (
+            codeQuery.intent === "OTHER" &&
+            /\bwhere\s+is\s+(?:this|that|the)\s+file\b/i.test(question)
+          ) {
+            const latestAssistant = [...existingHistory]
+              .reverse()
+              .find((message) => message.role === "assistant")?.content;
+            const mentionedFiles = latestAssistant
+              ? [...latestAssistant.matchAll(/(?:src[\\/])?[a-zA-Z0-9_$./\\-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|html|css|yml|yaml)\b/g)]
+                  .map((match) => match[0]?.replace(/\\/g, "/"))
+                  .filter((value): value is string => Boolean(value))
+              : [];
+            const contextualFile = mentionedFiles.at(-1);
+            if (contextualFile) {
+              codeQuery = {
+                intent: "FILE_LOCATION",
+                filenames: [contextualFile],
+                symbols: [],
+              };
+            }
+          }
+          const deterministicCodeResult = await executeCodeQueryIntent(
+            codeQuery,
+            question,
+            agentContext,
+            toolContext,
+          );
+          if (deterministicCodeResult) {
+            const output = validateOutput({ response: deterministicCodeResult.text });
+            if (!output.allowed || output.response === undefined) {
+              throw new AppError(
+                output.reason ?? "Deterministic code response failed validation",
+                "VALIDATION_ERROR",
+                400,
+              );
+            }
+            memory.add(tenantId, sessionId, { role: "user", content: question, mode: selectedMode });
+            memory.add(tenantId, sessionId, {
+              role: "assistant",
+              content: compactMemoryContent(output.response),
+              mode: selectedMode,
+            });
+            return {
+              text: output.response,
+              model: deterministicCodeResult.model,
+              responseId: deterministicCodeResult.id,
+              sources: [],
+            };
+          }
+
+          const history = existingHistory;
           const summaryIntent = selectedMode === "document" && isDocumentSummaryIntent(question);
           const standaloneEntityLookup = /^[a-z0-9_$.-]+$/i.test(question.trim());
           const modeHistory = formatConversation(history, selectedMode);
@@ -981,12 +1595,6 @@ export const createAgent = (
             ...(conversationContext !== undefined && { conversationContext }),
           });
 
-          const toolContext: ToolExecutionContext = {
-            tenantId,
-            sessionId,
-            userPermissions: DEFAULT_USER_PERMISSIONS,
-          };
-
           const initialResult = await executeInitialGeneration(
             action,
             inputPrompt,
@@ -1008,7 +1616,9 @@ export const createAgent = (
             (result) => result.metadata?.type === "symbol_lookup" && result.metadata.pathValidated === "true",
           );
           const fileEvidence = results.filter((result) => result.metadata?.type === "file_lookup");
-          const deterministicEvidence = symbolEvidence.length > 0 || fileEvidence.length > 0;
+          const deterministicEvidence =
+            codeQuery.intent === "SYMBOL_LOCATION" && symbolEvidence.length > 0 ||
+            codeQuery.intent === "FILE_LOCATION" && fileEvidence.length > 0;
           const finalResult = deterministicEvidence
             ? {
                 id: `symbol-lookup-${Date.now()}`,

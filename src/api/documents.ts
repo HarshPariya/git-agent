@@ -14,8 +14,12 @@ export async function uploadDocumentHandler(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const tenantId = (req.headers["x-tenant-id"] as string) || "default-tenant";
-    const userId = (req.headers["x-user-id"] as string) || "default-user";
+    const context = req.tenantContext;
+    if (!context) {
+      throw new AppError("Tenant context is missing", "AUTHENTICATION_ERROR", 401);
+    }
+    const tenantId = context.tenantId;
+    const userId = context.userId;
 
     const filename = req.query.filename as string || "uploaded-document.txt";
     const mimeType = (req.headers["content-type"] as string) || "text/plain";
@@ -122,7 +126,11 @@ export async function listDocumentsHandler(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const tenantId = (req.headers["x-tenant-id"] as string) || "default-tenant";
+    const context = req.tenantContext;
+    if (!context) {
+      throw new AppError("Tenant context is missing", "AUTHENTICATION_ERROR", 401);
+    }
+    const tenantId = context.tenantId;
     let docs: any[] = [];
 
     try {
@@ -172,7 +180,11 @@ export async function deleteDocumentHandler(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const tenantId = (req.headers["x-tenant-id"] as string) || "default-tenant";
+    const context = req.tenantContext;
+    if (!context) {
+      throw new AppError("Tenant context is missing", "AUTHENTICATION_ERROR", 401);
+    }
+    const tenantId = context.tenantId;
     const rawDocId = req.params.id;
     const documentId = Array.isArray(rawDocId) ? rawDocId[0] : rawDocId;
 

@@ -17,7 +17,6 @@ const BLOCKED_NAMES = new Set([
   ".env",
   ".env.local",
   "dist",
-  "dist-member2",
   ".turbo",
   ".next",
 ]);

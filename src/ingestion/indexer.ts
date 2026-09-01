@@ -11,6 +11,7 @@ import {
   isPathWithinRoot,
   MAX_FILE_SIZE_BYTES,
 } from "./cleaner.js";
+import { toRepositoryPath } from "../retrieval/repository-path.js";
 
 export interface IncrementalIndexStats {
   file: string;
@@ -61,7 +62,10 @@ export class RepositoryIndexer {
     }
 
     // Parse & Chunk single file
-    const parsedFile = await parseFile(absolutePath);
+    const parsedFile = {
+      ...(await parseFile(absolutePath)),
+      filePath: toRepositoryPath(this.rootDirectory, absolutePath),
+    };
     const chunks: CodeChunk[] = chunkFile(parsedFile);
 
     if (chunks.length === 0) {
@@ -76,7 +80,7 @@ export class RepositoryIndexer {
   }
 
   public async deleteFileFromIndex(filePath: string): Promise<IncrementalIndexStats> {
-    const normalizedPath = path.normalize(filePath);
+    const normalizedPath = toRepositoryPath(this.rootDirectory, filePath);
     const result = await query(
       `DELETE FROM code_chunks WHERE repository = $1 AND file_path = $2`,
       [this.repositoryName, normalizedPath],
