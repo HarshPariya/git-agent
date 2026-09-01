@@ -12,7 +12,6 @@ export const IGNORED_DIRECTORIES = new Set([
   "node_modules",
   ".git",
   "dist",
-  "dist-member2",
   "build",
   ".next",
   "coverage",

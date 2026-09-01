@@ -47,6 +47,10 @@ export function routeQuery({
 }: RouteRequest): RouteResult {
   const normalized = query.toLowerCase().trim();
 
+  if (/^\/impact\s+[a-z_$][\w$]*$/i.test(normalized)) {
+    return { mode: "code", confidence: 1, reason: "Explicit code impact-analysis command." };
+  }
+
   const matchesCode = CODE_KEYWORDS.some((kw) => normalized.includes(kw));
   const matchesDocument = DOCUMENT_KEYWORDS.some((kw) => normalized.includes(kw));
 

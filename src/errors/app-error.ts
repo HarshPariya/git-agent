@@ -7,6 +7,7 @@ export type ErrorCode =
   | "LLM_ERROR"
   | "EXTRACTION_FAILED"
   | "PERSISTENCE_UNAVAILABLE"
+  | "SERVICE_UNAVAILABLE"
   | "INTERNAL_ERROR";
 
 export class AppError extends Error {

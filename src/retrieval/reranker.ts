@@ -4,6 +4,7 @@ import type {
 
 export interface RerankOptions {
   limit?: number;
+  maxPerFile?: number;
 }
 
 export interface RerankedResult
@@ -189,7 +190,7 @@ export function rerankResults(
     options.limit ??
     results.length;
 
-  return results
+  const ranked = results
     .map((result) => {
       const exactNameBonus =
         calculateExactNameBonus(
@@ -241,5 +242,16 @@ export function rerankResults(
         b.rerankScore -
         a.rerankScore,
     )
-    .slice(0, limit);
+  const maxPerFile = options.maxPerFile ?? Number.POSITIVE_INFINITY;
+  const fileCounts = new Map<string, number>();
+  const diverse: RerankedResult[] = [];
+  for (const result of ranked) {
+    const key = result.filePath ?? result.name;
+    const count = fileCounts.get(key) ?? 0;
+    if (count >= maxPerFile) continue;
+    fileCounts.set(key, count + 1);
+    diverse.push(result);
+    if (diverse.length === limit) break;
+  }
+  return diverse;
 }

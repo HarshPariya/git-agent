@@ -31,11 +31,35 @@ const FALLBACK_MODELS = [
 const delay = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
-const isRateLimitError = (err: unknown): boolean => {
+const isTransientLlmError = (err: unknown): boolean => {
   if (typeof err !== "object" || err === null) return false;
   const e = err as Record<string, unknown>;
-  const status = e.status ?? (e as { error?: { status?: number } }).error?.status;
-  return status === 429 || status === 503;
+  const status = Number(e.status ?? (e as { error?: { status?: number } }).error?.status);
+  const msg = String(e.message || e.error || "");
+  const name = String(e.name || "");
+
+  return (
+    status === 429 ||
+    status === 503 ||
+    status === 500 ||
+    status === 502 ||
+    status === 504 ||
+    name === "APIConnectionError" ||
+    name === "APIConnectionTimeoutError" ||
+    msg.includes("Connection error") ||
+    msg.includes("ETIMEDOUT") ||
+    msg.includes("ECONNRESET") ||
+    msg.includes("rate_limit")
+  );
+};
+
+const extractRetryDelayMs = (err: unknown): number => {
+  const str = String(err);
+  const match = /try again in (\d+(?:\.\d+)?)s/i.exec(str);
+  if (match && match[1]) {
+    return Math.ceil(parseFloat(match[1]) * 1000) + 500;
+  }
+  return 0;
 };
 
 const callGroqWithFallback = async <T>(
@@ -49,9 +73,10 @@ const callGroqWithFallback = async <T>(
       return await apiFn(model);
     } catch (err) {
       lastErr = err;
-      // For rate-limit or server errors, wait before trying the next model
       if (i < modelsToTry.length - 1) {
-        const waitMs = isRateLimitError(err) ? 500 : 200;
+        const parsedMs = extractRetryDelayMs(err);
+        const isTransient = isTransientLlmError(err);
+        const waitMs = parsedMs > 0 ? parsedMs : isTransient ? Math.min(1000 * Math.pow(2, i), 4000) : 300;
         await delay(waitMs);
       }
     }
