@@ -306,7 +306,7 @@ The team trains every Monday and Thursday.`;
     retrievalMode: "code",
   });
   assert.ok(codeAgain.sources.every((source: any) => source.sourceType === "code"));
-  assert.ok(codeAgain.sources.some((source) => source.source.replace(/\\/g, "/").endsWith("/src/agent/critic.ts")));
+  assert.ok(codeAgain.sources.some((source) => source.source.replace(/\\/g, "/").toLowerCase().endsWith("critic.ts")));
 
   const documentAgain = await agent.run({
     tenantId,

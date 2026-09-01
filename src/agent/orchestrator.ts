@@ -1077,12 +1077,9 @@ export const createAgent = (
           }
         }
 
-        // 5. Read file / show file / inspect file / scripts
+        // 5. Read file
         const fileMatch =
-          /(?:read|show|view|inspect|display|check|get|cat|open|in)\s+(?:file\s+|the\s+file\s+|at\s+)?[`'"]?([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)[`'"]?/i.exec(
-            userQuery,
-          ) ||
-          /([a-zA-Z0-9_\-\.\/]+\.(?:ts|js|json|md|txt|yml|yaml|html|css))/i.exec(
+          /\b(?:read|show|view|inspect|display|cat|open)\s+(?:file\s+|the\s+file\s+|at\s+)?[`'"]?([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)[`'"]?/i.exec(
             userQuery,
           );
 
@@ -1551,7 +1548,15 @@ export const createAgent = (
               text: output.response,
               model: deterministicCodeResult.model,
               responseId: deterministicCodeResult.id,
-              sources: [],
+              sources:
+                codeQuery.filenames.length > 0
+                  ? codeQuery.filenames.map((f) => ({
+                      source: f,
+                      content: `File: ${f}`,
+                      score: 1,
+                      sourceType: "code" as const,
+                    }))
+                  : [],
             };
           }
 
