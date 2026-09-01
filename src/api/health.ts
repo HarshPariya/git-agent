@@ -5,5 +5,12 @@ export const healthHandler = (_request: Request, response: Response): void => {
   response.status(200).json({
     status: "ok",
     environment: env.nodeEnv,
+    modules: {
+      retrieval: "ready",
+      agent: "ready",
+    },
+    database: {
+      poolIdleConnections: 0,
+    },
   });
 };

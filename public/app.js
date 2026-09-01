@@ -5,19 +5,47 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnNewChat = document.getElementById("btn-new-chat");
   const btnClearHistory = document.getElementById("btn-clear-history");
   const healthText = document.getElementById("sidebar-health-text");
+  const retrievalStatus = document.getElementById("retrieval-module-status");
+  const agentStatus = document.getElementById("agent-module-status");
+  const activeRouteLabel = document.getElementById("active-route-label");
 
   let chatHistory = [];
   const activeDocumentIds = new Set();
+  const tenantId = "tenant-1";
+  const userId = `user-${tenantId}`;
+  const userRole = "user";
+  let sessionId = "session-prod-1";
+  let isSubmitting = false;
+
+  const identityHeaders = () => ({
+    "x-tenant-id": tenantId,
+    "x-user-id": userId,
+    "x-user-role": userRole,
+  });
 
   // Health Polling
   async function checkHealth() {
     try {
       const res = await fetch("/health");
       const data = await res.json();
+      if (!res.ok) throw new Error(`Health check failed (${res.status})`);
+      for (const [element, status] of [
+        [retrievalStatus, data.modules?.retrieval],
+        [agentStatus, data.modules?.agent],
+      ]) {
+        if (!element) continue;
+        element.textContent = status || "Ready";
+        element.classList.remove("offline");
+      }
       if (healthText) {
         healthText.textContent = `Online • ${data.status.toUpperCase()} (${data.database.poolIdleConnections ?? 0} idle pool)`;
       }
     } catch {
+      for (const status of [retrievalStatus, agentStatus]) {
+        if (!status) continue;
+        status.textContent = "Offline";
+        status.classList.add("offline");
+      }
       if (healthText) healthText.textContent = "Offline • Reconnecting...";
     }
   }
@@ -104,7 +132,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function handleSend(text) {
     const query = text || userInput?.value.trim();
-    if (!query) return;
+    if (!query || isSubmitting) return;
 
     if (userInput) {
       userInput.value = "";
@@ -113,6 +141,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     appendRow("user", query);
     chatHistory.push({ role: "user", content: query });
+    isSubmitting = true;
+    if (btnSend) btnSend.disabled = true;
 
     // Bot Typing Indicator
     const typingId = `typing-${Date.now()}`;
@@ -134,10 +164,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...identityHeaders(),
+        },
         body: JSON.stringify({
+          sessionId,
           message: query,
-          history: chatHistory,
           ...(docIdsArray.length > 0 && { documentIds: docIdsArray }),
         }),
       });
@@ -145,12 +178,29 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await res.json();
       document.getElementById(typingId)?.remove();
 
-      const botText = data.content || data.message || data.text || "Hello! How can I assist you with your codebase today?";
-      appendRow("assistant", botText);
+      if (!res.ok) {
+        throw new Error(data.error?.message || `Request failed (${res.status})`);
+      }
+
+      const botText = data.message || "Hello! How can I assist you with your codebase today?";
+      if (activeRouteLabel && data.pipeline?.retrievalMode) {
+        activeRouteLabel.textContent = `Member 1: ${data.pipeline.retrievalMode} → Member 2: agent`;
+        activeRouteLabel.title = data.pipeline.routeReason || "Automatically routed";
+      }
+      const sourceText = Array.isArray(data.sources) && data.sources.length > 0
+        ? `\n\n**Sources:** ${data.sources
+          .map((source) => `${source.source}${source.page ? ` (p. ${source.page})` : ""}`)
+          .join(", ")}`
+        : "";
+      appendRow("assistant", `${botText}${sourceText}`);
       chatHistory.push({ role: "assistant", content: botText });
     } catch (err) {
       document.getElementById(typingId)?.remove();
       appendRow("assistant", `❌ **Error**: ${err.message}`);
+    } finally {
+      isSubmitting = false;
+      if (btnSend) btnSend.disabled = false;
+      userInput?.focus();
     }
   }
 
@@ -217,7 +267,12 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     if (btnClearHistory) btnClearHistory.addEventListener("click", clearFn);
-    if (btnNewChat) btnNewChat.addEventListener("click", clearFn);
+    if (btnNewChat) {
+      btnNewChat.addEventListener("click", () => {
+        sessionId = `session-${Math.random().toString(36).substring(2, 9)}`;
+        clearFn();
+      });
+    }
   }
 
   // Document Upload Elements
@@ -248,7 +303,7 @@ document.addEventListener("DOMContentLoaded", () => {
           method: "POST",
           headers: {
             "Content-Type": mimeType,
-            "x-tenant-id": "default-tenant",
+            ...identityHeaders(),
           },
           body: buffer,
         });
@@ -276,7 +331,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!uploadedDocsList) return;
     try {
       const res = await fetch("/api/documents", {
-        headers: { "x-tenant-id": "default-tenant" },
+        headers: identityHeaders(),
       });
       const data = await res.json();
       const docs = data.documents || [];
@@ -310,7 +365,7 @@ document.addEventListener("DOMContentLoaded", () => {
           try {
             const deleteResponse = await fetch(`/api/documents/${id}`, {
               method: "DELETE",
-              headers: { "x-tenant-id": "default-tenant" },
+              headers: identityHeaders(),
             });
             if (!deleteResponse.ok) {
               const errorBody = await deleteResponse.json().catch(() => ({}));
