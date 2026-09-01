@@ -8,7 +8,6 @@ import { CodeRetriever } from "../retrieval/retriever.js";
 import { MockRetriever } from "../retrieval/mock-retriever.js";
 import { UnifiedRetriever } from "../retrieval/unified-retriever.js";
 import { routeQuery } from "../agent/retrieval-router.js";
-
 import { env } from "../config/env.js";
 import { mockProvider } from "../llm/mock-client.js";
 
@@ -21,17 +20,34 @@ const initializeRetriever = (): Promise<boolean> => {
   retrieverInitialization ??= codeRetriever.initialize()
     .then(() => true)
     .catch((error) => {
-      console.warn("Failed to initialize CodeRetriever; using fallback", error);
+      console.warn("Failed to initialize CodeRetriever", error);
+      if (env.nodeEnv === "production") {
+        throw new AppError(
+          "Code retriever service unavailable",
+          "SERVICE_UNAVAILABLE",
+          503,
+        );
+      }
       return false;
     });
   return retrieverInitialization;
 };
 
-const getAgent = async () => createAgent(
-  memory,
-  (await initializeRetriever()) ? unifiedRetriever : new MockRetriever(),
-  env.nodeEnv === "test" ? mockProvider : groqProvider,
-);
+const getAgent = async () => {
+  const initialized = await initializeRetriever();
+  if (!initialized && env.nodeEnv === "production") {
+    throw new AppError(
+      "Code retriever service unavailable",
+      "SERVICE_UNAVAILABLE",
+      503,
+    );
+  }
+  return createAgent(
+    memory,
+    initialized ? unifiedRetriever : new MockRetriever(),
+    env.nodeEnv === "test" ? mockProvider : groqProvider,
+  );
+};
 
 const validateField = (value: unknown, field: string): string => {
   const checks = [

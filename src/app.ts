@@ -9,7 +9,7 @@ import {
   listDocumentsHandler,
   uploadDocumentHandler,
 } from "./api/documents.js";
-import { healthHandler } from "./api/health.js";
+import { healthHandler, readinessHandler } from "./api/health.js";
 import { env } from "./config/env.js";
 import { errorHandler } from "./errors/error-handler.js";
 import { logger } from "./logging/logger.js";
@@ -43,12 +43,14 @@ app.get("/api/info", (_request, response) => {
     environment: env.nodeEnv,
     endpoints: {
       health: "GET /health",
+      readiness: "GET /ready",
       chat: "POST /chat",
     },
   });
 });
 
 app.get("/health", healthHandler);
+app.get("/ready", readinessHandler);
 app.post("/chat", securityMiddleware, chatHandler);
 app.post("/api/chat", securityMiddleware, chatHandler);
 app.post("/api/documents/upload", securityMiddleware, uploadDocumentHandler);

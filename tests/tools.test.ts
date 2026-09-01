@@ -152,3 +152,14 @@ test("rejects unknown tools", () => {
   const registry = new ToolRegistry();
   assert.throws(() => registry.get("unknown_tool"), /Unknown tool/);
 });
+
+import { parseRequestedFilename } from "../src/retrieval/retriever.js";
+
+test("parseRequestedFilename distinguishes location queries from action creation requests", () => {
+  assert.equal(parseRequestedFilename("Where is app.ts?"), "app.ts");
+  assert.equal(parseRequestedFilename("Find retriever.ts"), "retriever.ts");
+  assert.equal(parseRequestedFilename("CREATE ARCHITECTURE.MD"), undefined);
+  assert.equal(parseRequestedFilename("create file config.json"), undefined);
+  assert.equal(parseRequestedFilename("write a new document README.md"), undefined);
+});
+
