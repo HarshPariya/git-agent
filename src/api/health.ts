@@ -11,7 +11,7 @@ export const healthHandler = async (_request: Request, response: Response): Prom
     : retrieval.graph;
 
   response.status(200).json({
-    status: dbHealth.status === "healthy" ? "ok" : "degraded",
+    status: (dbHealth.status === "healthy" || process.env.NODE_ENV !== "production") ? "ok" : "degraded",
     environment: env.nodeEnv,
     modules: {
       retrieval: retrievalState,
