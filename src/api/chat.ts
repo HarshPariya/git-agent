@@ -99,6 +99,12 @@ export async function chatHandler(
       model: result.model,
       responseId: result.responseId,
       sources: result.sources,
+      pipeline: {
+        retrievalMode: route.mode,
+        routeReason: route.reason,
+        retrieval: "member-1",
+        agent: "member-2",
+      },
     });
   } catch (error) {
     if (
