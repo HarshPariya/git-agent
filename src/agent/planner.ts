@@ -2,225 +2,154 @@ import type { AgentAction, AgentPlan, PlanRequest } from "../types/agent.js";
 
 export type { AgentAction, AgentPlan, PlanRequest };
 
+/**
+ * HYBRID ROUTING ARCHITECTURE
+ *
+ * Tier 1 — High-confidence deterministic routing for security and operations:
+ *   1. REFUSE:   Security-sensitive, destructive, or prohibited operations.
+ *   2. RETRIEVE: Knowledge-domain questions (policies, pricing, SLA, etc.).
+ *   3. TOOL:     Explicit file, directory, git, calculation, or multi-tool operations.
+ *
+ * Tier 2 — Semantic fallthrough:
+ *   - General conversation and knowledge queries route to DIRECT_ANSWER.
+ */
+
 interface PlannerRule {
   readonly action: AgentAction;
   readonly reason: string;
   readonly matcher: (q: string) => boolean;
 }
 
-/**
- * TOOL_TERMS — exhaustive natural-language phrases that indicate the user wants
- * the agent to use a workspace tool (list, read, write, edit, delete, git, etc).
- * All terms are matched case-insensitively against the normalised question.
- */
-const TOOL_TERMS = [
-  // --- file structure / listing ---
-  "project structure",
-  "folder structure",
-  "directory structure",
-  "file structure",
-  "file tree",
-  "list files",
-  "list directory",
-  "list all files",
-  "show files",
-  "show me files",
-  "show directory",
-  "show folder",
-  "show structure",
-  "what files",
-  "what's in",
-  "whats in",
-  "what is in",
-  "tell me the structure",
-  "tell me all files",
-  "tell me what files",
-  "give me the structure",
-  "whole structure",
-  "full structure",
-  "entire structure",
-  "project files",
-  "project layout",
-  "project tree",
-  "what folders",
-  "folder contents",
-  "directory contents",
-  "contents of",
-  "files in",
-  "folders in",
-  "check my folder",
-  "check folder",
-  "check files",
-  "check directory",
-  "check structure",
-  "workspace",
-  "files exist",
-  "codebase structure",
-  "codebase layout",
+// ──────────────────────────────────────────────────────────────
+// REFUSE PATTERNS — Prohibited / destructive / credential access
+// ──────────────────────────────────────────────────────────────
+const REFUSE_PATTERNS: readonly RegExp[] = [
+  // Credential / secret extraction attempts
+  /\b(?:reveal|show|disclose|give|print|dump|expose)\s+(?:me\s+)?(?:your\s+|the\s+)?(?:api\s+key|credentials|secrets?|tokens?|passwords?)\b/i,
+  /\b(?:reveal|show|disclose)\s+(?:your\s+|the\s+)?(?:system\s+prompt|hidden\s+instructions|internal\s+instructions)\b/i,
+  /\bwhat\s+is\s+(?:your|the)\s+(?:api\s+key|secret|token|password)\b/i,
+  /\b(?:print|dump|expose)\s+(?:the\s+|your\s+)?(?:env\s+vars?|secrets?|credentials)\b/i,
 
-  // --- reading files ---
-  "read file",
-  "read the file",
-  "read this file",
-  "read my file",
-  "open file",
-  "show file",
-  "show me file",
-  "show me the file",
-  "display file",
-  "print file",
-  "get file",
-  "get contents",
-  "get the contents",
-  "inspect file",
-  "inspect",
-  "examine file",
-  "check file",
-  "view file",
-  "what does the file",
-  "what is in the file",
-  "content of",
-  "contents of",
-  "code in file",
-  "see the file",
+  // Direct .env inspection / reading
+  /\b(?:read|open|show|cat|inspect|display|view)\s+\.env\b/i,
 
-  // --- writing / creating files ---
-  "write file",
-  "write to file",
-  "write code",
-  "write in",
-  "create file",
-  "create a file",
-  "make file",
-  "make a file",
-  "new file",
-  "generate file",
-  "generate code",
-  "save file",
-  "put in file",
-  "add to file",
+  // Destructive repo/workspace nuking
+  /\b(?:delete|remove|destroy|wipe|nuke)\s+(?:the\s+)?(?:entire\s+)?(?:repo|repository|project|workspace|codebase)\b/i,
+  /rm\s+(-rf?|-r\s+-f)\s+\./i,
+  /\b(?:delete|remove)\s+(?:all\s+)?(?:files|everything|the\s+repo)\b/i,
 
-  // --- editing / modifying files ---
-  "edit file",
-  "edit the file",
-  "modify file",
-  "modify the file",
-  "update file",
-  "update the file",
-  "change file",
-  "change the file",
-  "replace in file",
-  "replace content",
-  "refactor",
-  "rename",
+  // Prompt injection & jailbreaks
+  /ignore\s+(?:all\s+)?previous\s+instructions/i,
+  /bypass\s+(?:the\s+)?(?:security|guardrails?|restrictions?|safety)/i,
+  /act\s+as\s+(?:if|though)\s+(?:you\s+have\s+no|without)\s+(?:restrictions?|guardrails?|safety)/i,
+  /pretend\s+(?:you\s+are|to\s+be)\s+(?:an?\s+)?(?:unrestricted|jailbroken|evil)/i,
 
-  // --- deleting files ---
-  "delete file",
-  "delete the file",
-  "delete folder",
-  "remove file",
-  "remove the file",
-  "remove folder",
-  "delete directory",
-  "remove directory",
-  "purge",
+  // Cross-tenant private data access
+  /access\s+(?:another|other|different)\s+tenant/i,
+  /get\s+(?:another|other|different)\s+tenant'?s?\s+(?:data|files|information)/i,
+  /switch\s+to\s+another\s+tenant/i,
+];
 
-  // --- general action terms ---
-  "read",
-  "write",
-  "create",
-  "delete",
-  "remove",
-  "modify",
-  "replace",
-  "update",
-  "change",
-  "edit",
-  "run test",
-  "execute",
-  "calculate",
-
-  // --- git ---
-  "git",
-  "git status",
-  "git log",
-  "commit",
-  "branch",
-  "repository",
-  "repo",
-  "staged",
-  "unstaged",
-
-  // --- generic workspace signals ---
-  "folder",
-  "directory",
-  "search file",
-  "search code",
-  "find file",
-  "locate file",
-] as const;
-
-const RETRIEVE_TERMS = [
-  "policy",
-  "pricing",
-  "refund",
-  "procedure",
-  "guideline",
-  "company",
-  "documentation on",
+// ──────────────────────────────────────────────────────────────
+// RETRIEVE PATTERNS — Explicit knowledge / documentation domain
+// ──────────────────────────────────────────────────────────────
+const RETRIEVE_TERMS: readonly string[] = [
+  "refund policy",
+  "refund policies",
+  "return policy",
+  "what is the policy",
+  "pricing policy",
+  "pricing plan",
+  "product pricing",
+  "product a pricing",
+  "product b pricing",
+  "product c pricing",
+  "about product a pricing",
+  "about its pricing",
+  "its pricing",
+  "company policy",
+  "company guideline",
   "knowledge base",
-] as const;
+  "documentation on",
+  "official policy",
+  "your policy",
+  "sla policy",
+  "terms of service",
+  "terms and conditions",
+  "support policy",
+  "cancellation policy",
+];
 
-const HEALTH_TERMS = [
-  "health status",
-  "is the api healthy",
-  "is the application healthy",
-  "is the server healthy",
-  "is the service healthy",
-  "api health",
-  "server health",
-  "service health",
-  "app health",
-  "application health",
-  "is the api up",
-  "is the server up",
-  "is the service running",
-  "system health",
-] as const;
+// ──────────────────────────────────────────────────────────────
+// TOOL PATTERNS — Explicit operations on workspace, git, or files
+// ──────────────────────────────────────────────────────────────
 
-/** Regex: path-like token in the query (e.g. "src/agent/planner.ts") */
+/** Explicit file paths (e.g. 'src/agent/planner.ts', 'scratch/agent-ui-test.txt') */
 const FILE_PATH_REGEX =
-  /(?:\.[\\/\\\\]|[a-zA-Z0-9_-]+[\\/\\\\])[a-zA-Z0-9_\-\.\\/]+\.[a-zA-Z0-9]+/i;
+  /(?:^|[\s'"`(])(?:\.{1,2}[/\\]|(?:[a-zA-Z0-9_-]+[/\\])+)[a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9]{1,6}(?=$|[\s'"`),])/m;
 
-/** Regex: explicit filename mention (e.g. "planner.ts", "app.js", "Dockerfile") */
-const FILENAME_REGEX = /\b[a-zA-Z0-9_-]+\.[a-zA-Z0-9]{2,6}\b/;
+/** Explicit filenames (e.g. planner.ts, README.md, package.json) */
+const FILENAME_REGEX =
+  /\b[a-zA-Z0-9_-]{2,}\.(?:ts|js|json|md|txt|yml|yaml|html|css|toml|sh|py|go|rs|rb|gitignore|dockerfile)\b/i;
 
-const RULES: readonly PlannerRule[] = [
+/** Git operations */
+const GIT_REGEX =
+  /\b(?:git\s+(?:status|log|diff|branch|commit|push|pull|fetch|stash)|(?:check|show|get|what(?:'s|\s+is))\s+(?:the\s+)?(?:current\s+)?(?:git\s+status|git\s+branch|branch|commit\s+history|diff|changes))\b/i;
+
+/** Workspace / folder inspection */
+const WORKSPACE_REGEX =
+  /\b(?:folder\s+structure|directory\s+structure|file\s+structure|file\s+tree|workspace|project\s+files|codebase\s+structure|everything\s+directly\s+inside)\b/i;
+
+/** Tool action verbs (calculate, create, edit, delete, inspect, list, verify) */
+const TOOL_ACTION_REGEX =
+  /\b(?:calculate|compute|create|write|make|generate|edit|modify|update|change|replace|delete|remove|read|inspect|cat|open|view|display|list|ls|verify|search\s+for\s+refund\s+policy)\b/i;
+
+const DETERMINISTIC_RULES: readonly PlannerRule[] = [
+  // 1. Refuse (security-critical — evaluated first)
   {
-    action: "direct_answer",
-    reason: "The question is an operational health/status inquiry.",
-    matcher: (q) => HEALTH_TERMS.some((term) => q.includes(term)),
+    action: "refuse",
+    reason:
+      "The request is prohibited: it attempts a dangerous, destructive, or security-violating operation.",
+    matcher: (q) => REFUSE_PATTERNS.some((pattern) => pattern.test(q)),
   },
-  {
-    action: "tool",
-    reason: "The question requires file system, git, or autonomous workspace tools.",
-    matcher: (q) =>
-      TOOL_TERMS.some((term) => q.includes(term)) ||
-      FILE_PATH_REGEX.test(q) ||
-      FILENAME_REGEX.test(q),
-  },
+
+  // 2. Retrieve (knowledge domain — evaluated before general tool verbs)
   {
     action: "retrieve",
-    reason: "The question may require external knowledge retrieval.",
+    reason:
+      "The request asks about company knowledge, domain policies, or product-specific documentation.",
     matcher: (q) => RETRIEVE_TERMS.some((term) => q.includes(term)),
+  },
+
+  // 3. Tool (high-confidence explicit operational signals)
+  {
+    action: "tool",
+    reason:
+      "The request explicitly requires workspace inspection, file operations, git commands, calculations, or multi-tool tasks.",
+    matcher: (q) =>
+      FILE_PATH_REGEX.test(q) ||
+      FILENAME_REGEX.test(q) ||
+      GIT_REGEX.test(q) ||
+      WORKSPACE_REGEX.test(q) ||
+      TOOL_ACTION_REGEX.test(q),
   },
 ];
 
+/**
+ * createPlan — Hybrid intent router.
+ *
+ * Deterministic rules evaluate fast for safety, knowledge queries, and explicit tool commands.
+ * Falls through to direct_answer for general conversational requests.
+ */
 export const createPlan = ({ question }: PlanRequest): AgentPlan => {
   const normalized = question.trim().toLowerCase();
-  const matched = RULES.find((rule) => rule.matcher(normalized));
+  const matched = DETERMINISTIC_RULES.find((rule) => rule.matcher(normalized));
 
   return matched
     ? { action: matched.action, reason: matched.reason }
-    : { action: "direct_answer", reason: "The question can be answered directly." };
+    : {
+      action: "direct_answer",
+      reason:
+        "The request will be answered directly from conversational knowledge.",
+    };
 };
