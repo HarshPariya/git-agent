@@ -15,6 +15,24 @@ export interface RetrievalResult {
   readonly sourceType?: "code" | "document" | undefined;
 }
 
+export type SymbolReferenceKind = "definition" | "call" | "import" | "reference";
+
+export interface SymbolReferenceEvidence {
+  readonly symbol: string;
+  readonly kind: SymbolReferenceKind;
+  readonly source: string;
+  readonly line: number;
+  readonly column: number;
+  readonly text: string;
+}
+
+export interface SymbolReferenceReport {
+  readonly symbol: string;
+  readonly definitions: readonly SymbolReferenceEvidence[];
+  readonly references: readonly SymbolReferenceEvidence[];
+}
+
 export interface Retriever {
   search(request: RetrievalRequest): Promise<readonly RetrievalResult[]>;
+  findSymbolReferences?(symbol: string): Promise<SymbolReferenceReport>;
 }

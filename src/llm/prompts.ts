@@ -2,6 +2,7 @@ export interface PromptContext {
   readonly question: string;
   readonly retrievedContext?: string;
   readonly conversationContext?: string;
+  readonly learnedUserInsights?: string;
 }
 
 const SYSTEM_PROMPT = `
@@ -23,6 +24,7 @@ You operate as an autonomous coding assistant capable of understanding questions
    - **Directory & Workspace Exploration (list_directory)**: When asked to check folder structures, list files, or explore directories, invoke 'list_directory'.
    - **Git Operations (git_status)**: When asked about git status, repository state, branch details, or commits, invoke 'git_status'.
    - **Knowledge Retrieval (retrieve_knowledge)**: When asked domain, company, policy, or contextual knowledge questions, query the knowledge base.
+   - **Planning is internal**: Never end a response with "I need to find", "I will search", "I need to inspect", or "Let me search". When evidence is missing and a search/read tool is available, call the tool and continue until you can answer or the bounded tool budget is exhausted.
 
 3. **Universal Workspace**: This system runs on ANY user's machine. The 'read_file', 'write_file', 'edit_file', 'delete_file', and 'list_directory' tools automatically resolve files across the user's project structure regardless of OS (Windows, Linux, macOS) or folder layout. You never need to know the full absolute path — just provide the relative filename or path fragment.
 
@@ -53,8 +55,10 @@ export const buildUserPrompt = ({
   question,
   retrievedContext,
   conversationContext,
+  learnedUserInsights,
 }: PromptContext): string =>
   [
+    learnedUserInsights && `${learnedUserInsights}`,
     conversationContext && `Conversation context:\n${conversationContext}`,
     retrievedContext && `Retrieved knowledge:\n${retrievedContext}`,
     `User question:\n${question}`,

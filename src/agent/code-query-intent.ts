@@ -70,14 +70,14 @@ export function analyzeCodeQuery(query: string): CodeQueryAnalysis {
   }
 
   if (
-    /\b(?:architecture|architectural|full\s+\/api\/chat|end-to-end)\b/i.test(lower) &&
+    /(?:\b(?:architecture|architectural|end-to-end)\b|\/api\/chat)/i.test(lower) &&
     /\b(?:trace|flow|pipeline|execution)\b/i.test(lower)
   ) {
     return { intent: "ARCHITECTURE_TRACE", filenames, symbols };
   }
 
   if (
-    /\buploaded?\s+document\b/i.test(lower) &&
+    /\buploaded?[-\s]+document\b/i.test(lower) &&
     /\b(?:pipeline|flow|goes|upload|parse|chunk|index|retriev)\w*\b/i.test(lower)
   ) {
     return { intent: "DOCUMENT_PIPELINE", filenames, symbols };
@@ -96,7 +96,8 @@ export function analyzeCodeQuery(query: string): CodeQueryAnalysis {
 
   const directUsageSymbol = /\bwhere\s+is\s+([A-Za-z_$][\w$]*)\s+(?:used|called|referenced|invoked)\b/i.exec(normalized)?.[1];
   const definitionAndUsageSymbol = /\bwhere\s+is\s+([A-Za-z_$][\w$]*)\s+(?:implemented|defined|declared|located)\b/i.exec(normalized)?.[1];
-  const callerSymbol = directUsageSymbol ?? definitionAndUsageSymbol;
+  const componentsCallingSymbol = /\b(?:which\s+components?\s+call|find\s+(?:every|all)\s+(?:runtime\s+)?callers?\s+of)\s+([A-Za-z_$][\w$]*)\b/i.exec(normalized)?.[1];
+  const callerSymbol = directUsageSymbol ?? definitionAndUsageSymbol ?? componentsCallingSymbol;
   if (
     callerSymbol &&
     (Boolean(directUsageSymbol) || /\b(?:callers?|calls?|called|uses?|usages?|references?|components?)\b/i.test(lower))
