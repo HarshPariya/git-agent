@@ -1476,6 +1476,7 @@ export const createAgent = (
           model: "system-observability",
           responseId: `system-observability-${Date.now()}`,
           sources: [],
+          toolActivity: [],
         };
       }
       const requestKey = `${selectedMode}:${documentIds?.join(",") ?? ""}:${question}`;
@@ -1557,6 +1558,7 @@ export const createAgent = (
                       sourceType: "code" as const,
                     }))
                   : [],
+              toolActivity: [],
             };
           }
 
@@ -1683,6 +1685,7 @@ export const createAgent = (
               : selectedMode === "code"
               ? results.filter((result) => result.sourceType !== "document")
               : results,
+            toolActivity: [],
           };
 
           cache.set({ tenantId, sessionId, question: requestKey }, executionResult);
