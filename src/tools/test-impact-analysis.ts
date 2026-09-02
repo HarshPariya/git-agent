@@ -46,7 +46,7 @@ async function runImpactAnalysisTest() {
     const results = await retriever.retrieve("Where is normalizeId used?");
     assert(results.length > 0, "Retrieved search results");
 
-    const explained = explainRetrievedContext(results[0], "normalizeId");
+    const explained = explainRetrievedContext(results[0]!, "normalizeId");
     console.log();
     console.log("💡 Explained Result #1:", explained.explanation);
     console.log();
