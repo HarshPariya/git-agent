@@ -59,7 +59,7 @@ async function runIndexerLifecycleTest() {
       ["test-auto-repo", path.normalize(tempFile)],
     );
     assert(
-      Number(dbCheck1.rows[0].count) > 0,
+      Number(dbCheck1.rows[0]?.count ?? 0) > 0,
       "DB contains indexed chunks for temp file",
     );
 
@@ -76,7 +76,7 @@ async function runIndexerLifecycleTest() {
       ["test-auto-repo", path.normalize(tempFile)],
     );
     assert(
-      Number(dbCheck2.rows[0].count) === 0,
+      Number(dbCheck2.rows[0]?.count ?? 0) === 0,
       "DB automatically pruned all chunks for deleted file",
     );
 

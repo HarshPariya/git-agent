@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import Groq from "groq-sdk";
 
 import { env } from "../config/env.js";
+import { mockProvider } from "./mock-client.js";
 import type {
   LlmProvider,
   LlmRequest,
@@ -30,11 +31,35 @@ const FALLBACK_MODELS = [
 const delay = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
-const isRateLimitError = (err: unknown): boolean => {
+const isTransientLlmError = (err: unknown): boolean => {
   if (typeof err !== "object" || err === null) return false;
   const e = err as Record<string, unknown>;
-  const status = e.status ?? (e as { error?: { status?: number } }).error?.status;
-  return status === 429 || status === 503;
+  const status = Number(e.status ?? (e as { error?: { status?: number } }).error?.status);
+  const msg = String(e.message || e.error || "");
+  const name = String(e.name || "");
+
+  return (
+    status === 429 ||
+    status === 503 ||
+    status === 500 ||
+    status === 502 ||
+    status === 504 ||
+    name === "APIConnectionError" ||
+    name === "APIConnectionTimeoutError" ||
+    msg.includes("Connection error") ||
+    msg.includes("ETIMEDOUT") ||
+    msg.includes("ECONNRESET") ||
+    msg.includes("rate_limit")
+  );
+};
+
+const extractRetryDelayMs = (err: unknown): number => {
+  const str = String(err);
+  const match = /try again in (\d+(?:\.\d+)?)s/i.exec(str);
+  if (match && match[1]) {
+    return Math.ceil(parseFloat(match[1]) * 1000) + 500;
+  }
+  return 0;
 };
 
 const callGroqWithFallback = async <T>(
@@ -48,9 +73,10 @@ const callGroqWithFallback = async <T>(
       return await apiFn(model);
     } catch (err) {
       lastErr = err;
-      // For rate-limit or server errors, wait before trying the next model
       if (i < modelsToTry.length - 1) {
-        const waitMs = isRateLimitError(err) ? 500 : 200;
+        const parsedMs = extractRetryDelayMs(err);
+        const isTransient = isTransientLlmError(err);
+        const waitMs = parsedMs > 0 ? parsedMs : isTransient ? Math.min(1000 * Math.pow(2, i), 4000) : 300;
         await delay(waitMs);
       }
     }
@@ -205,35 +231,45 @@ export const generateText = async ({
   instructions,
   input,
 }: LlmRequest): Promise<LlmResponse> => {
-  return callGroqWithFallback(async (selectedModel) => {
-    const response = await client.chat.completions.create({
-      model: selectedModel,
-      max_tokens: MAX_COMPLETION_TOKENS,
-      messages: [
-        {
-          role: "system",
-          content: instructions,
-        },
-        {
-          role: "user",
-          content: input,
-        },
-      ],
+  if (process.env.NODE_ENV === "test" || env.nodeEnv === "test") {
+    return mockProvider.generate({ instructions, input });
+  }
+  try {
+    return await callGroqWithFallback(async (selectedModel) => {
+      const response = await client.chat.completions.create({
+        model: selectedModel,
+        max_tokens: MAX_COMPLETION_TOKENS,
+        messages: [
+          {
+            role: "system",
+            content: instructions,
+          },
+          {
+            role: "user",
+            content: input,
+          },
+        ],
+      });
+
+      const rawText = response.choices[0]?.message.content?.trim() ?? "";
+      const text = stripThinkingTags(rawText);
+
+      if (!text) {
+        throw new Error("LLM returned an empty response");
+      }
+
+      return {
+        id: response.id,
+        model: response.model,
+        text,
+      };
     });
-
-    const rawText = response.choices[0]?.message.content?.trim() ?? "";
-    const text = stripThinkingTags(rawText);
-
-    if (!text) {
-      throw new Error("LLM returned an empty response");
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
     }
-
-    return {
-      id: response.id,
-      model: response.model,
-      text,
-    };
-  });
+    throw new Error("Groq text generation failed");
+  }
 };
 
 export const groqProvider: LlmProvider = {

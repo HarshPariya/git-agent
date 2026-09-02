@@ -19,13 +19,13 @@ import { validateGraphDepth } from "../guardrails/retrieval-limits.js";
 import { LIMITS } from "../config/limits.js";
 
 export interface GraphSearchOptions {
-  limit?: number;
+  limit?: number | undefined;
 
-  maxDepth?: number;
+  maxDepth?: number | undefined;
 
-  entityTypes?: EntityType[];
+  entityTypes?: EntityType[] | undefined;
 
-  relationshipTypes?: RelationshipType[];
+  relationshipTypes?: RelationshipType[] | undefined;
 }
 
 export interface GraphSearchResult {
@@ -41,7 +41,7 @@ export interface GraphSearchResult {
 
   depth: number;
 
-  matchedTerm?: string;
+  matchedTerm?: string | undefined;
 }
 
 const QUERY_EXPANSIONS: Record<string, string[]> = {
@@ -135,8 +135,8 @@ function scoreEntity(
   terms: string[],
 ): {
   score: number;
-  matchType?: GraphSearchResult["matchType"];
-  matchedTerm?: string;
+  matchType?: GraphSearchResult["matchType"] | undefined;
+  matchedTerm?: string | undefined;
 } {
   const normalizedQuery =
     normalizeText(query);

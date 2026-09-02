@@ -93,7 +93,7 @@ export const createDeleteFileTool = (
     // Optional: clean parent directory if custom empty dir
     const parentDir = path.dirname(targetPath);
     const parentRel = path.relative(baseDir, parentDir).replace(/\\/g, "/");
-    const preservedDirs = new Set(["", "src", "docs", "public", "tests", "migrations", "dist", "dist-member2", "node_modules", ".git"]);
+    const preservedDirs = new Set(["", "src", "docs", "public", "tests", "migrations", "dist", "node_modules", ".git"]);
     if (!preservedDirs.has(parentRel)) {
       try {
         const entries = await fs.readdir(parentDir);

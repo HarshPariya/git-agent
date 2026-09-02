@@ -12,6 +12,11 @@ const sources = [
   },
 ] as const;
 
+const stableIdSources = [
+  ...sources,
+  { content: sources[0].content, source: "S1", page: 4, score: sources[0].score },
+] as const;
+
 test("accepts a citation matching a retrieved source", () => {
   const result = verifyCitations({
     answer: "Refunds are available within 30 days. [refund-policy.pdf]",
@@ -25,6 +30,15 @@ test("accepts a citation matching source and page", () => {
   const result = verifyCitations({
     answer: "Refunds are available within 30 days. [refund-policy.pdf page 4]",
     sources,
+  });
+
+  assert.equal(result.valid, true);
+});
+
+test("accepts a stable evidence citation", () => {
+  const result = verifyCitations({
+    answer: "Refunds are available within 30 days. [S1]",
+    sources: stableIdSources,
   });
 
   assert.equal(result.valid, true);
