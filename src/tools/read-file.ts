@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import type {
   ReadFileInput,
   ReadFileOutput,
@@ -88,7 +89,7 @@ export const createReadFileTool = (
     const selectedLines = lines.slice(start - 1, end);
 
     return {
-      path: input.path,
+      path: path.relative(baseDir, filePath).replace(/\\/g, "/"),
       totalLines,
       linesReturned: selectedLines.length,
       content: selectedLines.join("\n"),

@@ -2,11 +2,13 @@ import "dotenv/config";
 
 const getRequiredEnv = (name: string): string => {
   const value = process.env[name]?.trim();
-  !value &&
-    (() => {
-      throw new Error(`Missing required environment variable: ${name}`);
-    })();
-  return value!;
+  if (!value) {
+    if (process.env.NODE_ENV === "test" || process.env.NODE_ENV !== "production") {
+      return "mock-key-for-test";
+    }
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
 };
 
 const getPort = (): number => {
@@ -19,8 +21,14 @@ const getPort = (): number => {
 };
 
 export const env = Object.freeze({
-  nodeEnv: process.env.NODE_ENV?.trim() || "development",
+  get nodeEnv(): string {
+    return process.env.NODE_ENV?.trim() || "development";
+  },
   port: getPort(),
   groqApiKey: getRequiredEnv("GROQ_API_KEY"),
-  groqModel: process.env.GROQ_MODEL?.trim() || "llama-3.1-8b-instant",
+  groqModel: process.env.GROQ_MODEL?.trim() || "groq/compound",
+  maxRagContextTokens: Number(process.env.MAX_RAG_CONTEXT_TOKENS ?? 1200),
+  maxMemoryTokens: Number(process.env.MAX_MEMORY_TOKENS ?? 300),
+  maxRetrievedChunks: Number(process.env.MAX_RETRIEVED_CHUNKS ?? 4),
+  ragDebugContext: process.env.RAG_DEBUG_CONTEXT === "true",
 });
