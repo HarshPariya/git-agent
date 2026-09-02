@@ -88,9 +88,9 @@ const RETRIEVE_TERMS: readonly string[] = [
 const FILE_PATH_REGEX =
   /(?:^|[\s'"`(])(?:\.{1,2}[/\\]|(?:[a-zA-Z0-9_-]+[/\\])+)[a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9]{1,6}(?=$|[\s'"`),])/m;
 
-/** Explicit filenames (e.g. planner.ts, README.md, package.json) */
+/** Explicit filenames (e.g. harsh.py, test.html, model.pt, app.ts, README.md) */
 const FILENAME_REGEX =
-  /\b[a-zA-Z0-9_-]{2,}\.(?:ts|js|json|md|txt|yml|yaml|html|css|toml|sh|py|go|rs|rb|gitignore|dockerfile)\b/i;
+  /\b[a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9_]{1,10}\b/i;
 
 /** Git operations */
 const GIT_REGEX =
@@ -100,9 +100,9 @@ const GIT_REGEX =
 const WORKSPACE_REGEX =
   /\b(?:folder\s+structure|directory\s+structure|file\s+structure|file\s+tree|workspace|project\s+files|codebase\s+structure|everything\s+directly\s+inside)\b/i;
 
-/** Tool action verbs (calculate, create, edit, delete, inspect, list, verify) */
+/** Tool action verbs (calculate, create, write, make, edit, modify, update, delete, read, etc.) */
 const TOOL_ACTION_REGEX =
-  /\b(?:calculate|compute|create|write|make|generate|edit|modify|update|change|replace|delete|remove|read|inspect|cat|open|view|display|list|ls|verify|search\s+for\s+refund\s+policy)\b/i;
+  /\b(?:calculate|compute|create|write|make|generate|build|touch|save|edit|modify|update|change|replace|append|delete|remove|unlink|erase|read|cat|open|view|display|list|ls|dir)\b/i;
 
 const DETERMINISTIC_RULES: readonly PlannerRule[] = [
   // 1. Refuse (security-critical — evaluated first)

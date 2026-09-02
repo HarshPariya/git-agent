@@ -68,6 +68,8 @@ const parseInput = (input: unknown): EditFileInput => {
 
   const targetContent = extractString(data, [
     "targetContent",
+    "oldContent",
+    "old_content",
     "old_text",
     "oldText",
     "target",
