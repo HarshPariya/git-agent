@@ -20,13 +20,24 @@ export const createQueryRewriter = (llm: LlmProvider) => ({
 
     if (!context) return trimmedQuestion;
 
+    if (
+      /\b(?:make|create|write|save|generate|touch|edit|modify|update|change|replace|delete|remove|erase|read|inspect|cat|open|view|display|show|list|ls|dir|git)\b/i.test(
+        trimmedQuestion,
+      )
+    ) {
+      return trimmedQuestion;
+    }
+
     try {
       const result = await llm.generate({
         instructions: REWRITE_INSTRUCTIONS,
         input: `Conversation context:\n${context}\n\nLatest question:\n${trimmedQuestion}`,
       });
       let rewritten = result.text.trim();
-      if (rewritten.startsWith("Mock response for:")) {
+      if (
+        rewritten.startsWith("Mock response for:") ||
+        rewritten.startsWith("Generated response for:")
+      ) {
         return trimmedQuestion;
       }
       if (rewritten.includes("Latest question:")) {

@@ -41,6 +41,17 @@ const uniqueSymbols = (values: readonly string[]): string[] => {
 export function analyzeCodeQuery(query: string): CodeQueryAnalysis {
   const normalized = query.trim();
   const lower = normalized.toLowerCase();
+
+  // If the query is an active file operation (create, make, write, edit, modify, delete, remove),
+  // route it to the Agent tool execution pipeline rather than static AST code inspection.
+  if (
+    /\b(?:make|create|write|save|generate|touch|edit|modify|update|delete|remove|erase|unlink)\s+(?:a\s+)?(?:new\s+)?(?:temporary\s+)?(?:file\s+|at\s+|in\s+)?[a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9_]{1,10}\b/i.test(lower) ||
+    /\b(?:make|create|write|save|generate|touch|edit|modify|update|delete|remove|erase)\s+(?:a\s+)?(?:new\s+)?(?:temporary\s+)?(?:file|files)\b/i.test(lower) ||
+    /\b(?:change|replace|edit|update)\s+[\s\S]+\s+(?:to|with)\s+[\s\S]+\s+(?:in|for|at)\s+[a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9_]{1,10}\b/i.test(lower)
+  ) {
+    return { intent: "OTHER", filenames: [], symbols: [] };
+  }
+
   const filenames = unique(normalized.match(FILENAME_PATTERN) ?? []);
   const symbols = uniqueSymbols(
     normalized.match(/\b(?:[A-Z][A-Za-z0-9_$]{2,}|[a-z][a-z0-9_$]*[A-Z][A-Za-z0-9_$]*)\b/g) ?? [],

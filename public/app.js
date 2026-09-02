@@ -155,7 +155,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setTimeout(() => (btn.textContent = "📋 Copy"), 2000);
   };
 
-  function appendRow(role, content) {
+  function appendRow(role, content, metadata = {}) {
     if (!chatContainer) return;
 
     // Remove welcome card on first message
@@ -167,9 +167,41 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const formatted = role === "user" ? escapeHtml(content) : formatMarkdown(content);
 
+    let toolActivityHtml = "";
+    if (role === "assistant" && Array.isArray(metadata.toolActivity) && metadata.toolActivity.length > 0) {
+      toolActivityHtml = `
+        <div class="tool-activity-card">
+          <div class="tool-activity-header">
+            <span class="tool-activity-icon">🛠️</span>
+            <span class="tool-activity-title">Tool Execution Activity</span>
+            <span class="tool-activity-count">${metadata.toolActivity.length} operation${metadata.toolActivity.length === 1 ? "" : "s"}</span>
+          </div>
+          <div class="tool-activity-list">
+            ${metadata.toolActivity.map((t) => `
+              <div class="tool-activity-item ${t.success ? "success" : "failed"}">
+                <span class="tool-dot"></span>
+                <span class="tool-name"><code>${escapeHtml(t.toolName)}</code></span>
+                <span class="tool-duration">${t.durationMs ?? 0}ms</span>
+                ${t.error ? `<span class="tool-status-err">${escapeHtml(t.error)}</span>` : '<span class="tool-status-ok">✓ Success</span>'}
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    let modelBadgeHtml = "";
+    if (role === "assistant" && metadata.model) {
+      modelBadgeHtml = `<div class="msg-meta-bar"><span class="model-badge">⚡ ${escapeHtml(metadata.model)}</span></div>`;
+    }
+
     row.innerHTML = `
       ${role === "assistant" ? '<div class="avatar">🤖</div>' : ""}
-      <div class="chat-bubble">${formatted}</div>
+      <div class="chat-bubble">
+        ${toolActivityHtml}
+        ${formatted}
+        ${modelBadgeHtml}
+      </div>
       ${role === "user" ? '<div class="avatar">👤</div>' : ""}
     `;
 
@@ -248,7 +280,12 @@ document.addEventListener("DOMContentLoaded", () => {
       const sourceText = visibleSources.length > 0
         ? `\n\n**Sources:** ${visibleSources.join(", ")}${hiddenSourceCount > 0 ? `, +${hiddenSourceCount} more` : ""}`
         : "";
-      appendRow("assistant", `${botText}${sourceText}`);
+      appendRow("assistant", `${botText}${sourceText}`, {
+        toolActivity: data.toolActivity || [],
+        model: data.model,
+        sources: data.sources,
+        pipeline: data.pipeline,
+      });
       chatHistory.push({ role: "assistant", content: botText });
     } catch (err) {
       document.getElementById(typingId)?.remove();

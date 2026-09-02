@@ -17,10 +17,10 @@ import { createDeleteFileTool } from "../tools/delete-file.js";
 import { runToolCalling } from "./tool-caller.js";
 import { evaluateAnswer } from "./critic.js";
 import { ConversationMemory, type Message } from "./memory.js";
-import type { AgentContext, AgentExecutionResult } from "../types/agent.js";
+import type { AgentContext, AgentExecutionResult, ToolActivity } from "../types/agent.js";
 import { createPlan } from "./planner.js";
 import { createQueryRewriter } from "./query-rewriter.js";
-import type { ToolExecutionContext, ToolPermission } from "../types/tools.js";
+import type { ToolExecutionContext, ToolPermission, ToolExecutionResult } from "../types/tools.js";
 import { AgentCache, RequestDeduplicator } from "./cache.js";
 import { logger } from "../logging/logger.js";
 import { AppError } from "../errors/app-error.js";
@@ -277,6 +277,23 @@ export const createAgent = (
   const cache = new AgentCache();
   const deduplicator = new RequestDeduplicator();
   const costOptimizer = new LlmCostOptimizer();
+
+  const recordedToolActivity: ToolActivity[] = [];
+  const originalExecuteTool = tools.executeTool.bind(tools);
+  tools.executeTool = async <TOutput = unknown>(
+    name: string,
+    input: unknown,
+    context: ToolExecutionContext,
+  ): Promise<ToolExecutionResult<TOutput>> => {
+    const res = await originalExecuteTool<TOutput>(name, input, context);
+    recordedToolActivity.push({
+      toolName: name,
+      success: res.success,
+      durationMs: res.durationMs ?? 1,
+      error: res.error,
+    });
+    return res;
+  };
 
   tools.register(createKnowledgeTool((request) => retriever.search(request)));
   tools.register(createListDirectoryTool());
@@ -880,48 +897,6 @@ export const createAgent = (
         };
 
       case "tool": {
-        try {
-          const toolResult = await withRetry(
-            () =>
-              runToolCalling({
-                instructions: buildSystemPrompt(mode),
-                input: inputPrompt,
-                registry: tools,
-                maxRounds: 12,
-                context: toolContext,
-              }),
-            MAX_LLM_RETRIES,
-            "tool_calling",
-            agentContext,
-          );
-          const lowerText = toolResult.text.toLowerCase();
-          const isManualPasteTemplate =
-            lowerText.includes("could you share") ||
-            lowerText.includes("directory tree") ||
-            lowerText.includes("how your codebase is organized") ||
-            lowerText.includes("paste the directory") ||
-            lowerText.includes("what would be helpful") ||
-            lowerText.includes("layout of your project") ||
-            lowerText.includes("core source files") ||
-            lowerText.includes("any configuration files");
-          const isRawToolSyntax =
-            /\btool_call\b/i.test(toolResult.text) ||
-            /["']name["']\s*:\s*["'](?:read_file|list_directory|write_file|edit_file|delete_file|git_status)["']/i.test(toolResult.text) ||
-            /(?:read_file|list_directory|write_file|edit_file|delete_file)\s*\(/i.test(toolResult.text);
-
-          if (
-            toolResult.text.trim().length > 0 &&
-            toolResult.text !==
-            "Successfully completed requested file and tool operations." &&
-            !isManualPasteTemplate &&
-            !isRawToolSyntax &&
-            !isPlanningOnlyResponse(toolResult.text)
-          ) {
-            return toolResult;
-          }
-        } catch {
-          // Upstream LLM rate limited or unreachable — execute requested tool autonomously
-        }
         const lowerQ = userQuery.toLowerCase().trim();
 
         const repairFile = /([a-zA-Z0-9_\-./]+\.(?:ts|tsx|js|jsx|mjs|cjs))/i.exec(userQuery)?.[1];
@@ -1125,38 +1100,62 @@ export const createAgent = (
           };
         }
 
-        // 2. Write / Create file
-        const writeMatch =
-          /(?:write|create|make|save)\s+(?:a\s+)?(?:temporary\s+)?(?:file\s+)?(?:named\s+|at\s+|in\s+)?[`'"]?([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)[`'"]?\s+(?:containing\s+(?:exactly:\s*|content:\s*|with:\s*)?|with\s+(?:content:\s*)?)([\s\S]+)/i.exec(
-            userQuery,
-          );
-        if (writeMatch) {
-          const filename = writeMatch[1]!;
-          let content = writeMatch[2]!.trim();
-          content = content
-            .replace(
-              /\n\s*do\s+not\s+(?:modify|change|edit|overwrite|delete)[\s\S]*$/i,
-              "",
-            )
-            .trim()
-            .replace(/^["'`]|["'`]$/g, "");
+        // 2. Write / Create file (supports .html, .pt, .ts, .py, .js, .json, .css, .md, .txt, etc.)
+        const writeCmd = (() => {
+          if (isCompoundLifecycle) return null;
+          if (!/\b(?:make|create|write|save|generate|touch|add)\b/i.test(lowerQ)) return null;
 
+          const fileMatch =
+            /\b(?:make|create|write|save|generate|touch|add)\s+(?:a\s+)?(?:new\s+)?(?:temporary\s+)?(?:file\s+)?(?:named\s+|at\s+|in\s+)?[`'"]?([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_]{1,10})[`'"]?/i.exec(userQuery) ??
+            /\b(?:file\s+|named\s+|at\s+|in\s+)[`'"]?([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_]{1,10})[`'"]?/i.exec(userQuery) ??
+            /[`'"]([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_]{1,10})[`'"]/i.exec(userQuery) ??
+            /\b([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_]{1,10})\b/i.exec(userQuery);
+
+          if (!fileMatch) return null;
+          const filename = fileMatch[1]!.replace(/^[./\\]+/, "").trim();
+          if (filename.toLowerCase().startsWith("http") || filename.includes("..")) return null;
+
+          let content = "";
+          const contentMatch =
+            /(?:and\s+inside\s+(?:write\s+|put\s+)?(?:code\s+|text\s+)?|and\s+write\s+(?:code\s+|text\s+)?|with\s+(?:code\s+|content\s+|text\s+)?|containing\s+(?:exactly:\s*|content:\s*|with:\s*)?|content:\s*|code:\s*)([\s\S]+)/i.exec(userQuery);
+
+          if (contentMatch) {
+            content = contentMatch[1]!.trim();
+            content = content
+              .replace(/\n\s*do\s+not\s+(?:modify|change|edit|overwrite|delete)[\s\S]*$/i, "")
+              .trim()
+              .replace(/^["'`]|["'`]$/g, "");
+          }
+
+          if (!content) {
+            const codeBlockMatch = /```(?:[a-zA-Z0-9_-]*\n)?([\s\S]*?)```/.exec(userQuery);
+            if (codeBlockMatch) {
+              content = codeBlockMatch[1]!.trim();
+            }
+          }
+
+          return { filename, content };
+        })();
+
+        if (writeCmd) {
+          const { filename, content } = writeCmd;
           const writeRes = await tools.executeTool(
             "write_file",
-            { path: filename, content },
+            { path: filename, content: content || `// ${filename}\n` },
             toolContext,
           );
           if (writeRes.success && writeRes.output) {
             const data = writeRes.output as { message: string };
+            const ext = filename.split(".").pop() || "text";
             return {
-              id: "direct-write-file",
+              id: `direct-write-${Date.now()}`,
               model: "autonomous-tool",
-              text: `✅ **write_file**: ${data.message}\n\n\`\`\`text\n${content}\n\`\`\``,
+              text: `✅ **write_file**: ${data.message}\n\n\`\`\`${ext}\n${content || `// ${filename}`}\n\`\`\``,
             };
           }
           if (!writeRes.success) {
             return {
-              id: "direct-write-file-error",
+              id: `direct-write-error-${Date.now()}`,
               model: "autonomous-tool",
               text: `⚠️ **write_file error**: Could not write to file \`${filename}\`.\n\n> **Reason**: ${writeRes.error || "Write permission denied or protected file path."}`,
             };
@@ -1164,23 +1163,49 @@ export const createAgent = (
         }
 
         // 3. Edit / Modify file
-        const editMatch =
-          /(?:change|replace|edit|update)\s+(?:the\s+word\s+|the\s+text\s+)?["'`]?([^"'`\s]+)["'`]?\s+(?:to|with)\s+["'`]?([^"'`\s]+)["'`]?/i.exec(
-            userQuery,
-          );
-        if (
-          editMatch &&
-          (lowerQ.includes("change") ||
-            lowerQ.includes("replace") ||
-            lowerQ.includes("edit"))
-        ) {
-          const target = editMatch[1]!;
-          const replacement = editMatch[2]!;
-          const fileInQuery =
-            /[`'"]?([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)[`'"]?/i.exec(userQuery);
-          const filename = fileInQuery
-            ? fileInQuery[1]!
-            : "scratch/agent-tool-test.txt";
+        const editCmd = (() => {
+          if (isCompoundLifecycle) return null;
+          if (!/\b(?:edit|modify|update|change|replace)\b/i.test(lowerQ)) return null;
+
+          const p1 =
+            /(?:edit|modify|update)\s+(?:file\s+|the\s+file\s+)?[`'"]?([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_]{1,10})[`'"]?\s+(?:to\s+|and\s+)?(?:change|replace|update)\s+["'`]?([^"'`\r\n\s]+|'[^']+'|"[^"]+")[`'"]?\s+(?:to|with)\s+["'`]?([^"'`\r\n\s]+|'[^']+'|"[^"]+")[`'"]?/i.exec(userQuery);
+          if (p1) {
+            return {
+              filename: p1[1]!,
+              target: p1[2]!.trim().replace(/^["'`]|["'`]$/g, ""),
+              replacement: p1[3]!.trim().replace(/^["'`]|["'`]$/g, ""),
+            };
+          }
+
+          const p2 =
+            /(?:change|replace|edit|update)\s+(?:the\s+word\s+|the\s+text\s+)?["'`]?([^"'`\r\n\s]+|'[^']+'|"[^"]+")[`'"]?\s+(?:to|with)\s+["'`]?([^"'`\r\n\s]+|'[^']+'|"[^"]+")[`'"]?\s+(?:in|for|at|inside)\s+[`'"]?([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_]{1,10})[`'"]?/i.exec(userQuery);
+          if (p2) {
+            return {
+              filename: p2[3]!,
+              target: p2[1]!.trim().replace(/^["'`]|["'`]$/g, ""),
+              replacement: p2[2]!.trim().replace(/^["'`]|["'`]$/g, ""),
+            };
+          }
+
+          const p3 =
+            /(?:change|replace)\s+["'`]?([^"'`\r\n\s]+)["'`]?\s+(?:to|with)\s+["'`]?([^"'`\r\n\s]+)["'`]?/i.exec(userQuery);
+          if (p3) {
+            const files = [...userQuery.matchAll(/\b([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_]{1,10})\b/gi)]
+              .map((m) => m[1]!)
+              .filter((f) => !/^\d+\.\d+(\.\d+)?$/.test(f));
+            const filename = files.at(-1) ?? "scratch/agent-tool-test.txt";
+            return {
+              filename,
+              target: p3[1]!.trim().replace(/^["'`]|["'`]$/g, ""),
+              replacement: p3[2]!.trim().replace(/^["'`]|["'`]$/g, ""),
+            };
+          }
+
+          return null;
+        })();
+
+        if (editCmd) {
+          const { filename, target, replacement } = editCmd;
           const editRes = await tools.executeTool(
             "edit_file",
             { path: filename, target, replacement },
@@ -1189,14 +1214,14 @@ export const createAgent = (
           if (editRes.success && editRes.output) {
             const data = editRes.output as { message: string };
             return {
-              id: "direct-edit-file",
+              id: `direct-edit-${Date.now()}`,
               model: "autonomous-tool",
-              text: `✅ **edit_file**: ${data.message}`,
+              text: `✅ **edit_file**: ${data.message}\n\n- Replaced: \`${target}\`\n- With: \`${replacement}\``,
             };
           }
           if (!editRes.success) {
             return {
-              id: "direct-edit-file-error",
+              id: `direct-edit-error-${Date.now()}`,
               model: "autonomous-tool",
               text: `⚠️ **edit_file error**: Could not edit file \`${filename}\`.\n\n> **Reason**: ${editRes.error || "File not found or target text was not matched."}`,
             };
@@ -1204,12 +1229,22 @@ export const createAgent = (
         }
 
         // 4. Delete file
-        const deleteMatch =
-          /(?:delete|remove|purge|erase)\s+(?:file\s+|the\s+file\s+|at\s+)?[`'"]?([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)[`'"]?/i.exec(
-            userQuery,
-          );
-        if (deleteMatch) {
-          const filename = deleteMatch[1]!;
+        const deleteCmd = (() => {
+          if (isCompoundLifecycle) return null;
+          if (!/\b(?:delete|remove|purge|erase|unlink)\b/i.test(lowerQ)) return null;
+
+          const match =
+            /(?:delete|remove|purge|erase|unlink)\s+(?:a\s+)?(?:the\s+)?(?:temporary\s+)?(?:file\s+)?(?:at\s+|in\s+)?[`'"]?([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_]{1,10})[`'"]?/i.exec(userQuery) ??
+            /\b([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_]{1,10})\b/i.exec(userQuery);
+
+          if (match) {
+            return { filename: match[1]!.trim().replace(/^[./\\]+/, "") };
+          }
+          return null;
+        })();
+
+        if (deleteCmd) {
+          const { filename } = deleteCmd;
           const delRes = await tools.executeTool(
             "delete_file",
             { path: filename },
@@ -1218,14 +1253,14 @@ export const createAgent = (
           if (delRes.success && delRes.output) {
             const data = delRes.output as { message: string };
             return {
-              id: "direct-delete-file",
+              id: `direct-delete-${Date.now()}`,
               model: "autonomous-tool",
               text: `✅ **delete_file**: ${data.message}`,
             };
           }
           if (!delRes.success) {
             return {
-              id: "direct-delete-file-error",
+              id: `direct-delete-error-${Date.now()}`,
               model: "autonomous-tool",
               text: `⚠️ **delete_file error**: Could not delete file \`${filename}\`.\n\n> **Reason**: ${delRes.error || "File not found or protected file path."}`,
             };
@@ -1233,13 +1268,23 @@ export const createAgent = (
         }
 
         // 5. Read file
-        const fileMatch =
-          /\b(?:read|show|view|inspect|display|cat|open)\s+(?:file\s+|the\s+file\s+|at\s+)?[`'"]?([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)[`'"]?/i.exec(
-            userQuery,
-          );
+        const readCmd = (() => {
+          if (isCompoundLifecycle) return null;
+          if (/\b(?:make|create|write|save|generate|touch|edit|modify|update|change|replace|delete|remove|erase)\b/i.test(lowerQ)) return null;
+          if (!/\b(?:read|show|view|inspect|display|cat|open)\b/i.test(lowerQ)) return null;
 
-        if (fileMatch) {
-          const filename = fileMatch[1]!;
+          const match =
+            /\b(?:read|show|view|inspect|display|cat|open)\s+(?:the\s+)?(?:contents?\s+of\s+)?(?:file\s+|the\s+file\s+|at\s+)?[`'"]?([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_]{1,10})[`'"]?/i.exec(userQuery) ??
+            /\b([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_]{1,10})\b/i.exec(userQuery);
+
+          if (match) {
+            return { filename: match[1]!.trim().replace(/^[./\\]+/, "") };
+          }
+          return null;
+        })();
+
+        if (readCmd) {
+          const { filename } = readCmd;
           const readRes = await tools.executeTool(
             "read_file",
             { path: filename },
@@ -1247,7 +1292,7 @@ export const createAgent = (
           );
           if (readRes.success && readRes.output) {
             const data = readRes.output as { path: string; content: string };
-            const ext = filename.split(".").pop() || "";
+            const ext = filename.split(".").pop() || "text";
             const contentSnippet =
               data.content.length > 4500
                 ? data.content.slice(0, 4500) +
@@ -1415,6 +1460,50 @@ export const createAgent = (
               text: `${header}\n${list}`,
             };
           }
+        }
+
+        // 7. General autonomous multi-round tool-calling loop fallback
+        try {
+          const toolResult = await withRetry(
+            () =>
+              runToolCalling({
+                instructions: buildSystemPrompt(mode),
+                input: inputPrompt,
+                registry: tools,
+                maxRounds: 12,
+                context: toolContext,
+              }),
+            MAX_LLM_RETRIES,
+            "tool_calling",
+            agentContext,
+          );
+          const lowerText = toolResult.text.toLowerCase();
+          const isManualPasteTemplate =
+            lowerText.includes("could you share") ||
+            lowerText.includes("directory tree") ||
+            lowerText.includes("how your codebase is organized") ||
+            lowerText.includes("paste the directory") ||
+            lowerText.includes("what would be helpful") ||
+            lowerText.includes("layout of your project") ||
+            lowerText.includes("core source files") ||
+            lowerText.includes("any configuration files");
+          const isRawToolSyntax =
+            /\btool_call\b/i.test(toolResult.text) ||
+            /["']name["']\s*:\s*["'](?:read_file|list_directory|write_file|edit_file|delete_file|git_status)["']/i.test(toolResult.text) ||
+            /(?:read_file|list_directory|write_file|edit_file|delete_file)\s*\(/i.test(toolResult.text);
+
+          if (
+            toolResult.text.trim().length > 0 &&
+            toolResult.text !==
+            "Successfully completed requested file and tool operations." &&
+            !isManualPasteTemplate &&
+            !isRawToolSyntax &&
+            !isPlanningOnlyResponse(toolResult.text)
+          ) {
+            return toolResult;
+          }
+        } catch {
+          // Upstream LLM rate limited or unreachable
         }
 
         return {
@@ -1765,6 +1854,7 @@ export const createAgent = (
               );
             })();
 
+          recordedToolActivity.length = 0;
           const toolContext: ToolExecutionContext = {
             tenantId,
             sessionId,
@@ -1827,7 +1917,7 @@ export const createAgent = (
                     sourceType: "code" as const,
                   }))
                   : [],
-              toolActivity: [],
+              toolActivity: [...recordedToolActivity],
             };
           }
 
@@ -1864,9 +1954,11 @@ export const createAgent = (
           });
           const action = plan.action === "refuse"
             ? "refuse"
-            : (selectedMode === "code" || selectedMode === "document" || selectedMode === "mixed"
-              ? "retrieve"
-              : plan.action);
+            : plan.action === "tool"
+              ? "tool"
+              : (selectedMode === "code" || selectedMode === "document" || selectedMode === "mixed"
+                ? "retrieve"
+                : plan.action);
 
           const userId = (agentContext as { tenantId: string; sessionId: string; userId?: string }).userId ?? `user-${tenantId}`;
           const learnedInsights = globalUserMemory.formatInsightsForPrompt(tenantId, userId);
@@ -1926,7 +2018,7 @@ export const createAgent = (
           const deterministicEvidence =
             codeQuery.intent === "SYMBOL_LOCATION" && symbolEvidence.length > 0 ||
             codeQuery.intent === "FILE_LOCATION" && fileEvidence.length > 0;
-          const finalResult = action === "refuse"
+          const finalResult = action === "refuse" || action === "tool"
             ? initialResult
             : embeddingStorageFacts
               ? {
@@ -1993,7 +2085,7 @@ export const createAgent = (
               : selectedMode === "code"
                 ? results.filter((result) => result.sourceType !== "document")
                 : results,
-            toolActivity: [],
+            toolActivity: [...recordedToolActivity],
           };
 
           cache.set({ tenantId, sessionId, question: requestKey }, executionResult);
