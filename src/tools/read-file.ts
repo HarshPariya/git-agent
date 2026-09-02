@@ -22,9 +22,11 @@ const parameters = {
         "Relative path to the file to read (e.g. 'src/agent/orchestrator.ts' or 'planner.ts').",
     },
     startLine: {
+      type: "integer",
       description: "Optional 1-indexed starting line number.",
     },
     endLine: {
+      type: "integer",
       description: "Optional 1-indexed ending line number.",
     },
   },

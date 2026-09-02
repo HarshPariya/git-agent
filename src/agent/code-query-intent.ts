@@ -21,6 +21,7 @@ export interface CodeQueryAnalysis {
   readonly symbols: readonly string[];
   readonly startLine?: number | undefined;
   readonly endLine?: number | undefined;
+  readonly lastLines?: number | undefined;
 }
 
 const FILENAME_PATTERN = /\b[a-zA-Z0-9_$-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|html|css|yml|yaml)\b/g;
@@ -56,7 +57,28 @@ export function analyzeCodeQuery(query: string): CodeQueryAnalysis {
   const symbols = uniqueSymbols(
     normalized.match(/\b(?:[A-Z][A-Za-z0-9_$]{2,}|[a-z][a-z0-9_$]*[A-Z][A-Za-z0-9_$]*)\b/g) ?? [],
   ).filter((symbol) => !["show", "trace", "explain", "where", "what"].includes(symbol.toLowerCase()));
-  const lineMatch = /\blines?\s+(\d+)\s*(?:-|–|—|to|through)\s*(\d+)\b/i.exec(normalized);
+  let startLine: number | undefined;
+  let endLine: number | undefined;
+  let lastLines: number | undefined;
+
+  const rangeMatch = /(?:lines?|from\s+line)\s+(\d+)\s*(?:-|–|—|to|through|\.\.)\s*(?:line\s+)?(\d+)\b/i.exec(normalized);
+  if (rangeMatch) {
+    startLine = Number(rangeMatch[1]);
+    endLine = Number(rangeMatch[2]);
+  } else {
+    const firstNMatch =
+      /(?:first|top|initial|only|give\s+(?:me\s+)?(?:the\s+)?first|give\s+(?:me\s+)?|show\s+(?:me\s+)?(?:the\s+)?first|show\s+(?:me\s+)?)\s+(\d+)\s+lines?\b/i.exec(normalized) ??
+      /(?:first|top|initial)\s+(\d+)\b/i.exec(normalized);
+    if (firstNMatch) {
+      startLine = 1;
+      endLine = Number(firstNMatch[1]);
+    } else {
+      const lastNMatch = /(?:last|bottom|tail|end)\s+(\d+)\s+lines?\b/i.exec(normalized);
+      if (lastNMatch) {
+        lastLines = Number(lastNMatch[1]);
+      }
+    }
+  }
 
   const impactSymbol = /^\/impact\s+([A-Za-z_$][\w$]*)\s*$/i.exec(normalized)?.[1];
   if (impactSymbol) {
@@ -70,13 +92,14 @@ export function analyzeCodeQuery(query: string): CodeQueryAnalysis {
     return { intent: "REPAIR_REQUEST", filenames, symbols };
   }
 
-  if (filenames.length > 0 && lineMatch?.[1] && lineMatch[2]) {
+  if (filenames.length > 0 && ((startLine !== undefined && endLine !== undefined && !isNaN(startLine) && !isNaN(endLine)) || (lastLines !== undefined && !isNaN(lastLines)))) {
     return {
       intent: "LINE_RANGE",
       filenames,
       symbols,
-      startLine: Number(lineMatch[1]),
-      endLine: Number(lineMatch[2]),
+      ...(startLine !== undefined && { startLine }),
+      ...(endLine !== undefined && { endLine }),
+      ...(lastLines !== undefined && { lastLines }),
     };
   }
 

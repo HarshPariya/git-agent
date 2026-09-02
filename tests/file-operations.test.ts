@@ -186,4 +186,52 @@ describe("Comprehensive File Operations across Any File Extension", () => {
     });
     assert.ok(deleteRes.text.includes("delete_file") || deleteRes.text.includes("✅"));
   });
+
+  it("8. Reads exact first 15 lines of planner.ts", async () => {
+    const res = await agent.run({
+      tenantId,
+      sessionId,
+      question: "now read planner.ts and give me first 15 lines",
+      retrievalMode: "code",
+    });
+
+    assert.ok(res.toolActivity.some((a) => a.toolName === "read_file" && a.success));
+    // Verify it contains line 1 import and line 15 Tier 2 comment, but NOT line 30+
+    assert.ok(res.text.includes("import type { AgentAction, AgentPlan, PlanRequest }"));
+    assert.ok(!res.text.includes("REFUSE_PATTERNS"));
+    const codeBlockMatch = /```(?:typescript|ts)?\n([\s\S]*?)\n```/.exec(res.text);
+    assert.ok(codeBlockMatch?.[1]);
+    const lines = codeBlockMatch[1].split("\n");
+    assert.equal(lines.length, 15);
+  });
+
+  it("9. Reads specific line range (lines 10 to 20)", async () => {
+    const res = await agent.run({
+      tenantId,
+      sessionId,
+      question: "read lines 10 to 20 of src/agent/planner.ts",
+      retrievalMode: "code",
+    });
+
+    assert.ok(res.toolActivity.some((a) => a.toolName === "read_file" && a.success));
+    const codeBlockMatch = /```(?:typescript|ts)?\n([\s\S]*?)\n```/.exec(res.text);
+    assert.ok(codeBlockMatch?.[1]);
+    const lines = codeBlockMatch[1].split("\n");
+    assert.equal(lines.length, 11);
+  });
+
+  it("10. Reads last 5 lines of a file", async () => {
+    const res = await agent.run({
+      tenantId,
+      sessionId,
+      question: "show last 5 lines of package.json",
+      retrievalMode: "code",
+    });
+
+    assert.ok(res.toolActivity.some((a) => a.toolName === "read_file" && a.success));
+    const codeBlockMatch = /```[^\r\n]*\r?\n([\s\S]*?)\r?\n```/.exec(res.text);
+    assert.ok(codeBlockMatch?.[1]);
+    const lines = codeBlockMatch[1].trim().split(/\r?\n/);
+    assert.equal(lines.length, 5);
+  });
 });

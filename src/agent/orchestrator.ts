@@ -376,6 +376,19 @@ export const createAgent = (
     }
 
     if (analysis.intent === "LINE_RANGE" && filename) {
+      const ext = filename.split(".").pop() || "typescript";
+      if (analysis.lastLines) {
+        const fullFile = await readWorkspaceFile(filename, toolContext);
+        const totalLines = fullFile.totalLines;
+        const startLine = Math.max(1, totalLines - analysis.lastLines + 1);
+        const endLine = totalLines;
+        const file = await readWorkspaceFile(filename, toolContext, startLine, endLine);
+        return {
+          id: `line-range-${Date.now()}`,
+          model: "deterministic-read-file",
+          text: `### File: \`${file.path}\` (last ${analysis.lastLines} lines)\n\n\`\`\`${ext}\n${file.content}\n\`\`\``,
+        };
+      }
       const startLine = analysis.startLine ?? 1;
       const endLine = analysis.endLine ?? startLine;
       if (endLine < startLine) {
@@ -385,7 +398,7 @@ export const createAgent = (
       return {
         id: `line-range-${Date.now()}`,
         model: "deterministic-read-file",
-        text: `### \`${file.path}\` lines ${startLine}-${Math.min(endLine, file.totalLines)}\n\n\`\`\`typescript\n${file.content}\n\`\`\``,
+        text: `### \`${file.path}\` lines ${startLine}-${Math.min(endLine, file.totalLines)}\n\n\`\`\`${ext}\n${file.content}\n\`\`\``,
       };
     }
 
@@ -1271,36 +1284,106 @@ export const createAgent = (
         const readCmd = (() => {
           if (isCompoundLifecycle) return null;
           if (/\b(?:make|create|write|save|generate|touch|edit|modify|update|change|replace|delete|remove|erase)\b/i.test(lowerQ)) return null;
-          if (!/\b(?:read|show|view|inspect|display|cat|open)\b/i.test(lowerQ)) return null;
+          if (!/\b(?:read|show|view|inspect|display|cat|open|give)\b/i.test(lowerQ)) return null;
 
           const match =
-            /\b(?:read|show|view|inspect|display|cat|open)\s+(?:the\s+)?(?:contents?\s+of\s+)?(?:file\s+|the\s+file\s+|at\s+)?[`'"]?([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_]{1,10})[`'"]?/i.exec(userQuery) ??
+            /\b(?:read|show|view|inspect|display|cat|open|give)\s+(?:the\s+)?(?:contents?\s+of\s+)?(?:file\s+|the\s+file\s+|at\s+)?[`'"]?([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_]{1,10})[`'"]?/i.exec(userQuery) ??
             /\b([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_]{1,10})\b/i.exec(userQuery);
 
           if (match) {
-            return { filename: match[1]!.trim().replace(/^[./\\]+/, "") };
+            const filename = match[1]!.trim().replace(/^[./\\]+/, "");
+
+            // Extract line constraints: "first 15 lines", "lines 1 to 15", "last 20 lines", etc.
+            let startLine: number | undefined;
+            let endLine: number | undefined;
+            let lineDescription: string | undefined;
+
+            // Pattern A: Range "lines 10 to 30", "lines 10-30", "from line 10 to 30", "lines 1 to 15"
+            const rangeMatch = /(?:lines?|from\s+line)\s+(\d+)\s*(?:to|through|-|\.\.)\s*(?:line\s+)?(\d+)/i.exec(userQuery);
+            if (rangeMatch) {
+              startLine = parseInt(rangeMatch[1]!, 10);
+              endLine = parseInt(rangeMatch[2]!, 10);
+              lineDescription = `lines ${startLine} to ${endLine}`;
+            } else {
+              // Pattern B: "first N lines", "top N lines", "initial N lines", "first N line", "only N lines", "give me first N lines", "give me N lines", "show first N lines"
+              const firstNMatch =
+                /(?:first|top|initial|only|give\s+(?:me\s+)?(?:the\s+)?first|give\s+(?:me\s+)?|show\s+(?:me\s+)?(?:the\s+)?first|show\s+(?:me\s+)?)\s+(\d+)\s+lines?/i.exec(userQuery) ??
+                /(?:first|top|initial)\s+(\d+)/i.exec(userQuery);
+              if (firstNMatch) {
+                const count = parseInt(firstNMatch[1]!, 10);
+                if (!isNaN(count) && count > 0) {
+                  startLine = 1;
+                  endLine = count;
+                  lineDescription = `first ${count} lines`;
+                }
+              } else {
+                // Pattern C: "last N lines", "bottom N lines", "tail N lines", "end N lines"
+                const lastNMatch = /(?:last|bottom|tail|end)\s+(\d+)\s+lines?/i.exec(userQuery);
+                if (lastNMatch) {
+                  const count = parseInt(lastNMatch[1]!, 10);
+                  if (!isNaN(count) && count > 0) {
+                    lineDescription = `last ${count} lines`;
+                  }
+                } else {
+                  // Pattern D: "from line N", "starting at line N"
+                  const fromMatch = /(?:from\s+line|starting\s+at\s+line|start\s+from\s+line)\s+(\d+)/i.exec(userQuery);
+                  if (fromMatch) {
+                    const start = parseInt(fromMatch[1]!, 10);
+                    if (!isNaN(start) && start > 0) {
+                      startLine = start;
+                      lineDescription = `from line ${start}`;
+                    }
+                  } else {
+                    // Pattern E: "line N" (single line)
+                    const singleLineMatch = /\bline\s+(\d+)\b/i.exec(userQuery);
+                    if (singleLineMatch) {
+                      const lineNum = parseInt(singleLineMatch[1]!, 10);
+                      if (!isNaN(lineNum) && lineNum > 0) {
+                        startLine = lineNum;
+                        endLine = lineNum;
+                        lineDescription = `line ${lineNum}`;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            return { filename, startLine, endLine, lineDescription };
           }
           return null;
         })();
 
         if (readCmd) {
-          const { filename } = readCmd;
+          const { filename, startLine, endLine, lineDescription } = readCmd;
           const readRes = await tools.executeTool(
             "read_file",
-            { path: filename },
+            {
+              path: filename,
+              ...(startLine !== undefined && { startLine }),
+              ...(endLine !== undefined && { endLine }),
+            },
             toolContext,
           );
           if (readRes.success && readRes.output) {
-            const data = readRes.output as { path: string; content: string };
+            const data = readRes.output as { path: string; content: string; totalLines?: number; linesReturned?: number };
             const ext = filename.split(".").pop() || "text";
-            const contentSnippet =
-              data.content.length > 4500
-                ? data.content.slice(0, 4500) +
-                "\n\n// ... [remaining content truncated for response length]"
-                : data.content;
 
-            // If package.json and user asks for scripts, format the scripts section
-            if (filename.endsWith("package.json")) {
+            let contentSnippet = data.content;
+            if (lineDescription?.startsWith("last ")) {
+              const lastCount = parseInt(/\d+/.exec(lineDescription)?.[0] ?? "15", 10);
+              const allLines = data.content.split("\n");
+              contentSnippet = allLines.slice(-lastCount).join("\n");
+            } else if (!startLine && !endLine && contentSnippet.length > 4500) {
+              contentSnippet =
+                contentSnippet.slice(0, 4500) +
+                "\n\n// ... [remaining content truncated for response length]";
+            }
+
+            const hasLineConstraint = Boolean(lineDescription || startLine !== undefined || endLine !== undefined);
+
+            // If package.json and user asks for scripts (without line constraint)
+            if (filename.endsWith("package.json") && !hasLineConstraint) {
               try {
                 const pkg = JSON.parse(data.content) as {
                   scripts?: Record<string, string>;
@@ -1323,9 +1406,10 @@ export const createAgent = (
 
             // If query asks how planner decision is used by orchestrator
             if (
-              (lowerQ.includes("planner") && lowerQ.includes("orchestrator")) ||
-              (lowerQ.includes("how the planner") && lowerQ.includes("choose")) ||
-              (lowerQ.includes("decision") && lowerQ.includes("orchestrator"))
+              !hasLineConstraint &&
+              ((lowerQ.includes("planner") && lowerQ.includes("orchestrator")) ||
+                (lowerQ.includes("how the planner") && lowerQ.includes("choose")) ||
+                (lowerQ.includes("decision") && lowerQ.includes("orchestrator")))
             ) {
               return {
                 id: "direct-read-orchestrator-planner-integration",
@@ -1360,6 +1444,7 @@ export const createAgent = (
 
             // If planner.ts and user asks to explain / summarize what it does
             if (
+              !hasLineConstraint &&
               filename.includes("planner.ts") &&
               (lowerQ.includes("explain") ||
                 lowerQ.includes("what") ||
@@ -1386,6 +1471,7 @@ export const createAgent = (
 
             // If orchestrator.ts and user asks for summary
             if (
+              !hasLineConstraint &&
               filename.includes("orchestrator.ts") &&
               lowerQ.includes("summar")
             ) {
@@ -1405,10 +1491,14 @@ export const createAgent = (
               };
             }
 
+            const lineInfo = lineDescription
+              ? ` (${lineDescription})`
+              : (startLine && endLine ? ` (lines ${startLine}–${endLine})` : (data.totalLines ? ` (${data.totalLines} lines)` : ""));
+
             return {
               id: "direct-read-file",
               model: "autonomous-tool",
-              text: `### File: \`${data.path}\`\n\n\`\`\`${ext}\n${contentSnippet}\n\`\`\``,
+              text: `### File: \`${data.path}\`${lineInfo}\n\n\`\`\`${ext}\n${contentSnippet}\n\`\`\``,
             };
           }
 
