@@ -6,7 +6,7 @@ import { createPlan } from "../src/agent/planner.js";
 // ── 1. Direct Knowledge ──────────────────────────────────────
 test("planner: selects direct answer for general questions", () => {
   const plan = createPlan({
-    question: "Hello there!",
+    question: "What is GraphRAG?",
     hasConversationContext: false,
   });
   assert.equal(plan.action, "direct_answer");
