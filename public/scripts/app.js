@@ -1,9 +1,23 @@
 /**
- * GraphRAG.ai — Frontend Agentic Application & Interactive Studio
+ * GraphRAG.ai — Production Frontend Application
+ *
+ * Contract with backend (/chat POST):
+ *   Request:  { message: string, sessionId: string }
+ *   Headers:  x-tenant-id, x-user-id, x-user-role
+ *
+ *   Response (success 200):
+ *     { message: string, model: string, responseId: string,
+ *       sources: Array<{source,page?,score}>, toolActivity: Array<{toolName,success,durationMs,error?}> }
+ *
+ *   Response (error 4xx/5xx):
+ *     { error: { message: string, code: string } }
+ *
+ * Health endpoint (/health GET):
+ *   { status: string, environment: string, uptime: string, uptimeSeconds: number }
  */
 
 (() => {
-  // DOM Elements
+  // ── DOM References (matching index.html IDs) ─────────────────────────────
   const chatMessages = document.getElementById("chat-messages");
   const chatForm = document.getElementById("chat-form");
   const chatInput = document.getElementById("chat-input");
@@ -23,14 +37,15 @@
   const healthUptimeVal = document.getElementById("health-uptime-val");
   const healthModelVal = document.getElementById("health-model-val");
 
-  // State
+  // ── State ─────────────────────────────────────────────────────────────────
   let isSubmitting = false;
 
-  // ─── Show Toast Notification ──────────────────────────────
+  // ── Toast Notifications ──────────────────────────────────────────────────
   const showToast = (message, type = "info") => {
+    if (!toastContainer) return;
     const toast = document.createElement("div");
     toast.className = `toast ${type}`;
-    toast.innerHTML = `<span>${message}</span>`;
+    toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
     toastContainer.appendChild(toast);
     setTimeout(() => {
       toast.style.opacity = "0";
@@ -39,14 +54,23 @@
     }, 3500);
   };
 
-  // ─── Generate Random Session ID ──────────────────────────
+  // ── Session Utilities ─────────────────────────────────────────────────────
   const generateRandomSession = () => {
     const randomId = "session-" + Math.random().toString(36).substring(2, 9);
-    inputSessionId.value = randomId;
+    if (inputSessionId) inputSessionId.value = randomId;
     showToast(`Switched to session: ${randomId}`);
   };
 
-  // ─── Strip Raw LLM XML/Internal Tags ─────────────────────
+  // ── HTML Escaping ─────────────────────────────────────────────────────────
+  const escapeHtml = (text) =>
+    String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+
+  // ── Strip Internal LLM XML Tags ───────────────────────────────────────────
   const stripInternalTags = (text) =>
     text
       .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
@@ -57,103 +81,131 @@
       .replace(/\[?TOOL_CALL[\s\S]*?END_TOOL_CALL\]?/gi, "")
       .trim();
 
-  // ─── Parse Markdown to HTML ───────────────────────────────
+  // ── Markdown → HTML Renderer ──────────────────────────────────────────────
   const formatMarkdown = (text) => {
     if (!text) return "";
-
-    // Always strip internal XML tags first before any encoding
     const clean = stripInternalTags(text);
     if (!clean) return "";
 
-    // HTML-encode the cleaned text
-    let formatted = clean
+    // Escape HTML first
+    let html = clean
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
 
-    // Code blocks with copy button (must run before other replacements)
-    formatted = formatted.replace(
+    // Code blocks with syntax highlighting and copy button
+    html = html.replace(
       /```([a-zA-Z0-9_\-]*)\n([\s\S]*?)```/g,
       (_match, lang, code) => {
         const language = lang || "code";
-        return `<pre><div class="code-header"><span class="code-lang">${language}</span><button class="btn-copy" onclick="navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText); this.innerText='Copied!'; setTimeout(()=>this.innerText='Copy', 1500)">Copy</button></div><code>${code.trim()}</code></pre>`;
-      },
+        const escapedCode = code.trim();
+        return `<pre><div class="code-header"><span class="code-lang">${escapeHtml(language)}</span><button class="btn-copy" onclick="this.nextElementSibling || navigator.clipboard.writeText(this.closest('pre').querySelector('code').innerText).then(() => { this.innerText='✓ Copied!'; setTimeout(() => this.innerText='Copy', 1500) })">Copy</button></div><code>${escapedCode}</code></pre>`;
+      }
     );
 
     // Inline code
-    formatted = formatted.replace(/`([^`]+)`/g, "<code>$1</code>");
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
 
     // Bold and Italic
-    formatted = formatted.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-    formatted = formatted.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+    html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
 
     // Headings
-    formatted = formatted.replace(/^#### (.+)$/gm, "<h5>$1</h5>");
-    formatted = formatted.replace(/^### (.+)$/gm, "<h4>$1</h4>");
-    formatted = formatted.replace(/^## (.+)$/gm, "<h3>$1</h3>");
-    formatted = formatted.replace(/^# (.+)$/gm, "<h2>$1</h2>");
+    html = html.replace(/^#### (.+)$/gm, "<h5>$1</h5>");
+    html = html.replace(/^### (.+)$/gm, "<h4>$1</h4>");
+    html = html.replace(/^## (.+)$/gm, "<h3>$1</h3>");
+    html = html.replace(/^# (.+)$/gm, "<h2>$1</h2>");
 
     // Bullet lists
-    formatted = formatted.replace(/^[\s]*[-*•]\s+(.+)$/gm, "<li>$1</li>");
-    // Wrap consecutive list items
-    formatted = formatted.replace(/((?:<li>.*<\/li>\s*)+)/gs, "<ul>$1</ul>");
+    html = html.replace(/^[\s]*[-*•]\s+(.+)$/gm, "<li>$1</li>");
+    html = html.replace(/((?:<li>.*<\/li>\s*)+)/gs, "<ul>$1</ul>");
 
     // Numbered lists
-    formatted = formatted.replace(/^[\s]*\d+\.\s+(.+)$/gm, "<li>$1</li>");
+    html = html.replace(/^[\s]*\d+\.\s+(.+)$/gm, "<li>$1</li>");
 
     // Horizontal rule
-    formatted = formatted.replace(/^---+$/gm, "<hr/>");
+    html = html.replace(/^---+$/gm, "<hr/>");
 
-    // Tool execution markers — render as styled badge boxes
-    formatted = formatted.replace(
-      /(?:Successfully executed operations using|Executed tools?):\s*([a-zA-Z0-9_, -]+)/gi,
-      (_match, tools) => {
-        const toolBadges = tools
-          .split(",")
-          .map((t) => `<span class="tool-badge-pill">⚙️ ${t.trim()}</span>`)
-          .join(" ");
-        return `<div class="tool-run-box"><span class="tool-run-label">Autonomous Operations:</span> ${toolBadges}</div>`;
-      },
-    );
-
-    // Newlines to paragraphs
-    const paragraphs = formatted
+    // Paragraphs (split on blank lines)
+    const paragraphs = html
       .split("\n\n")
       .filter((s) => s.trim())
-      .map((p) => `<p>${p.replace(/\n/g, "<br/>")}</p>`)
+      .map((p) => {
+        const trimmed = p.trim();
+        // Don't wrap block elements
+        if (/^<(?:h[1-6]|ul|ol|li|pre|hr|blockquote)/.test(trimmed)) {
+          return trimmed;
+        }
+        return `<p>${trimmed.replace(/\n/g, "<br/>")}</p>`;
+      })
       .join("");
 
     return paragraphs;
   };
 
-  // ─── Append Message to Chat Feed ─────────────────────────
+  // ── Render Tool Activity Panel ────────────────────────────────────────────
+  const renderToolActivity = (toolActivity) => {
+    if (!toolActivity || toolActivity.length === 0) return "";
+
+    const items = toolActivity
+      .map((t) => {
+        const icon = t.success ? "✅" : "❌";
+        const durationLabel =
+          t.durationMs > 0 ? ` <span class="tool-duration">(${t.durationMs}ms)</span>` : "";
+        const errorLabel = t.error
+          ? ` <span class="tool-error-label">— ${escapeHtml(t.error)}</span>`
+          : "";
+        return `<div class="tool-activity-item ${t.success ? "success" : "failed"}">
+          ${icon} <code>${escapeHtml(t.toolName)}</code>${durationLabel}${errorLabel}
+        </div>`;
+      })
+      .join("");
+
+    return `<div class="tool-activity-panel">
+      <div class="tool-activity-header">🔧 Tools Executed</div>
+      ${items}
+    </div>`;
+  };
+
+  // ── Render Sources/Citations ──────────────────────────────────────────────
+  const renderSources = (sources) => {
+    if (!sources || sources.length === 0) return "";
+    const tags = sources
+      .map((s) => `<span class="source-tag">📄 ${escapeHtml(s.source)}${s.page ? ` (p. ${s.page})` : ""}</span>`)
+      .join(" ");
+    return `<div class="sources-pill-group"><span class="sources-label">Sources:</span> ${tags}</div>`;
+  };
+
+  // ── Append Message to Feed ────────────────────────────────────────────────
   const appendMessage = (sender, content, isBot = false, metadata = {}) => {
+    if (!chatMessages) return;
+
     const row = document.createElement("div");
     row.className = `message-row ${isBot ? "bot-row" : "user-row"}`;
 
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString([], {
+    const timeStr = new Date().toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
     });
+
+    const toolActivityHtml = isBot ? renderToolActivity(metadata.toolActivity) : "";
+    const sourcesHtml = isBot ? renderSources(metadata.sources) : "";
 
     row.innerHTML = `
       <div class="msg-avatar">${isBot ? "🤖" : "👤"}</div>
       <div class="msg-bubble">
         <div class="msg-header">
-          <span class="msg-sender">${sender}</span>
+          <span class="msg-sender">${escapeHtml(sender)}</span>
           <span class="msg-time">${timeStr}</span>
         </div>
+        ${toolActivityHtml}
         <div class="msg-body">
-          ${isBot ? formatMarkdown(content) : `<p>${content.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br/>")}</p>`}
-        </div>
-        ${metadata.sources && metadata.sources.length > 0
-        ? `<div class="sources-pill-group">
-              <span class="sources-label">Sources:</span>
-              ${metadata.sources.map((s) => `<span class="source-tag">📄 ${s.source}${s.page ? ` (p. ${s.page})` : ""}</span>`).join(" ")}
-            </div>`
-        : ""
+          ${isBot
+        ? formatMarkdown(content)
+        : `<p>${content.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br/>")}</p>`
       }
+        </div>
+        ${sourcesHtml}
       </div>
     `;
 
@@ -161,8 +213,9 @@
     chatMessages.scrollTop = chatMessages.scrollHeight;
   };
 
-  // ─── Show Typing Indicator ────────────────────────────────
+  // ── Typing Indicator ──────────────────────────────────────────────────────
   const showTypingIndicator = () => {
+    if (!chatMessages) return null;
     const id = "typing-indicator-" + Date.now();
     const row = document.createElement("div");
     row.id = id;
@@ -180,25 +233,25 @@
     return id;
   };
 
-  // ─── Remove Typing Indicator ──────────────────────────────
   const removeTypingIndicator = (id) => {
-    const el = document.getElementById(id);
-    if (el) el.remove();
+    if (id) document.getElementById(id)?.remove();
   };
 
-  // ─── Send Message to Backend API ─────────────────────────
+  // ── Send Message to Backend ───────────────────────────────────────────────
   const sendMessage = async (messageText) => {
-    if (!messageText.trim() || isSubmitting) return;
+    const query = (messageText || (chatInput && chatInput.value) || "").trim();
+    if (!query || isSubmitting) return;
 
-    const tenantId = selectTenant.value.trim() || "tenant-1";
+    const tenantId = (selectTenant && selectTenant.value) || "tenant-1";
+    const userRole = (selectRole && selectRole.value) || "user";
+    const sessionId = (inputSessionId && inputSessionId.value.trim()) || "session-1";
     const userId = "user-" + tenantId;
-    const userRole = selectRole.value || "user";
-    const sessionId = inputSessionId.value.trim() || "session-1";
 
-    appendMessage("You (" + userRole + ")", messageText, false);
-    chatInput.value = "";
+    appendMessage("You (" + userRole + ")", query, false);
+    if (chatInput) chatInput.value = "";
+
     isSubmitting = true;
-    btnSendChat.disabled = true;
+    if (btnSendChat) btnSendChat.disabled = true;
 
     const typingId = showTypingIndicator();
 
@@ -213,7 +266,7 @@
         },
         body: JSON.stringify({
           sessionId,
-          message: messageText,
+          message: query,
         }),
       });
 
@@ -223,60 +276,84 @@
       if (response.ok && data.message) {
         appendMessage("GraphRAG Agent", data.message, true, {
           sources: data.sources || [],
+          toolActivity: data.toolActivity || [],
           responseId: data.responseId,
+          model: data.model,
         });
+
+        // Flash the tool cap items that were used
+        if (data.toolActivity && data.toolActivity.length > 0) {
+          data.toolActivity.forEach((t) => {
+            const el = document.querySelector(`[data-tool="${t.toolName}"]`);
+            if (el) {
+              el.classList.add("tool-active-flash");
+              setTimeout(() => el.classList.remove("tool-active-flash"), 1500);
+            }
+          });
+        }
       } else {
-        const errorMsg = data.error?.message || "An unexpected error occurred.";
+        const errorMsg =
+          data.error?.message || data.message || "An unexpected error occurred.";
         appendMessage(
           "System Notice",
-          `⚠️ **Notice (${data.error?.code || response.status})**: ${errorMsg}`,
+          `⚠️ **Error (${data.error?.code || response.status})**: ${errorMsg}`,
           true,
         );
         showToast(errorMsg, "error");
       }
-    } catch {
+    } catch (err) {
       removeTypingIndicator(typingId);
       appendMessage(
         "Network Error",
-        "⚠️ Failed to communicate with API server. Please check your backend connection.",
+        "⚠️ Failed to communicate with the API server. Please check your backend connection.",
         true,
       );
       showToast("Network request failed", "error");
     } finally {
       isSubmitting = false;
-      btnSendChat.disabled = false;
-      chatInput.focus();
+      if (btnSendChat) btnSendChat.disabled = false;
+      if (chatInput) chatInput.focus();
     }
   };
 
-  // ─── Health Poller ────────────────────────────────────────
+  // ── Health Poller ─────────────────────────────────────────────────────────
   const checkHealth = async () => {
     try {
       const res = await fetch("/health");
       if (res.ok) {
         const health = await res.json();
-        systemStatusText.innerText = "API Live (200 OK)";
-        systemStatusIndicator.style.background = "rgba(16, 185, 129, 0.1)";
-        systemStatusIndicator.style.color = "#34d399";
-        systemStatusIndicator.querySelector(".status-dot").style.background = "#10b981";
+
+        if (systemStatusText) systemStatusText.innerText = "API Live (200 OK)";
+        if (systemStatusIndicator) {
+          systemStatusIndicator.style.background = "rgba(16, 185, 129, 0.1)";
+          systemStatusIndicator.style.color = "#34d399";
+          const dot = systemStatusIndicator.querySelector(".status-dot");
+          if (dot) dot.style.background = "#10b981";
+        }
 
         if (healthStatusVal) healthStatusVal.innerText = "ONLINE";
         if (healthUptimeVal)
-          healthUptimeVal.innerText = `Environment: ${health.environment || "production"}`;
+          healthUptimeVal.innerText = `Uptime: ${health.uptime || health.environment || "active"}`;
         if (healthModelVal) healthModelVal.innerText = "Qwen 3.8 / GPT-OSS";
       } else {
-        systemStatusText.innerText = "Degraded Status";
-        systemStatusIndicator.style.background = "rgba(245, 158, 11, 0.1)";
-        systemStatusIndicator.style.color = "#fbbf24";
+        if (systemStatusText) systemStatusText.innerText = "Degraded Status";
+        if (systemStatusIndicator) {
+          systemStatusIndicator.style.background = "rgba(245, 158, 11, 0.1)";
+          systemStatusIndicator.style.color = "#fbbf24";
+        }
+        if (healthStatusVal) healthStatusVal.innerText = "DEGRADED";
       }
     } catch {
-      systemStatusText.innerText = "Server Offline";
-      systemStatusIndicator.style.background = "rgba(244, 63, 94, 0.1)";
-      systemStatusIndicator.style.color = "#f43f5e";
+      if (systemStatusText) systemStatusText.innerText = "Server Offline";
+      if (systemStatusIndicator) {
+        systemStatusIndicator.style.background = "rgba(244, 63, 94, 0.1)";
+        systemStatusIndicator.style.color = "#f43f5e";
+      }
+      if (healthStatusVal) healthStatusVal.innerText = "OFFLINE";
     }
   };
 
-  // ─── ScrollSpy & Navigation Active State ─────────────────
+  // ── ScrollSpy ─────────────────────────────────────────────────────────────
   const setupScrollSpy = () => {
     const sections = ["studio", "tools", "architecture", "metrics"]
       .map((id) => document.getElementById(id))
@@ -308,37 +385,51 @@
     });
   };
 
-  // ─── Event Listeners ──────────────────────────────────────
-  chatForm.addEventListener("submit", (e) => {
-    e.preventDefault();
-    sendMessage(chatInput.value);
-  });
-
-  chatInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+  // ── Event Listeners ───────────────────────────────────────────────────────
+  if (chatForm) {
+    chatForm.addEventListener("submit", (e) => {
       e.preventDefault();
-      sendMessage(chatInput.value);
-    }
-  });
+      sendMessage(chatInput ? chatInput.value : "");
+    });
+  }
 
-  btnClearChat.addEventListener("click", () => {
-    chatMessages.innerHTML = "";
-    appendMessage("GraphRAG Agent", "Chat cleared. Ready for your next command!", true);
-  });
+  if (chatInput) {
+    chatInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage(chatInput.value);
+      }
+    });
 
-  btnNewSession.addEventListener("click", generateRandomSession);
-  btnRandomSession.addEventListener("click", generateRandomSession);
+    // Auto-resize textarea
+    chatInput.addEventListener("input", () => {
+      chatInput.style.height = "auto";
+      chatInput.style.height = `${Math.min(chatInput.scrollHeight, 160)}px`;
+    });
+  }
 
-  // Tool Capability Items — focus input and scroll to chat
+  if (btnClearChat) {
+    btnClearChat.addEventListener("click", () => {
+      if (chatMessages) {
+        chatMessages.innerHTML = "";
+        appendMessage("GraphRAG Agent", "Chat cleared. Ready for your next command!", true);
+      }
+    });
+  }
+
+  if (btnNewSession) btnNewSession.addEventListener("click", generateRandomSession);
+  if (btnRandomSession) btnRandomSession.addEventListener("click", generateRandomSession);
+
+  // Tool capability items — focus input and show hint
   toolCapItems.forEach((item) => {
     item.addEventListener("click", () => {
       const toolName = item.getAttribute("data-tool");
-      chatInput.focus();
+      if (chatInput) chatInput.focus();
       showToast(`Tool active: ${toolName}. Type your command in the input box.`);
     });
   });
 
-  // ─── Initialize ───────────────────────────────────────────
+  // ── Initialize ────────────────────────────────────────────────────────────
   checkHealth();
   setupScrollSpy();
   setInterval(checkHealth, 15000);
