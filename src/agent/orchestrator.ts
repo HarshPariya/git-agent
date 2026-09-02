@@ -31,6 +31,8 @@ import {
   extractDeclaredSymbols,
   type CodeQueryAnalysis,
 } from "./code-query-intent.js";
+import { globalUserMemory } from "./user-memory.js";
+import { extractUserInsights } from "./insight-extractor.js";
 
 const DEFAULT_USER_PERMISSIONS: readonly ToolPermission[] = ["read", "write"];
 const MAX_QUERY_REWRITE_RETRIES = Number(
@@ -42,8 +44,95 @@ const MAX_CRITIC_RETRIES = Number(process.env.MAX_CRITIC_RETRIES ?? 1);
 const AGENT_EXECUTION_TIMEOUT_MS = Number(
   process.env.AGENT_EXECUTION_TIMEOUT_MS ?? 120_000,
 );
+export const MAX_EVIDENCE_STEPS = Number(process.env.MAX_EVIDENCE_STEPS ?? 6);
 
 type RetrievalMode = NonNullable<AgentContext["retrievalMode"]>;
+
+const PLANNING_ONLY_RESPONSE = /^(?:i\s+(?:need|have)\s+to|i(?:'ll|\s+will)|let\s+me)\s+(?:first\s+)?(?:find|search|inspect|look|check|read|explore|trace|investigate)\b/i;
+
+const isPlanningOnlyResponse = (text: string): boolean => {
+  const normalized = text.trim().replace(/^#+\s*/, "");
+  return PLANNING_ONLY_RESPONSE.test(normalized) &&
+    !/\b(?:verified|verdict|definition|implementation|source|result|found)\s*:/i.test(normalized);
+};
+
+interface EmbeddingStorageFacts {
+  readonly verdict: "VERIFIED" | "NOT VERIFIED";
+  readonly tableName?: string;
+  readonly embeddingColumn?: string;
+  readonly vectorDimension?: number;
+  readonly migrationFile?: string;
+  readonly runtimeFile?: string;
+}
+
+const requestsEmbeddingStorageFacts = (question: string): boolean =>
+  /\bembeddings?\b/i.test(question) && /\b(?:stored|storage|persisted|table)\b/i.test(question) &&
+  /\b(?:dimension|migration|column|runtime)\b/i.test(question);
+
+const extractEmbeddingStorageFacts = (
+  question: string,
+  evidence: readonly RetrievalResult[],
+): EmbeddingStorageFacts => {
+  const schemas: Array<{ table: string; column: string; dimension: number; source: string; score: number }> = [];
+  for (const item of evidence) {
+    const tableMatches = [...item.content.matchAll(/CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+(?:["`]?\w+["`]?\.)?["`]?([A-Za-z_][\w$]*)["`]?\s*\(([\s\S]*?)(?:\);|$)/gi)];
+    for (const tableMatch of tableMatches) {
+      const table = tableMatch[1];
+      const body = tableMatch[2] ?? "";
+      const vector = /["`]?([A-Za-z_][\w$]*)["`]?\s+(?:VECTOR|vector)\s*\(\s*(\d+)\s*\)/i.exec(body);
+      if (!table || !vector?.[1] || !vector[2]) continue;
+      const queryTerms = question.toLowerCase().split(/\W+/).filter((term) => term.length > 3);
+      const haystack = `${table} ${item.source} ${item.content}`.toLowerCase();
+      const score = queryTerms.filter((term) => haystack.includes(term)).length + (/\bcode\b/i.test(question) && /code/i.test(table) ? 5 : 0);
+      schemas.push({ table, column: vector[1], dimension: Number(vector[2]), source: item.source, score });
+    }
+  }
+  const schema = schemas.sort((a, b) => b.score - a.score)[0];
+  const runtime = schema && evidence
+    .filter((item) =>
+      item.source !== schema.source &&
+      !/(?:^|[\\/])tests?[\\/]|\.test\.[cm]?[jt]sx?$/i.test(item.source) &&
+      new RegExp("\\bFROM\\s+[\\\"`]?" + schema.table + "[\\\"`]?\\b", "i").test(item.content) &&
+      /\bSELECT\b/i.test(item.content),
+    )
+    .sort((a, b) => {
+      const score = (item: RetrievalResult) =>
+        (/(?:^|[\\/])src[\\/]/i.test(item.source) ? 5 : 0) +
+        (/vector[-_]store/i.test(item.source) ? 4 : 0) +
+        (/<=>|<#>|<->/.test(item.content) ? 2 : 0) -
+        (/(?:^|[\\/])tests?[\\/]|\.test\.[cm]?[jt]sx?$/i.test(item.source) ? 20 : 0);
+      return score(b) - score(a);
+    })[0];
+  const complete = Boolean(schema && runtime);
+  return {
+    verdict: complete ? "VERIFIED" : "NOT VERIFIED",
+    ...(schema && {
+      tableName: schema.table,
+      embeddingColumn: schema.column,
+      vectorDimension: schema.dimension,
+      migrationFile: schema.source,
+    }),
+    ...(runtime && { runtimeFile: runtime.source }),
+  };
+};
+
+const formatEvidencePath = (source: string | undefined): string => {
+  if (!source) return "NOT VERIFIED";
+  const normalized = source.replace(/\\/g, "/");
+  const markerIndexes = ["src/", "migrations/"]
+    .map((marker) => normalized.toLowerCase().lastIndexOf(marker))
+    .filter((index) => index >= 0);
+  return markerIndexes.length > 0 ? normalized.slice(Math.max(...markerIndexes)) : normalized;
+};
+
+const formatEmbeddingStorageFacts = (facts: EmbeddingStorageFacts): string => [
+  `verdict: ${facts.verdict}`,
+  `table name: ${facts.tableName ?? "NOT VERIFIED"}`,
+  `embedding column: ${facts.embeddingColumn ?? "NOT VERIFIED"}`,
+  `vector dimension: ${facts.vectorDimension ?? "NOT VERIFIED"}`,
+  `migration file: ${formatEvidencePath(facts.migrationFile)}`,
+  `runtime file: ${formatEvidencePath(facts.runtimeFile)}`,
+].join("\n");
 
 const formatConversation = (messages: readonly Message[], mode: RetrievalMode): string =>
   messages
@@ -431,6 +520,38 @@ export const createAgent = (
 
     if (analysis.intent === "IMPACT_ANALYSIS" && analysis.symbol) {
       const symbol = analysis.symbol;
+      const astReport = retriever.findSymbolReferences
+        ? await retriever.findSymbolReferences(symbol).catch(() => undefined)
+        : undefined;
+      if (astReport && (astReport.definitions.length > 0 || astReport.references.length > 0)) {
+        const definition = astReport.definitions[0];
+        const affected = astReport.references
+          .filter((item) => !/(?:^|\/)tests?(?:\/|$)|(?:^|\/)test-/i.test(item.source))
+          .filter((item) => item.source !== definition?.source);
+        const affectedFiles = new Map<string, typeof affected[number]>();
+        for (const item of affected) if (!affectedFiles.has(item.source)) affectedFiles.set(item.source, item);
+        const entries = [...affectedFiles.entries()].slice(0, 12);
+        const risk = entries.length >= 8 ? "HIGH" : entries.length >= 3 ? "MEDIUM" : "LOW";
+        return {
+          id: `ast-impact-analysis-${Date.now()}`,
+          model: "typescript-ast-impact",
+          text: [
+            `### Impact analysis: \`${symbol}\``,
+            "",
+            definition
+              ? `**Definition:** \`${definition.source}\`, line ${definition.line}.`
+              : "**Definition:** No declaration was found by the TypeScript AST scan.",
+            `**Risk:** ${risk} — ${entries.length} non-test file${entries.length === 1 ? "" : "s"} contain verified AST references.`,
+            "",
+            "**Potentially affected components:**",
+            ...(entries.length > 0
+              ? entries.map(([source, item]) => `- \`${source}:${item.line}\` (${item.kind}): \`${item.text.slice(0, 220)}\``)
+              : ["- No downstream non-test AST references were found."]),
+            "",
+            "Signature or return-contract changes can break call references; import-only references generally indicate a dependency that still requires compatibility review.",
+          ].join("\n"),
+        };
+      }
       const [definitions, references] = await Promise.all([
         retriever.search({
           query: `Where is ${symbol} defined?`,
@@ -489,6 +610,32 @@ export const createAgent = (
 
     if (analysis.intent === "CALLER_SEARCH" && analysis.symbol) {
       const symbol = analysis.symbol;
+      const astReport = retriever.findSymbolReferences
+        ? await retriever.findSymbolReferences(symbol).catch(() => undefined)
+        : undefined;
+      if (astReport && (astReport.definitions.length > 0 || astReport.references.length > 0)) {
+        const definitions = astReport.definitions.slice(0, 5);
+        const references = astReport.references
+          .filter((item) => !/(?:^|\/)tests?(?:\/|$)|(?:^|\/)test-/i.test(item.source))
+          .slice(0, 20);
+        return {
+          id: `ast-caller-search-${Date.now()}`,
+          model: "typescript-ast-references",
+          text: [
+            `### \`${symbol}\` definition and usages`,
+            "",
+            "**Definitions:**",
+            ...(definitions.length > 0
+              ? definitions.map((item) => `- \`${item.source}:${item.line}\`: \`${item.text}\``)
+              : ["- No declaration was found by the TypeScript AST scan."]),
+            "",
+            "**Verified references:**",
+            ...(references.length > 0
+              ? references.map((item) => `- \`${item.source}:${item.line}\` (${item.kind}): \`${item.text}\``)
+              : ["- No non-test references were found."]),
+          ].join("\n"),
+        };
+      }
       const [definitionEvidence, usageEvidence] = await Promise.all([
         retriever.search({
           query: `Where is ${symbol} defined?`,
@@ -760,7 +907,8 @@ export const createAgent = (
             toolResult.text !==
             "Successfully completed requested file and tool operations." &&
             !isManualPasteTemplate &&
-            !isRawToolSyntax
+            !isRawToolSyntax &&
+            !isPlanningOnlyResponse(toolResult.text)
           ) {
             return toolResult;
           }
@@ -1340,6 +1488,119 @@ export const createAgent = (
     }
   };
 
+  const gatherEmbeddingStorageEvidence = async (
+    question: string,
+    initial: readonly RetrievalResult[],
+    agentContext: { tenantId: string; sessionId: string },
+    toolContext: ToolExecutionContext,
+    mode: RetrievalMode,
+  ): Promise<{ results: readonly RetrievalResult[]; facts: EmbeddingStorageFacts; steps: number }> => {
+    const gathered: RetrievalResult[] = [...initial];
+    const readSources = new Set<string>();
+    const migrationCandidates: string[] = [];
+    let migrationsListed = false;
+    let runtimeSearchDone = false;
+    let schemaSearchDone = false;
+    let steps = 0;
+
+    const addResults = (items: readonly RetrievalResult[]) => {
+      for (const item of items) {
+        const duplicate = gathered.some((existing) =>
+          existing.source === item.source && existing.content === item.content,
+        );
+        if (!duplicate) gathered.push(item);
+      }
+    };
+
+    while (steps < MAX_EVIDENCE_STEPS) {
+      const facts = extractEmbeddingStorageFacts(question, gathered);
+      if (facts.verdict === "VERIFIED") return { results: gathered, facts, steps };
+
+      if (!facts.migrationFile && !migrationsListed) {
+        migrationsListed = true;
+        steps += 1;
+        const listed = await tools.executeTool<{
+          entries: readonly { relativePath: string; type: string }[];
+        }>("list_directory", { path: "migrations", recursive: true }, toolContext);
+        if (listed.success && listed.output) {
+          migrationCandidates.push(...listed.output.entries
+            .filter((entry) => entry.type === "file" && /\.sql$/i.test(entry.relativePath))
+            .map((entry) => entry.relativePath));
+        }
+        continue;
+      }
+
+      const migration = migrationCandidates.find((source) => !readSources.has(source));
+      if (!facts.migrationFile && migration) {
+        readSources.add(migration);
+        steps += 1;
+        try {
+          const file = await readWorkspaceFile(migration, toolContext);
+          addResults([{ source: file.path, content: file.content, score: 1, sourceType: "code" }]);
+        } catch {
+          // Continue to the next migration candidate.
+        }
+        continue;
+      }
+
+      if (!facts.migrationFile && !schemaSearchDone) {
+        schemaSearchDone = true;
+        steps += 1;
+        addResults(await executeRetrieval(
+          "retrieve",
+          `${question}\nFind repository migration schema evidence containing CREATE TABLE and VECTOR dimension for code embeddings.`,
+          agentContext,
+          mode,
+        ));
+        continue;
+      }
+
+      const readable = facts.tableName && gathered.find((item) =>
+        !readSources.has(item.source) &&
+        /(?:^|[\\/])[^\\/]+\.(?:ts|tsx|js|jsx|mjs|cjs)$/i.test(item.source) &&
+        (item.content.toLowerCase().includes(facts.tableName!.toLowerCase()) ||
+          /vector[-_]store/i.test(item.source)),
+      );
+      if (readable) {
+        readSources.add(readable.source);
+        steps += 1;
+        try {
+          const file = await readWorkspaceFile(readable.source, toolContext);
+          addResults([{
+            source: file.path,
+            content: file.content,
+            score: Math.max(readable.score, 1),
+            sourceType: "code",
+            metadata: { type: "evidence_read", totalLines: String(file.totalLines) },
+          }]);
+        } catch {
+          // A stale indexed path is not fatal; continue with targeted retrieval.
+        }
+        continue;
+      }
+
+      if (!facts.runtimeFile && !runtimeSearchDone) {
+        runtimeSearchDone = true;
+        steps += 1;
+        addResults(await executeRetrieval(
+          "retrieve",
+          `${question}\nFind runtime SELECT/FROM SQL that reads the discovered embedding table, including vector similarity search.`,
+          agentContext,
+          mode,
+        ));
+        continue;
+      }
+
+      break;
+    }
+
+    return {
+      results: gathered,
+      facts: extractEmbeddingStorageFacts(question, gathered),
+      steps,
+    };
+  };
+
   const verifyAndRefineAnswer = async (
     initialResult: LlmResponse,
     results: readonly RetrievalResult[],
@@ -1453,7 +1714,8 @@ export const createAgent = (
 
     const isInternalPlaceholder =
       currentResult.id === initialResult.id ||
-      currentResult.text.includes("Retrieved evidence is required before answering.");
+      currentResult.text.includes("Retrieved evidence is required before answering.") ||
+      isPlanningOnlyResponse(currentResult.text);
     return isInternalPlaceholder
       ? buildGroundedEvidenceFallback(rewrittenQuestion, results)
       : currentResult;
@@ -1595,10 +1857,16 @@ export const createAgent = (
             ? "retrieve"
             : plan.action;
 
+          const userId = (agentContext as { tenantId: string; sessionId: string; userId?: string }).userId ?? `user-${tenantId}`;
+          const learnedInsights = globalUserMemory.formatInsightsForPrompt(tenantId, userId);
+
           const inputPrompt = buildUserPrompt({
             question: rewrittenQuestion,
             ...(conversationContext !== undefined && { conversationContext }),
+            ...(learnedInsights && { learnedUserInsights: learnedInsights }),
           });
+
+          extractUserInsights(tenantId, userId, question, globalUserMemory).catch(() => {});
 
           const initialResult = await executeInitialGeneration(
             action,
@@ -1609,13 +1877,36 @@ export const createAgent = (
             selectedMode,
           );
 
-          const results = await executeRetrieval(
+          let results = await executeRetrieval(
             action,
             rewrittenQuestion,
             agentContext,
             selectedMode,
             documentIds,
           );
+
+          let embeddingStorageFacts: EmbeddingStorageFacts | undefined;
+          if (requestsEmbeddingStorageFacts(question)) {
+            const gathered = await gatherEmbeddingStorageEvidence(
+              question,
+              results,
+              agentContext,
+              toolContext,
+              selectedMode,
+            );
+            results = gathered.results;
+            embeddingStorageFacts = gathered.facts;
+            logger.info("Evidence-gap loop completed", {
+              operation: "agent.evidence_gap_loop",
+              metadata: {
+                tenantId,
+                sessionId,
+                steps: gathered.steps,
+                maxSteps: MAX_EVIDENCE_STEPS,
+                verdict: gathered.facts.verdict,
+              },
+            });
+          }
 
           const symbolEvidence = results.filter(
             (result) => result.metadata?.type === "symbol_lookup" && result.metadata.pathValidated === "true",
@@ -1624,7 +1915,13 @@ export const createAgent = (
           const deterministicEvidence =
             codeQuery.intent === "SYMBOL_LOCATION" && symbolEvidence.length > 0 ||
             codeQuery.intent === "FILE_LOCATION" && fileEvidence.length > 0;
-          const finalResult = deterministicEvidence
+          const finalResult = embeddingStorageFacts
+            ? {
+                id: `embedding-storage-verification-${Date.now()}`,
+                model: "deterministic-evidence-verifier",
+                text: formatEmbeddingStorageFacts(embeddingStorageFacts),
+              }
+            : deterministicEvidence
             ? {
                 id: `symbol-lookup-${Date.now()}`,
                 model: "deterministic-repository-lookup",

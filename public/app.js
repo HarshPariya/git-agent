@@ -13,7 +13,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const activeDocumentIds = new Set();
   const tenantId = "tenant-1";
   const userId = `user-${tenantId}`;
-  const userRole = "user";
+  const userRole = "admin";
   let sessionId = "session-prod-1";
   let isSubmitting = false;
 
@@ -62,15 +62,28 @@ document.addEventListener("DOMContentLoaded", () => {
     let html = escapeHtml(cleanText);
     const codeBlocks = [];
 
-    // Format ```code blocks with Copy button
+    // Format ```code blocks with Copy button and Language Badges
     html = html.replace(
       /```([a-zA-Z0-9_-]*)\r?\n([\s\S]*?)\r?\n```/g,
-      (_match, language, code) => {
+      (_match, rawLang, code) => {
+        const lang = (rawLang || "code").toLowerCase();
+        const displayLang =
+          lang === "ts" || lang === "typescript" ? "TypeScript" :
+          lang === "js" || lang === "javascript" ? "JavaScript" :
+          lang === "py" || lang === "python" ? "Python" :
+          lang === "sql" ? "SQL" :
+          lang === "json" ? "JSON" :
+          lang === "bash" || lang === "sh" || lang === "shell" ? "Bash" :
+          lang === "html" ? "HTML" :
+          lang === "css" ? "CSS" :
+          lang === "md" || lang === "markdown" ? "Markdown" :
+          (rawLang ? rawLang.toUpperCase() : "CODE");
+
         const token = `@@CODE_BLOCK_${codeBlocks.length}@@`;
         codeBlocks.push(`
         <div class="code-wrapper">
           <div class="code-header">
-            <span>${language || "code"}</span>
+            <span class="code-lang-badge"><span class="lang-icon">💻</span> ${displayLang}</span>
             <button class="btn-copy" onclick="copyCode(this)">📋 Copy</button>
           </div>
           <pre><code>${code}</code></pre>
@@ -324,48 +337,92 @@ document.addEventListener("DOMContentLoaded", () => {
   const fileInput = document.getElementById("file-input");
   const uploadedDocsList = document.getElementById("uploaded-docs-list");
 
+  // Reusable File Upload Handler
+  async function uploadFile(file) {
+    if (!file) return;
+
+    const filename = file.name;
+    const mimeType = file.type || "text/plain";
+
+    // Show uploading indicator in chat
+    appendRow("assistant", `⏳ **Uploading & Indexing Document**: \`${filename}\` (${(file.size / 1024).toFixed(1)} KB)...`);
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const res = await fetch(`/api/documents/upload?filename=${encodeURIComponent(filename)}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": mimeType,
+          ...identityHeaders(),
+        },
+        body: buffer,
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error?.message || data.message || "Upload failed");
+      }
+
+      const storageLabel = data.document.storage === "postgres"
+        ? "PostgreSQL/pgvector"
+        : "temporary in-memory fallback";
+      appendRow("assistant", `✅ **Document Successfully Indexed!**\n- **Filename**: \`${data.document.filename}\`\n- **Status**: \`${data.document.status.toUpperCase()}\`\n- **Quality**: \`${data.document.quality.toUpperCase()}\` (Score: ${data.document.score})\n- **Vector Chunks**: \`${data.document.chunks}\` chunks indexed in ${storageLabel}.\n\nYou can now ask questions about the contents of \`${filename}\`!`);
+
+      loadDocuments();
+    } catch (err) {
+      appendRow("assistant", `❌ **Document Upload Error**: ${err.message}`);
+    } finally {
+      if (fileInput) fileInput.value = "";
+    }
+  }
+
   // Document Upload Handlers
   const triggerUpload = () => fileInput?.click();
   if (btnUploadDoc) btnUploadDoc.addEventListener("click", triggerUpload);
   if (btnAttach) btnAttach.addEventListener("click", triggerUpload);
 
   if (fileInput) {
-    fileInput.addEventListener("change", async (e) => {
+    fileInput.addEventListener("change", (e) => {
       const file = e.target.files?.[0];
-      if (!file) return;
+      if (file) uploadFile(file);
+    });
+  }
 
-      const filename = file.name;
-      const mimeType = file.type || "text/plain";
+  // Drag & Drop File Upload Overlay Setup
+  const dragDropOverlay = document.getElementById("drag-drop-overlay");
+  let dragCounter = 0;
 
-      // Show uploading indicator in chat
-      appendRow("assistant", `⏳ **Uploading & Indexing Document**: \`${filename}\` (${(file.size / 1024).toFixed(1)} KB)...`);
+  if (dragDropOverlay) {
+    window.addEventListener("dragenter", (e) => {
+      e.preventDefault();
+      dragCounter++;
+      if (e.dataTransfer && e.dataTransfer.types.includes("Files")) {
+        dragDropOverlay.classList.remove("hidden");
+      }
+    });
 
-      try {
-        const buffer = await file.arrayBuffer();
-        const res = await fetch(`/api/documents/upload?filename=${encodeURIComponent(filename)}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": mimeType,
-            ...identityHeaders(),
-          },
-          body: buffer,
-        });
+    window.addEventListener("dragover", (e) => {
+      e.preventDefault();
+    });
 
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error?.message || data.message || "Upload failed");
-        }
+    window.addEventListener("dragleave", (e) => {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        dragDropOverlay.classList.add("hidden");
+      }
+    });
 
-        const storageLabel = data.document.storage === "postgres"
-          ? "PostgreSQL/pgvector"
-          : "temporary in-memory fallback";
-        appendRow("assistant", `✅ **Document Successfully Indexed!**\n- **Filename**: \`${data.document.filename}\`\n- **Status**: \`${data.document.status.toUpperCase()}\`\n- **Quality**: \`${data.document.quality.toUpperCase()}\` (Score: ${data.document.score})\n- **Vector Chunks**: \`${data.document.chunks}\` chunks indexed in ${storageLabel}.\n\nYou can now ask questions about the contents of \`${filename}\`!`);
+    window.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      dragDropOverlay.classList.add("hidden");
 
-        loadDocuments();
-      } catch (err) {
-        appendRow("assistant", `❌ **Document Upload Error**: ${err.message}`);
-      } finally {
-        fileInput.value = "";
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        const droppedFile = files[0];
+        uploadFile(droppedFile);
       }
     });
   }

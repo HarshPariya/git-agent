@@ -48,7 +48,7 @@ export interface ParsedDocumentResult {
 }
 
 const SUPPORTED_EXTENSIONS = new Set([".pdf", ".docx", ".txt", ".md"]);
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB limit
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50MB limit
 
 export function validateDocumentFile(
   filename: string,
@@ -64,7 +64,7 @@ export function validateDocumentFile(
   }
   if (sizeBytes > MAX_FILE_SIZE_BYTES) {
     throw new AppError(
-      `Document size (${Math.round(sizeBytes / 1024)} KB) exceeds 10MB maximum limit.`,
+      `Document size (${Math.round(sizeBytes / 1024)} KB) exceeds 50MB maximum limit.`,
       "VALIDATION_ERROR",
       400,
     );

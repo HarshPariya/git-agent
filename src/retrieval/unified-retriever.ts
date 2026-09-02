@@ -1,4 +1,4 @@
-import type { RetrievalRequest, RetrievalResult, Retriever } from "./types.js";
+import type { RetrievalRequest, RetrievalResult, Retriever, SymbolReferenceReport } from "./types.js";
 import { CodeRetriever } from "./retriever.js";
 import { DocumentRetriever } from "./document-retriever.js";
 import { logger } from "../logging/logger.js";
@@ -22,6 +22,10 @@ export class UnifiedRetriever implements Retriever {
   constructor(codeRetriever: CodeRetriever) {
     this.codeRetriever = codeRetriever;
     this.documentRetriever = new DocumentRetriever();
+  }
+
+  async findSymbolReferences(symbol: string): Promise<SymbolReferenceReport> {
+    return this.codeRetriever.findSymbolReferences(symbol);
   }
 
   async search(request: UnifiedRetrievalRequest): Promise<readonly UnifiedRetrievalResult[]> {

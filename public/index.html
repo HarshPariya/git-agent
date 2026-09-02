@@ -1,14 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ChatGPT AI Code Assistant</title>
+  <title>AI Code Assistant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
+
 <body class="chatgpt-layout">
 
   <!-- Left Sidebar -->
@@ -19,27 +23,6 @@
         <span class="title">CodeGPT</span>
       </div>
       <button id="btn-new-chat" class="btn-new-chat">+ New Chat</button>
-    </div>
-
-    <div class="sidebar-section">
-      <div class="section-title">Unified AI Pipeline</div>
-      <div class="module-card">
-        <div class="module-card-heading">
-          <span>Member 1</span>
-          <span id="retrieval-module-status" class="module-status">Ready</span>
-        </div>
-        <strong>GraphRAG & Retrieval</strong>
-        <small>Parsing, vector search, AST graph, reranking</small>
-      </div>
-      <div class="pipeline-connector">↓ grounded context</div>
-      <div class="module-card">
-        <div class="module-card-heading">
-          <span>Member 2</span>
-          <span id="agent-module-status" class="module-status">Ready</span>
-        </div>
-        <strong>Agent & LLM</strong>
-        <small>Planning, memory, tools, critic, guardrails</small>
-      </div>
     </div>
 
     <div class="sidebar-section">
@@ -72,13 +55,10 @@
 
     <!-- Top Chat Navigation Bar -->
     <header class="chat-topbar">
-      <div class="permanent-rag-badge">
-        <span class="badge-icon">⚡</span>
-        <span class="badge-title">GraphRAG Hybrid</span>
-        <span class="badge-sub">(Vector + AST Knowledge Graph + Document RAG)</span>
+      <div class="chat-title">
+        <span class="chat-title-icon">⚡</span>
+        <span class="chat-title-text">CodeGPT AI Assistant</span>
       </div>
-
-      <div id="active-route-label" class="active-route-label">Auto routing enabled</div>
 
       <div class="topbar-actions">
         <button id="btn-clear-history" class="btn-icon" title="Clear Chat History">🗑️ Clear</button>
@@ -90,7 +70,8 @@
       <div class="welcome-card glass-panel">
         <div class="welcome-icon">⚡</div>
         <h2>GraphRAG AI Code & Document Assistant</h2>
-        <p>Ask questions about your codebase, debug functions, analyze impact paths, or chat with uploaded PDF/DOCX specifications in real-time.</p>
+        <p>Ask questions about your codebase, debug functions, analyze impact paths, or chat with uploaded PDF/DOCX
+          specifications in real-time.</p>
 
         <div class="prompt-grid">
           <button class="prompt-card" data-prompt="How does graph traversal work?">
@@ -129,6 +110,17 @@
 
   </main>
 
+  <!-- Drag & Drop Upload Overlay -->
+  <div id="drag-drop-overlay" class="drag-drop-overlay hidden">
+    <div class="drag-drop-modal">
+      <div class="drag-icon">📂</div>
+      <h3>Drop Document to Index</h3>
+      <p>Supports <strong>.pdf, .docx, .txt, .md</strong> files (up to 50MB)</p>
+      <div class="drag-badge">Release mouse to start indexing</div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
+
 </html>

@@ -16,6 +16,27 @@ const llm: LlmProvider = {
 
 class LocationRetriever implements Retriever {
   async search(request: RetrievalRequest): Promise<readonly RetrievalResult[]> {
+    if (/references calls and usages of normalizeId/i.test(request.query)) {
+      return [{
+        content: "const fileEntityId = `file:${normalizeId(file.filePath)}`;",
+        source: "src/graph/relationship-extractor.ts",
+        score: 1,
+      }];
+    }
+    if (/normalizeId/i.test(request.query)) {
+      return [{
+        content: "export function normalizeId(value: string) { return value.toLowerCase(); }",
+        source: "src/graph/entity-extractor.ts",
+        score: 1,
+      }];
+    }
+    if (/runtime SELECT\/FROM SQL/i.test(request.query)) {
+      return [{
+        content: "SELECT id, 1 - (embedding <=> $1::vector) AS similarity FROM code_chunks",
+        source: "src/db/vector-store.ts",
+        score: 1,
+      }];
+    }
     if (/references calls and usages of pgVectorSearch/i.test(request.query)) {
       return [{
         content: "vectorResults = await pgVectorSearch(sanitizedQuery, options)",
@@ -282,4 +303,69 @@ test("retrieved evidence never leaks the internal retrieval placeholder", async 
   assert.match(result.text, /graphSearch|graph relationships/i);
   assert.match(result.text, /src\/retrieval\/graph-search\.ts/i);
   assert.doesNotMatch(result.text, /Retrieved evidence is required before answering/i);
+});
+
+test("embedding storage verification continues through migration and runtime evidence", async () => {
+  const result = await run([
+    "Verify exactly where code embeddings are stored. Return only:",
+    "verdict, table name, embedding column, vector dimension,",
+    "migration file, and runtime file that reads from that table.",
+    "Do not stop after saying you will search.",
+  ].join("\n"));
+
+  assert.doesNotMatch(result.text, /I need to|I will search|I need to inspect|Let me search/i);
+  assert.match(result.text, /verdict:\s*VERIFIED/i);
+  assert.match(result.text, /table name:\s*code_chunks/i);
+  assert.match(result.text, /embedding column:\s*embedding/i);
+  assert.match(result.text, /vector dimension:\s*384/i);
+  assert.match(result.text, /migration file:\s*migrations\/001_initial_schema\.sql/i);
+  assert.match(result.text, /runtime file:\s*src\/db\/vector-store\.ts/i);
+});
+
+test("planning-only model text is never returned as a final grounded answer", async () => {
+  const planningLlm: LlmProvider = {
+    async generate() {
+      return { id: "planning", model: "mock", text: "I need to inspect the implementation before answering." };
+    },
+  };
+  const retriever: Retriever = {
+    async search() {
+      return [{
+        content: "export function implementation() { return 'grounded'; }",
+        source: "src/example.ts",
+        score: 1,
+      }];
+    },
+  };
+  const agent = createAgent(new ConversationMemory(), retriever, planningLlm);
+  const result = await agent.run({
+    tenantId: "planning-tenant",
+    sessionId: "planning-session",
+    question: "Explain the repository implementation.",
+    retrievalMode: "code",
+  });
+  assert.doesNotMatch(result.text, /I need to inspect/i);
+  assert.match(result.text, /src\/example\.ts|implementation/i);
+});
+
+test("requested multi-step query phrasings return semantic answers", async () => {
+  const callers = await run("Which components call pgVectorSearch?");
+  assert.match(callers.text, /src\/retrieval\/retriever\.ts/i);
+  assert.doesNotMatch(callers.text, /I need to|I will search/i);
+
+  const trace = await run("Trace /api/chat to vector retrieval.");
+  assert.match(trace.text, /chatHandler|api\/chat/i);
+  assert.match(trace.text, /UnifiedRetriever|CodeRetriever/i);
+  assert.match(trace.text, /vector retrieval/i);
+
+  const pipeline = await run("Explain the uploaded-document indexing pipeline.");
+  assert.match(pipeline.text, /upload/i);
+  assert.match(pipeline.text, /parseDocumentContent|parse/i);
+  assert.match(pipeline.text, /chunkDocument|chunk/i);
+  assert.match(pipeline.text, /indexDocument|index/i);
+  assert.match(pipeline.text, /DocumentRetriever|retrieve/i);
+
+  const normalizeCallers = await run("Find every runtime caller of normalizeId.");
+  assert.match(normalizeCallers.text, /src\/graph\/relationship-extractor\.ts/i);
+  assert.match(normalizeCallers.text, /normalizeId/i);
 });
