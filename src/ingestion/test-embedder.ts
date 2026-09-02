@@ -1,7 +1,6 @@
 import {
   embedText,
   getEmbeddingMetrics,
-  EmbeddingError,
 } from "./embedder.js";
 
 async function runEmbedderTests() {
