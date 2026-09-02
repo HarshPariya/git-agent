@@ -15,10 +15,10 @@ test("validates document extensions and rejects unsupported files", () => {
   );
 });
 
-test("rejects oversized document files exceeding 10MB", () => {
+test("rejects oversized document files exceeding 50MB", () => {
   assert.throws(
-    () => validateDocumentFile("large-spec.pdf", 15 * 1024 * 1024),
-    /exceeds 10MB maximum limit/,
+    () => validateDocumentFile("large-spec.pdf", 60 * 1024 * 1024),
+    /exceeds 50MB maximum limit/,
   );
 });
 

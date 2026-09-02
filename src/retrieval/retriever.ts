@@ -1,6 +1,6 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
-import { parseRepository } from "../ingestion/parser.js";
+import { parseRepository, type ParsedFile } from "../ingestion/parser.js";
 import { chunkRepository, type CodeChunk } from "../ingestion/chunker.js";
 import { extractEntities } from "../graph/entity-extractor.js";
 import { extractRelationships } from "../graph/relationship-extractor.js";
@@ -26,6 +26,8 @@ import { metricsCollector } from "../monitoring/observability.js";
 import { setHnswSearchPrecision } from "../db/hnsw-tuning.js";
 import { toRepositoryPath } from "./repository-path.js";
 import { updateRetrievalRuntimeStatus } from "./runtime-status.js";
+import { findAstSymbolReferences } from "./ast-reference-search.js";
+import type { SymbolReferenceReport } from "./types.js";
 
 export interface RetrieverOptions {
   limit?: number | undefined;
@@ -87,11 +89,13 @@ export class CodeRetriever {
     chunks: CodeChunk[];
     graph: CodeGraph;
     fileCount: number;
+    parsedFiles: ParsedFile[];
   }>();
   private readonly rootDirectory: string;
   private readonly repositoryName: string;
 
   private chunks: CodeChunk[] = [];
+  private parsedFiles: ParsedFile[] = [];
   private graph?: CodeGraph;
   private initialized = false;
   private fileCount = 0;
@@ -108,6 +112,7 @@ export class CodeRetriever {
       this.chunks = snapshot.chunks;
       this.graph = snapshot.graph;
       this.fileCount = snapshot.fileCount;
+      this.parsedFiles = snapshot.parsedFiles;
       this.initialized = true;
       updateRetrievalRuntimeStatus({
         graph: "ready",
@@ -126,6 +131,7 @@ export class CodeRetriever {
     validateRepositoryScan(parsedFiles.length, 0);
 
     this.fileCount = parsedFiles.length;
+    this.parsedFiles = parsedFiles;
     this.chunks = chunkRepository(parsedFiles);
 
     const currentHash = computeRepositoryHash(parsedFiles);
@@ -184,6 +190,7 @@ export class CodeRetriever {
       chunks: this.chunks,
       graph: this.graph,
       fileCount: this.fileCount,
+      parsedFiles: this.parsedFiles,
     });
     console.log("✓ Code Retriever ready.");
   }
@@ -203,6 +210,7 @@ export class CodeRetriever {
       const repositoryHash = computeRepositoryHash(parsedFiles);
       await saveGraphCache({ repositoryHash, entities, relationships });
       this.fileCount = parsedFiles.length;
+      this.parsedFiles = parsedFiles;
       this.chunks = chunks;
       this.graph = buildGraph(entities, relationships);
       this.initialized = true;
@@ -210,6 +218,7 @@ export class CodeRetriever {
         chunks: this.chunks,
         graph: this.graph,
         fileCount: this.fileCount,
+        parsedFiles: this.parsedFiles,
       });
       updateRetrievalRuntimeStatus({
         graph: "ready",
@@ -415,6 +424,13 @@ export class CodeRetriever {
         metadata,
       };
     });
+  }
+
+  async findSymbolReferences(symbol: string): Promise<SymbolReferenceReport> {
+    if (!this.initialized) {
+      throw new Error("Retriever is not initialized. Call initialize() first.");
+    }
+    return findAstSymbolReferences(this.parsedFiles, symbol);
   }
 
   getStats(): RetrieverStats {
