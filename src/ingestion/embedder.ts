@@ -1,27 +1,3 @@
-import { pipeline } from "@xenova/transformers";
-
-export type EmbeddingErrorCode =
-  | "MODEL_LOAD_FAILED"
-  | "EMBEDDING_TIMEOUT"
-  | "EMBEDDING_FAILED"
-  | "UNINITIALIZED";
-
-export class EmbeddingError extends Error {
-  public readonly code: EmbeddingErrorCode;
-  public readonly originalError?: unknown;
-
-  constructor(
-    message: string,
-    code: EmbeddingErrorCode,
-    originalError?: unknown,
-  ) {
-    super(message);
-    this.name = "EmbeddingError";
-    this.code = code;
-    this.originalError = originalError;
-  }
-}
-
 export interface EmbeddingMetrics {
   modelLoadTimeMs: number;
   totalEmbeddings: number;
@@ -29,6 +5,7 @@ export interface EmbeddingMetrics {
   totalEmbeddingTimeMs: number;
 }
 
+const DIMENSIONS = 384;
 const metrics: EmbeddingMetrics = {
   modelLoadTimeMs: 0,
   totalEmbeddings: 0,
@@ -36,50 +13,45 @@ const metrics: EmbeddingMetrics = {
   totalEmbeddingTimeMs: 0,
 };
 
-let extractorPromise: Promise<any> | null = null;
+function hashFeature(feature: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < feature.length; index++) {
+    hash ^= feature.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
 
-export async function getExtractor(): Promise<any> {
-  if (!extractorPromise) {
-    const startTime = Date.now();
-    extractorPromise = (async () => {
-      try {
-        console.log("⚡ Loading embedding model (Xenova/all-MiniLM-L6-v2)...");
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(
-            () =>
-              reject(
-                new EmbeddingError(
-                  "Embedding model initialization timed out (30s limit)",
-                  "MODEL_LOAD_FAILED",
-                ),
-              ),
-            30000,
-          ),
-        );
+function createEmbedding(text: string): number[] {
+  const vector = new Array<number>(DIMENSIONS).fill(0);
+  const normalized = text.toLowerCase().replace(/[^a-z0-9_$.-]+/g, " ").trim();
+  const words = normalized.split(/\s+/).filter(Boolean);
+  const features = [
+    ...words.map((word) => `word:${word}`),
+    ...words.slice(0, -1).map((word, index) => `pair:${word}_${words[index + 1]}`),
+  ];
 
-        const model = await Promise.race([
-          pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2"),
-          timeoutPromise,
-        ]);
-
-        metrics.modelLoadTimeMs = Date.now() - startTime;
-        console.log(`✓ Embedding model loaded successfully in ${metrics.modelLoadTimeMs}ms.`);
-        return model;
-      } catch (err: any) {
-        extractorPromise = null; // Clear so subsequent calls can retry initialization
-        if (err instanceof EmbeddingError) {
-          throw err;
-        }
-        throw new EmbeddingError(
-          `Embedding model load failed: ${err?.message ?? err}`,
-          "MODEL_LOAD_FAILED",
-          err,
-        );
-      }
-    })();
+  for (const word of words) {
+    if (word.length < 3) continue;
+    for (let index = 0; index <= word.length - 3; index++) {
+      features.push(`tri:${word.slice(index, index + 3)}`);
+    }
   }
 
-  return extractorPromise;
+  for (const feature of features) {
+    const hash = hashFeature(feature);
+    const bucket = hash % DIMENSIONS;
+    vector[bucket] = (vector[bucket] ?? 0) + ((hash & 0x80000000) === 0 ? 1 : -1);
+  }
+
+  const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+  if (magnitude === 0) return vector;
+  return vector.map((value) => value / magnitude);
+}
+
+/** Compatibility hook for callers that previously loaded a transformer pipeline. */
+export async function getExtractor(): Promise<(text: string) => number[]> {
+  return createEmbedding;
 }
 
 export interface EmbedOptions {
@@ -88,65 +60,16 @@ export interface EmbedOptions {
   backoffMs?: number;
 }
 
-export async function embedText(
-  text: string,
-  options: EmbedOptions = {},
-): Promise<number[]> {
-  const maxRetries = options.maxRetries ?? 3;
-  const timeoutMs = options.timeoutMs ?? 10000;
-  const backoffMs = options.backoffMs ?? 250;
-
-  let attempt = 0;
+export async function embedText(text: string, _options: EmbedOptions = {}): Promise<number[]> {
   const startTime = Date.now();
-
-  while (true) {
-    attempt++;
-    try {
-      const model = await getExtractor();
-
-      const modelPromise = model(text, {
-        pooling: "mean",
-        normalize: true,
-      });
-
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new EmbeddingError(
-                `Embedding generation timed out after ${timeoutMs}ms`,
-                "EMBEDDING_TIMEOUT",
-              ),
-            ),
-          timeoutMs,
-        ),
-      );
-
-      const output: any = await Promise.race([modelPromise, timeoutPromise]);
-      const duration = Date.now() - startTime;
-
-      metrics.totalEmbeddings++;
-      metrics.totalEmbeddingTimeMs += duration;
-
-      return Array.from(output.data);
-    } catch (err: any) {
-      if (attempt >= maxRetries) {
-        metrics.failedEmbeddings++;
-        if (err instanceof EmbeddingError) {
-          throw err;
-        }
-        throw new EmbeddingError(
-          `Embedding failed after ${maxRetries} attempts: ${err?.message ?? err}`,
-          "EMBEDDING_FAILED",
-          err,
-        );
-      }
-
-      console.warn(
-        `⚠️ Embedding attempt ${attempt}/${maxRetries} failed (${err?.message}). Retrying in ${backoffMs * attempt}ms...`,
-      );
-      await new Promise((res) => setTimeout(res, backoffMs * attempt));
-    }
+  try {
+    const embedding = createEmbedding(text);
+    metrics.totalEmbeddings++;
+    metrics.totalEmbeddingTimeMs += Date.now() - startTime;
+    return embedding;
+  } catch (error) {
+    metrics.failedEmbeddings++;
+    throw error;
   }
 }
 
@@ -159,17 +82,12 @@ export async function embedChunks(
   chunks: { id: string; content: string }[],
   options?: EmbedOptions,
 ): Promise<EmbeddedChunk[]> {
-  const results: EmbeddedChunk[] = [];
-
-  for (const chunk of chunks) {
-    const embedding = await embedText(chunk.content, options);
-    results.push({
+  return Promise.all(
+    chunks.map(async (chunk) => ({
       id: chunk.id,
-      embedding,
-    });
-  }
-
-  return results;
+      embedding: await embedText(chunk.content, options),
+    })),
+  );
 }
 
 export function getEmbeddingMetrics() {

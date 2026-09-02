@@ -34,7 +34,7 @@ async function runBackupRestoreTest() {
 
     const checkResult = await query(`SELECT COUNT(*) FROM code_chunks`);
     assert(
-      Number(checkResult.rows[0].count) >= restoredCount,
+      Number(checkResult.rows[0]?.count ?? 0) >= restoredCount,
       "PostgreSQL chunks verified surviving backup & restore",
     );
   } finally {

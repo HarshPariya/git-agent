@@ -15,21 +15,21 @@ import {
 } from "./graph-search.js";
 
 export interface HybridSearchOptions {
-  limit?: number;
+  limit?: number | undefined;
 
-  graphLimit?: number;
+  graphLimit?: number | undefined;
 
-  graphMaxDepth?: number;
+  graphMaxDepth?: number | undefined;
 
-  vectorWeight?: number;
-  graphWeight?: number;
+  vectorWeight?: number | undefined;
+  graphWeight?: number | undefined;
 }
 
 export interface HybridSearchResult {
-  chunk?: CodeChunk;
+  chunk?: CodeChunk | undefined;
 
   name: string;
-  filePath?: string;
+  filePath?: string | undefined;
 
   vectorScore: number;
   graphScore: number;
@@ -40,9 +40,24 @@ export interface HybridSearchResult {
     "vector" | "graph"
   >;
 
-  graphDepth?: number;
+  graphDepth?: number | undefined;
 
-  graphMatchType?: string;
+  graphMatchType?: string | undefined;
+}
+
+export function inferHybridWeights(query: string): { vectorWeight: number; graphWeight: number } {
+  if (/\b(?:relationship|related|trace|flow|caller|calls?|uses?|depends?|imported?|where is .* defined)\b/i.test(query)) {
+    return { vectorWeight: 0.35, graphWeight: 0.65 };
+  }
+  if (/\b(?:explain|how does|what does|architecture|pipeline)\b/i.test(query)) {
+    return { vectorWeight: 0.65, graphWeight: 0.35 };
+  }
+  return { vectorWeight: 0.6, graphWeight: 0.4 };
+}
+
+function reciprocalRankScore(rank: number): number {
+  const k = 60;
+  return (1 / (k + rank)) / (1 / (k + 1));
 }
 
 function normalizeVectorScores(
@@ -116,11 +131,9 @@ export async function hybridSearch(
   const graphLimit =
     options.graphLimit ?? 15;
 
-  const vectorWeight =
-    options.vectorWeight ?? 0.6;
-
-  const graphWeight =
-    options.graphWeight ?? 0.4;
+  const inferredWeights = inferHybridWeights(query);
+  const vectorWeight = options.vectorWeight ?? inferredWeights.vectorWeight;
+  const graphWeight = options.graphWeight ?? inferredWeights.graphWeight;
 
   const graphResults =
     graphSearch(
@@ -147,7 +160,7 @@ export async function hybridSearch(
   /*
    * Add vector results first.
    */
-  for (const result of vectorResults) {
+  for (const [vectorIndex, result] of vectorResults.entries()) {
     const normalizedVectorScore =
       normalizedVectorScores.get(
         result.chunk.id,
@@ -170,9 +183,7 @@ export async function hybridSearch(
 
         graphScore: 0,
 
-        hybridScore:
-          normalizedVectorScore *
-          vectorWeight,
+        hybridScore: reciprocalRankScore(vectorIndex + 1) * vectorWeight,
 
         sources: ["vector"],
       },
@@ -182,7 +193,7 @@ export async function hybridSearch(
   /*
    * Merge GraphRAG results.
    */
-  for (const graphResult of graphResults) {
+  for (const [graphIndex, graphResult] of graphResults.entries()) {
     const matchingChunk =
       findChunkForGraphEntity(
         chunks,
@@ -214,11 +225,10 @@ export async function hybridSearch(
           graphResult.score,
         );
 
+      const vectorRank = vectorResults.findIndex((item) => item.chunk.id === matchingChunk?.id);
       existing.hybridScore =
-        existing.vectorScore *
-          vectorWeight +
-        existing.graphScore *
-          graphWeight;
+        (vectorRank >= 0 ? reciprocalRankScore(vectorRank + 1) * vectorWeight : 0) +
+        reciprocalRankScore(graphIndex + 1) * graphWeight;
 
       if (
         !existing.sources.includes(
@@ -256,9 +266,7 @@ export async function hybridSearch(
         graphScore:
           graphResult.score,
 
-        hybridScore:
-          graphResult.score *
-          graphWeight,
+        hybridScore: reciprocalRankScore(graphIndex + 1) * graphWeight,
 
         sources: ["graph"],
 

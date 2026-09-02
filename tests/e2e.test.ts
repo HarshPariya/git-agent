@@ -1,3 +1,5 @@
+process.env.NODE_ENV = "test";
+
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -122,4 +124,68 @@ test("E2E: POST /chat processes authorized request and returns response", async 
   assert.ok(data.model);
   assert.ok(data.responseId);
   assert.ok(Array.isArray(data.sources));
+});
+
+test("E2E: /api/documents security enforcement (401 unauthenticated, 403 user role)", async () => {
+  // Unauthenticated upload
+  const unauthRes = await makeRequest("/api/documents/upload?filename=test.txt", {
+    method: "POST",
+    headers: { "content-type": "text/plain" },
+    body: "Sample document content",
+  });
+  assert.equal(unauthRes.status, 401);
+
+  // User role trying admin document upload
+  const forbiddenRes = await makeRequest("/api/documents/upload?filename=test.txt", {
+    method: "POST",
+    headers: {
+      "content-type": "text/plain",
+      "x-tenant-id": "e2e-doc-tenant",
+      "x-user-id": "e2e-doc-user",
+      "x-user-role": "user",
+    },
+    body: "Sample document content",
+  });
+  assert.equal(forbiddenRes.status, 403);
+});
+
+test("E2E: /api/documents admin lifecycle (upload, list, delete)", async () => {
+  // Admin upload
+  const uploadRes = await makeRequest("/api/documents/upload?filename=e2e-test-doc.txt", {
+    method: "POST",
+    headers: {
+      "content-type": "text/plain",
+      "x-tenant-id": "e2e-doc-tenant",
+      "x-user-id": "e2e-admin-user",
+      "x-user-role": "admin",
+    },
+    body: "GraphRAG is a novel retrieval architecture combining vector embeddings with knowledge graphs.",
+  });
+  assert.equal(uploadRes.status, 201);
+  const uploadData = (await uploadRes.json()) as { document: { id: string } };
+  assert.ok(uploadData.document.id);
+
+  // Admin list
+  const listRes = await makeRequest("/api/documents", {
+    method: "GET",
+    headers: {
+      "x-tenant-id": "e2e-doc-tenant",
+      "x-user-id": "e2e-admin-user",
+      "x-user-role": "admin",
+    },
+  });
+  assert.equal(listRes.status, 200);
+  const listData = (await listRes.json()) as { documents: Array<{ id: string }> };
+  assert.ok(listData.documents.some((d) => d.id === uploadData.document.id));
+
+  // Admin delete
+  const deleteRes = await makeRequest(`/api/documents/${uploadData.document.id}`, {
+    method: "DELETE",
+    headers: {
+      "x-tenant-id": "e2e-doc-tenant",
+      "x-user-id": "e2e-admin-user",
+      "x-user-role": "admin",
+    },
+  });
+  assert.equal(deleteRes.status, 200);
 });

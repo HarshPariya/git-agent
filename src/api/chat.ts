@@ -4,13 +4,50 @@ import { createAgent } from "../agent/orchestrator.js";
 import { ConversationMemory } from "../agent/memory.js";
 import { AppError } from "../errors/app-error.js";
 import { groqProvider } from "../llm/client.js";
+import { CodeRetriever } from "../retrieval/retriever.js";
 import { MockRetriever } from "../retrieval/mock-retriever.js";
+import { UnifiedRetriever } from "../retrieval/unified-retriever.js";
+import { routeQuery } from "../agent/retrieval-router.js";
+import { env } from "../config/env.js";
+import { mockProvider } from "../llm/mock-client.js";
 
-const agent = createAgent(
-  new ConversationMemory(),
-  new MockRetriever(),
-  groqProvider,
-);
+const codeRetriever = new CodeRetriever(process.cwd());
+const unifiedRetriever = new UnifiedRetriever(codeRetriever);
+const memory = new ConversationMemory();
+let retrieverInitialization: Promise<boolean> | undefined;
+
+const initializeRetriever = (): Promise<boolean> => {
+  retrieverInitialization ??= codeRetriever.initialize()
+    .then(() => true)
+    .catch((error) => {
+      console.warn("Failed to initialize CodeRetriever", error);
+      if (env.nodeEnv === "production") {
+        throw new AppError(
+          "Code retriever service unavailable",
+          "SERVICE_UNAVAILABLE",
+          503,
+        );
+      }
+      return false;
+    });
+  return retrieverInitialization;
+};
+
+const getAgent = async () => {
+  const initialized = await initializeRetriever();
+  if (!initialized && env.nodeEnv === "production") {
+    throw new AppError(
+      "Code retriever service unavailable",
+      "SERVICE_UNAVAILABLE",
+      503,
+    );
+  }
+  return createAgent(
+    memory,
+    initialized ? unifiedRetriever : new MockRetriever(),
+    env.nodeEnv === "test" ? mockProvider : groqProvider,
+  );
+};
 
 const validateField = (value: unknown, field: string): string => {
   const checks = [
@@ -54,11 +91,23 @@ export async function chatHandler(
 
     const message = validateField(body.message, "Message");
     const sessionId = validateField(body.sessionId, "Session ID");
+    const documentIds = Array.isArray(body.documentIds) &&
+      body.documentIds.every((id) => typeof id === "string")
+      ? body.documentIds as string[]
+      : undefined;
+    const route = routeQuery({
+      query: message,
+      hasUploadedDocuments: Boolean(documentIds?.length),
+      ...(documentIds !== undefined && { documentIds }),
+    });
 
+    const agent = await getAgent();
     const result = await agent.run({
       tenantId: context.tenantId,
       sessionId,
       question: message,
+      ...(documentIds !== undefined && { documentIds }),
+      retrievalMode: route.mode,
     });
 
     response.status(200).json({
@@ -67,6 +116,12 @@ export async function chatHandler(
       responseId: result.responseId,
       sources: result.sources,
       toolActivity: result.toolActivity,
+      pipeline: {
+        retrievalMode: route.mode,
+        routeReason: route.reason,
+        retrieval: "member-1",
+        agent: "member-2",
+      },
     });
   } catch (error) {
     // High-availability fallback: LLM upstream outage — inform user tools still work

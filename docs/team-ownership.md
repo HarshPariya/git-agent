@@ -182,12 +182,12 @@ export interface Retriever {
 
 ## 6. Build & Test Verification
 
-Member 2 is verified independently with zero external infrastructure dependencies:
+The application uses a unified build system compiling all modules into `dist/`:
 
 ```bash
-# Compile Member 2 TypeScript
-npm run build:m2
+# Compile entire TypeScript application
+npm run build
 
-# Run Member 2 Test Suite (96/96 passing tests)
-npm run test:m2
+# Run comprehensive test suite
+npm test
 ```

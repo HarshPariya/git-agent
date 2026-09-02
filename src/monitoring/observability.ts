@@ -162,6 +162,23 @@ class MetricsCollector {
     }
   }
 
+  public recordRagMetrics(metrics: {
+    retrievalMode: string;
+    retrievedCandidates: number;
+    rerankedCandidates: number;
+    sentToLLM: number;
+    ragContextTokens: number;
+    memoryTokens: number;
+    systemTokens: number;
+    queryTokens: number;
+    llmInputTokens: number;
+    llmOutputTokens: number;
+  }): void {
+    console.log(
+      `[RAG METRICS] mode: ${metrics.retrievalMode} | retrieved: ${metrics.retrievedCandidates} | reranked: ${metrics.rerankedCandidates} | sentToLLM: ${metrics.sentToLLM} | ragTokens: ${metrics.ragContextTokens} | memTokens: ${metrics.memoryTokens} | totalInputTokens: ${metrics.llmInputTokens}`,
+    );
+  }
+
   public recordIndexing(indexed: number, deleted: number, durationMs: number): void {
     this.indexedFiles += indexed;
     this.deletedFiles += deleted;
@@ -176,7 +193,7 @@ class MetricsCollector {
     const sorted = [...this.latencySamples].sort((a, b) => a - b);
     const getPercentile = (p: number) => {
       const idx = Math.ceil((p / 100) * sorted.length) - 1;
-      return sorted[Math.max(0, idx)];
+      return sorted[Math.max(0, idx)] ?? 0;
     };
 
     return {

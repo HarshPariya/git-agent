@@ -249,7 +249,7 @@ async function main() {
       "normalizeId",
     );
 
-  if (normalizeMatches.length > 0) {
+  if (normalizeMatches.length > 0 && normalizeMatches[0]) {
     const start =
       normalizeMatches[0];
 

@@ -13,7 +13,8 @@ export interface GraphCacheData {
   relationships: GraphRelationship[];
 }
 
-const CACHE_VERSION = 1;
+// v2 stores repository-relative file identities and resolved file import edges.
+const CACHE_VERSION = 2;
 const DEFAULT_CACHE_PATH = path.join(
   process.cwd(),
   ".cache",

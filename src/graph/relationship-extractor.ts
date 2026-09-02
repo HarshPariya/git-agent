@@ -1,5 +1,6 @@
 import type { ParsedFile } from "../ingestion/parser.js";
 import type { GraphEntity } from "./entity-extractor.js";
+import path from "node:path";
 
 export type RelationshipType = "contains" | "imports" | "calls" | "exports";
 
@@ -52,12 +53,24 @@ function createContainsRelationships(
   return relationships;
 }
 
-function createImportRelationships(file: ParsedFile): GraphRelationship[] {
+function resolveImportedFile(file: ParsedFile, source: string, parsedFiles: ParsedFile[]): ParsedFile | undefined {
+  if (!source.startsWith(".")) return undefined;
+  const joined = path.posix.normalize(path.posix.join(path.posix.dirname(file.filePath), source));
+  const base = joined.replace(/\.(?:mjs|cjs|js|jsx|ts|tsx)$/i, "");
+  const extensions = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
+  const candidates = new Set(extensions.flatMap((extension) => [base + extension, `${base}/index${extension}`]));
+  return parsedFiles.find((candidate) => candidates.has(candidate.filePath.replace(/\\/g, "/")));
+}
+
+function createImportRelationships(file: ParsedFile, parsedFiles: ParsedFile[]): GraphRelationship[] {
   const relationships: GraphRelationship[] = [];
   const fileEntityId = `file:${normalizeId(file.filePath)}`;
 
   for (const importedModule of file.imports) {
-    const moduleEntityId = `module:${normalizeId(importedModule.source)}`;
+    const resolvedFile = resolveImportedFile(file, importedModule.source, parsedFiles);
+    const moduleEntityId = resolvedFile
+      ? `file:${normalizeId(resolvedFile.filePath)}`
+      : `module:${normalizeId(importedModule.source)}`;
 
     relationships.push({
       id: createRelationshipId(fileEntityId, "imports", moduleEntityId),
@@ -68,6 +81,8 @@ function createImportRelationships(file: ParsedFile): GraphRelationship[] {
         source: importedModule.source,
         names: importedModule.names,
         line: importedModule.line,
+        resolution: resolvedFile ? "resolved-file" : "external-module",
+        ...(resolvedFile ? { resolvedFilePath: resolvedFile.filePath } : {}),
       },
     });
   }
@@ -101,7 +116,7 @@ function extractFunctionCalls(functionContent: string): string[] {
 
   while ((match = callPattern.exec(functionContent)) !== null) {
     const functionName = match[1];
-    if (!ignoredCalls.has(functionName)) {
+    if (functionName && !ignoredCalls.has(functionName)) {
       calls.add(functionName);
     }
   }
@@ -109,7 +124,7 @@ function extractFunctionCalls(functionContent: string): string[] {
   while ((match = methodCallPattern.exec(functionContent)) !== null) {
     const objectName = match[1];
     const methodName = match[2];
-    if (!ignoredCalls.has(objectName) && !ignoredCalls.has(methodName)) {
+    if (objectName && methodName && !ignoredCalls.has(objectName) && !ignoredCalls.has(methodName)) {
       calls.add(`${objectName}.${methodName}`);
       calls.add(methodName);
     }
@@ -170,7 +185,7 @@ function createCallRelationships(
         const simpleName = calledName.includes(".") ? calledName.split(".")[1] : calledName;
         const possibleTargets = functionEntities.filter((e) => e.name === calledName || e.name === simpleName);
 
-        if (possibleTargets.length === 1) {
+        if (possibleTargets.length === 1 && possibleTargets[0]) {
           const target = possibleTargets[0];
           relationships.push({
             id: createRelationshipId(caller.id, "calls", target.id),
@@ -194,10 +209,11 @@ function createCallRelationships(
 export function extractRelationshipsFromFile(
   file: ParsedFile,
   entities: GraphEntity[],
+  parsedFiles: ParsedFile[] = [file],
 ): GraphRelationship[] {
   return [
     ...createContainsRelationships(file, entities),
-    ...createImportRelationships(file),
+    ...createImportRelationships(file, parsedFiles),
     ...createCallRelationships(file, entities),
   ];
 }
@@ -209,7 +225,7 @@ export function extractRelationships(
   const relationshipMap = new Map<string, GraphRelationship>();
 
   for (const file of parsedFiles) {
-    const relationships = extractRelationshipsFromFile(file, entities);
+    const relationships = extractRelationshipsFromFile(file, entities, parsedFiles);
     for (const relationship of relationships) {
       if (!relationshipMap.has(relationship.id)) {
         relationshipMap.set(relationship.id, relationship);
