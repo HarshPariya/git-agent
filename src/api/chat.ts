@@ -115,6 +115,7 @@ export async function chatHandler(
       model: result.model,
       responseId: result.responseId,
       sources: result.sources,
+      toolActivity: result.toolActivity,
       pipeline: {
         retrievalMode: route.mode,
         routeReason: route.reason,
@@ -123,6 +124,7 @@ export async function chatHandler(
       },
     });
   } catch (error) {
+    // High-availability fallback: LLM upstream outage — inform user tools still work
     if (
       error instanceof AppError &&
       error.code === "INTERNAL_ERROR" &&
@@ -134,6 +136,7 @@ export async function chatHandler(
         model: "high-availability-fallback",
         responseId: "ha-fallback",
         sources: [],
+        toolActivity: [],
       });
       return;
     }

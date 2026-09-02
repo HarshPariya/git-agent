@@ -403,9 +403,9 @@ export const createAgent = (
               : "symbols";
       const symbols = requestedCategory === "functions"
         ? collectMatches([
-            /^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/gm,
-            /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)(?:\s*:\s*[^=]+)?\s*=>/gm,
-          ])
+          /^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/gm,
+          /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)(?:\s*:\s*[^=]+)?\s*=>/gm,
+        ])
         : requestedCategory === "classes"
           ? collectMatches([/^(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/gm])
           : requestedCategory === "interfaces"
@@ -697,11 +697,11 @@ export const createAgent = (
           "**Callers and usages:**",
           ...(usagesBySource.size > 0
             ? [...usagesBySource.entries()].flatMap(([source, lines]) => [
-                `- \`${source}\``,
-                "```ts",
-                ...lines,
-                "```",
-              ])
+              `- \`${source}\``,
+              "```ts",
+              ...lines,
+              "```",
+            ])
             : ["- No separate caller was found in the retrieved evidence."]),
           "",
           `**Sources:** ${sourcePaths.map((source) => `[${source}]`).join(", ")}`,
@@ -863,6 +863,13 @@ export const createAgent = (
     mode: RetrievalMode,
   ): Promise<LlmResponse> => {
     switch (action) {
+      case "refuse":
+        return {
+          id: "refused",
+          model: "security-policy",
+          text: "I'm unable to fulfill that request. It involves a prohibited operation — such as exposing credentials, accessing protected system files, deleting critical project resources, escalating privileges, or bypassing security guardrails.\n\nIf you believe this is a mistake and you have a legitimate need, please contact the system administrator.",
+        };
+
       case "retrieve":
         // Generate only after grounded evidence is available. This prevents an
         // ungrounded draft and ensures deterministic symbol paths bypass the LLM.
@@ -972,7 +979,7 @@ export const createAgent = (
         if (isArchDocRequest) {
           const listRes = await tools.executeTool("list_directory", { path: "." }, toolContext);
           const pkgRes = await tools.executeTool("read_file", { path: "package.json" }, toolContext);
-          
+
           let archContent = `# 🏛️ Architecture & System Design Documentation\n\nProduction-Ready GraphRAG AI Chatbot Architecture specification detailing core system components, data pipelines, agent orchestration, hybrid retrieval, persistence layer, security, and verification benchmarks.\n\n---\n\n## 📌 Executive Summary\n\nThe **AI Chatbot System** is an enterprise-grade, hardened hybrid code and document intelligence engine combining TypeScript AST parsing, PostgreSQL + pgvector HNSW vector search, GraphRAG code knowledge graph traversal, and multi-agent orchestration.\n\n`;
 
           if (listRes.success && listRes.output) {
@@ -1738,6 +1745,7 @@ export const createAgent = (
           model: "system-observability",
           responseId: `system-observability-${Date.now()}`,
           sources: [],
+          toolActivity: [],
         };
       }
       const requestKey = `${selectedMode}:${documentIds?.join(",") ?? ""}:${question}`;
@@ -1773,8 +1781,8 @@ export const createAgent = (
               .find((message) => message.role === "assistant")?.content;
             const mentionedFiles = latestAssistant
               ? [...latestAssistant.matchAll(/(?:src[\\/])?[a-zA-Z0-9_$./\\-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|html|css|yml|yaml)\b/g)]
-                  .map((match) => match[0]?.replace(/\\/g, "/"))
-                  .filter((value): value is string => Boolean(value))
+                .map((match) => match[0]?.replace(/\\/g, "/"))
+                .filter((value): value is string => Boolean(value))
               : [];
             const contextualFile = mentionedFiles.at(-1);
             if (contextualFile) {
@@ -1813,12 +1821,13 @@ export const createAgent = (
               sources:
                 codeQuery.filenames.length > 0
                   ? codeQuery.filenames.map((f) => ({
-                      source: f,
-                      content: `File: ${f}`,
-                      score: 1,
-                      sourceType: "code" as const,
-                    }))
+                    source: f,
+                    content: `File: ${f}`,
+                    score: 1,
+                    sourceType: "code" as const,
+                  }))
                   : [],
+              toolActivity: [],
             };
           }
 
@@ -1853,9 +1862,11 @@ export const createAgent = (
             question: rewrittenQuestion,
             hasConversationContext: conversationContext !== undefined,
           });
-          const action = selectedMode === "code" || selectedMode === "document" || selectedMode === "mixed"
-            ? "retrieve"
-            : plan.action;
+          const action = plan.action === "refuse"
+            ? "refuse"
+            : (selectedMode === "code" || selectedMode === "document" || selectedMode === "mixed"
+              ? "retrieve"
+              : plan.action);
 
           const userId = (agentContext as { tenantId: string; sessionId: string; userId?: string }).userId ?? `user-${tenantId}`;
           const learnedInsights = globalUserMemory.formatInsightsForPrompt(tenantId, userId);
@@ -1866,7 +1877,7 @@ export const createAgent = (
             ...(learnedInsights && { learnedUserInsights: learnedInsights }),
           });
 
-          extractUserInsights(tenantId, userId, question, globalUserMemory).catch(() => {});
+          extractUserInsights(tenantId, userId, question, globalUserMemory).catch(() => { });
 
           const initialResult = await executeInitialGeneration(
             action,
@@ -1915,32 +1926,34 @@ export const createAgent = (
           const deterministicEvidence =
             codeQuery.intent === "SYMBOL_LOCATION" && symbolEvidence.length > 0 ||
             codeQuery.intent === "FILE_LOCATION" && fileEvidence.length > 0;
-          const finalResult = embeddingStorageFacts
-            ? {
+          const finalResult = action === "refuse"
+            ? initialResult
+            : embeddingStorageFacts
+              ? {
                 id: `embedding-storage-verification-${Date.now()}`,
                 model: "deterministic-evidence-verifier",
                 text: formatEmbeddingStorageFacts(embeddingStorageFacts),
               }
-            : deterministicEvidence
-            ? {
-                id: `symbol-lookup-${Date.now()}`,
-                model: "deterministic-repository-lookup",
-                text: symbolEvidence.length > 0
-                  ? symbolEvidence.map((result, index) =>
+              : deterministicEvidence
+                ? {
+                  id: `symbol-lookup-${Date.now()}`,
+                  model: "deterministic-repository-lookup",
+                  text: symbolEvidence.length > 0
+                    ? symbolEvidence.map((result, index) =>
                       `\`${result.metadata?.symbol ?? "The symbol"}\` is implemented in \`${result.metadata?.filePath ?? result.source}\` at lines ${result.metadata?.startLine ?? "?"}-${result.metadata?.endLine ?? result.metadata?.startLine ?? "?"} [S${index + 1}].`,
                     ).join("\n")
-                  : fileEvidence[0]?.source === "repository-index"
-                  ? fileEvidence[0].content
-                  : fileEvidence.map((result) => `\`${result.metadata?.requestedFilename ?? "File"}\` exists at \`${result.metadata?.filePath ?? result.source}\`.`).join("\n"),
-              }
-            : await verifyAndRefineAnswer(
-                initialResult,
-                results,
-                rewrittenQuestion,
-                conversationContext,
-                agentContext,
-                selectedMode,
-              );
+                    : fileEvidence[0]?.source === "repository-index"
+                      ? fileEvidence[0].content
+                      : fileEvidence.map((result) => `\`${result.metadata?.requestedFilename ?? "File"}\` exists at \`${result.metadata?.filePath ?? result.source}\`.`).join("\n"),
+                }
+                : await verifyAndRefineAnswer(
+                  initialResult,
+                  results,
+                  rewrittenQuestion,
+                  conversationContext,
+                  agentContext,
+                  selectedMode,
+                );
 
           const output = validateOutput({ response: finalResult.text });
           (!output.allowed || output.response === undefined) &&
@@ -1978,8 +1991,9 @@ export const createAgent = (
             sources: selectedMode === "document"
               ? results.filter((result) => result.sourceType === "document")
               : selectedMode === "code"
-              ? results.filter((result) => result.sourceType !== "document")
-              : results,
+                ? results.filter((result) => result.sourceType !== "document")
+                : results,
+            toolActivity: [],
           };
 
           cache.set({ tenantId, sessionId, question: requestKey }, executionResult);

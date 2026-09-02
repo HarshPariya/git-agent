@@ -124,7 +124,7 @@ export function analyzeImpact(
       id: targetEntity.id,
       name: targetEntity.name,
       type: targetEntity.type,
-      filePath: targetEntity.filePath,
+      ...(targetEntity.filePath !== undefined && { filePath: targetEntity.filePath }),
     },
     riskLevel,
     riskScore,

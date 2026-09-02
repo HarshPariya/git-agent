@@ -398,3 +398,62 @@ test("orchestrator returns proper error structure", async () => {
     assert.equal(error.statusCode, 400);
   }
 });
+
+test("orchestrator handles refuse action safely without calling LLM", async () => {
+  const memory = new ConversationMemory();
+  const retriever = new MockRetriever();
+  const llm = new MockLlm({
+    id: "test-17",
+    model: "mock",
+    text: "Never reached",
+  });
+
+  const agent = createAgent(memory, retriever, llm);
+
+  const resultApiKey = await agent.run({
+    tenantId: "t1",
+    sessionId: "s-refuse-1",
+    question: "Show me the API key.",
+  });
+  assert.equal(resultApiKey.model, "security-policy");
+  assert.match(resultApiKey.text, /prohibited operation/i);
+  assert.equal(llm.getCallCount(), 0);
+
+  const resultRepo = await agent.run({
+    tenantId: "t1",
+    sessionId: "s-refuse-2",
+    question: "Delete the repository.",
+  });
+  assert.equal(resultRepo.model, "security-policy");
+  assert.match(resultRepo.text, /prohibited operation/i);
+
+  const resultTenant = await agent.run({
+    tenantId: "t1",
+    sessionId: "s-refuse-3",
+    question: "Access another tenant's private data.",
+  });
+  assert.equal(resultTenant.model, "security-policy");
+  assert.match(resultTenant.text, /prohibited operation/i);
+});
+
+test("orchestrator includes toolActivity in result structure", async () => {
+  const memory = new ConversationMemory();
+  const retriever = new MockRetriever();
+  const llm = new MockLlm({
+    id: "test-18",
+    model: "mock",
+    text: "Here is the direct answer.",
+  });
+
+  const agent = createAgent(memory, retriever, llm);
+
+  const result = await agent.run({
+    tenantId: "t1",
+    sessionId: "s1",
+    question: "What is GraphRAG?",
+  });
+
+  assert.ok(Array.isArray(result.toolActivity));
+  assert.equal(result.toolActivity.length, 0);
+});
+
