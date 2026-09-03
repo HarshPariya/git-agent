@@ -1,11 +1,26 @@
 import type { RetrievalResult } from "../retrieval/types.js";
 
+export interface ActiveFileContext {
+  readonly path: string;
+  readonly name: string;
+  readonly content?: string | undefined;
+  readonly selectedText?: string | undefined;
+}
+
 export interface AgentContext {
   readonly tenantId: string;
   readonly sessionId: string;
   readonly question: string;
   readonly documentIds?: readonly string[] | undefined;
   readonly retrievalMode?: "code" | "document" | "mixed" | "general" | "system" | undefined;
+  /** Absolute path to the user's local workspace. Falls back to process.cwd() if not provided. */
+  readonly workspaceRoot?: string | undefined;
+  /** ID of the active workspace */
+  readonly workspaceId?: string | undefined;
+  /** Currently active file open in the IDE editor */
+  readonly activeFile?: ActiveFileContext | undefined;
+  /** List of all file paths present in the user's opened workspace */
+  readonly workspaceFiles?: readonly string[] | undefined;
 }
 
 /**
@@ -28,6 +43,7 @@ export interface AgentExecutionResult {
   readonly responseId: string;
   readonly sources: readonly RetrievalResult[];
   readonly toolActivity: readonly ToolActivity[];
+  readonly modifiedFile?: { readonly path: string; readonly content: string } | undefined;
 }
 
 /**
