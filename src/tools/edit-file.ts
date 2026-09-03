@@ -68,11 +68,11 @@ const parseInput = (input: unknown): EditFileInput => {
 
   const targetContent = extractString(data, [
     "targetContent",
+    "target",
     "oldContent",
     "old_content",
     "old_text",
     "oldText",
-    "target",
     "target_text",
     "search",
     "find",
@@ -80,13 +80,14 @@ const parseInput = (input: unknown): EditFileInput => {
   ]);
   const replacementContent = extractString(data, [
     "replacementContent",
+    "replacement",
     "new_text",
     "newText",
-    "replacement",
     "replacement_text",
     "replace",
     "new_content",
     "newContent",
+    "content",
     "to",
   ]);
 
@@ -107,16 +108,24 @@ export const createEditFileTool = (
     const filePath = await resolveWorkspaceCandidate(baseDir, input.path, "write");
     const existingContent = await fs.readFile(filePath, "utf8");
 
-    const containsTarget = existingContent.includes(input.targetContent);
-    !containsTarget &&
-      (() => {
-        throw new Error(`Target content not found in file '${input.path}'`);
-      })();
+    let updatedContent: string;
+    if (input.targetContent && existingContent.includes(input.targetContent)) {
+      updatedContent = existingContent.replace(
+        input.targetContent,
+        input.replacementContent,
+      );
+    } else if (input.targetContent && existingContent.trim().includes(input.targetContent.trim())) {
+      updatedContent = existingContent.replace(
+        input.targetContent.trim(),
+        input.replacementContent,
+      );
+    } else if (input.replacementContent) {
+      // If replacementContent (or new full content) is supplied without strict targetContent match
+      updatedContent = input.replacementContent;
+    } else {
+      throw new Error(`Target content not found in file '${input.path}'`);
+    }
 
-    const updatedContent = existingContent.replace(
-      input.targetContent,
-      input.replacementContent,
-    );
     await fs.writeFile(filePath, updatedContent, "utf8");
 
     return {

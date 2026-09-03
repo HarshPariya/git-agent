@@ -5,7 +5,7 @@ on:
     branches:
       - development
       - main
-      - 'feature/**'
+      - "feature/**"
   pull_request:
     branches:
       - development
@@ -44,7 +44,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
+          cache: "npm"
 
       - name: Install Dependencies
         run: npm ci
@@ -125,7 +125,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
+          cache: "npm"
 
       - name: Install Dependencies
         run: npm ci

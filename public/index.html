@@ -4,121 +4,396 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Code Assistant</title>
+  <title>CodeGPT — Autonomous AI Coding IDE &amp; Enterprise GraphRAG</title>
+  <meta name="description"
+    content="Professional AI coding IDE and GraphRAG knowledge platform. Open local workspaces, browse files, run tests, and execute autonomous multi-step agent tools with PostgreSQL pgvector.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
-    href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 
-<body class="chatgpt-layout">
+<body>
+  <!-- Ambient background lighting effects -->
+  <div class="ambient-glow glow-1" aria-hidden="true"></div>
+  <div class="ambient-glow glow-2" aria-hidden="true"></div>
+  <div class="ambient-glow glow-3" aria-hidden="true"></div>
 
-  <!-- Left Sidebar -->
-  <aside class="sidebar">
-    <div class="sidebar-header">
-      <div class="brand">
-        <span class="icon">🤖</span>
-        <span class="title">CodeGPT</span>
-      </div>
-      <button id="btn-new-chat" class="btn-new-chat">+ New Chat</button>
-    </div>
+  <!-- Mobile Backdrop Overlay -->
+  <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
 
-    <div class="sidebar-section">
-      <div class="section-title">Quick Actions</div>
-      <button class="shortcut-btn" data-query="/impact traverseGraph">⚡ Impact: traverseGraph</button>
-      <button class="shortcut-btn" data-query="/metrics">📊 Check System SLA</button>
-      <button class="shortcut-btn" data-query="How does graph search work?">🔍 How Graph Search Works</button>
-      <button class="shortcut-btn" data-query="Where is normalizeId used?">🔎 Find normalizeId Usages</button>
-    </div>
-
-    <div class="sidebar-section">
-      <div class="section-title">Knowledge Documents</div>
-      <button id="btn-upload-doc" class="shortcut-btn upload-doc-btn">
-        <span>📎 Upload Document</span>
-      </button>
-      <input type="file" id="file-input" accept=".pdf,.docx,.txt,.md" style="display: none;" />
-      <div id="uploaded-docs-list" class="uploaded-docs-list"></div>
-    </div>
-
-    <div class="sidebar-footer">
-      <div class="system-health">
-        <span class="health-dot online"></span>
-        <span id="sidebar-health-text">Online • 100% SLA</span>
-      </div>
-    </div>
-  </aside>
-
-  <!-- Main Chat Workspace -->
-  <main class="chat-workspace">
-
-    <!-- Top Chat Navigation Bar -->
-    <header class="chat-topbar">
-      <div class="chat-title">
-        <span class="chat-title-icon">⚡</span>
-        <span class="chat-title-text">CodeGPT AI Assistant</span>
-      </div>
-
-      <div class="topbar-actions">
-        <button id="btn-clear-history" class="btn-icon" title="Clear Chat History">🗑️ Clear</button>
-      </div>
-    </header>
-
-    <!-- Chat Messages Scroll Container -->
-    <div id="chat-messages-container" class="messages-container">
-      <div class="welcome-card glass-panel">
-        <div class="welcome-icon">⚡</div>
-        <h2>GraphRAG AI Code & Document Assistant</h2>
-        <p>Ask questions about your codebase, debug functions, analyze impact paths, or chat with uploaded PDF/DOCX
-          specifications in real-time.</p>
-
-        <div class="prompt-grid">
-          <button class="prompt-card" data-prompt="How does graph traversal work?">
-            <span class="title">🔍 Graph Traversal</span>
-            <span class="desc">How does BFS graph search find caller entities?</span>
-          </button>
-          <button class="prompt-card" data-prompt="/impact traverseGraph">
-            <span class="title">⚡ Impact Analysis</span>
-            <span class="desc">What breaks if I modify traverseGraph()?</span>
-          </button>
-          <button class="prompt-card" data-prompt="Where is normalizeId used?">
-            <span class="title">🔎 Function Lookup</span>
-            <span class="desc">Find exact occurrences and references to normalizeId.</span>
-          </button>
-          <button class="prompt-card" data-prompt="/metrics">
-            <span class="title">📊 SLA & Metrics</span>
-            <span class="desc">Show P50/P95 latency, pool stats, and cache hit rates.</span>
-          </button>
+  <!-- ── APP HEADER & MODE SWITCHER ──────────────────────────────── -->
+  <header class="app-global-header" role="banner">
+    <div class="header-left">
+      <div class="brand-container">
+        <div class="brand-logo">
+          <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="32" height="32" rx="8" fill="url(#brandGradient)" />
+            <path d="M8 12L16 7L24 12V20L16 25L8 20V12Z" stroke="white" stroke-width="1.8" stroke-linejoin="round" />
+            <path d="M16 7V16M24 12L16 16M8 12L16 16" stroke="white" stroke-width="1.5" stroke-linejoin="round" />
+            <circle cx="16" cy="16" r="2.5" fill="#06B6D4" />
+            <defs>
+              <linearGradient id="brandGradient" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#6366F1" />
+                <stop offset="1" stop-color="#06B6D4" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <span class="brand-title">CodeGPT</span>
+          <span class="brand-badge" id="app-edition-badge">Enterprise</span>
         </div>
       </div>
+
+      <!-- Mode Switcher Tabs -->
+      <nav class="mode-nav-switcher" aria-label="Application Mode">
+        <button id="btn-mode-ide" class="mode-tab-btn active" data-mode="ide">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15">
+            <path fill-rule="evenodd"
+              d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L2.414 10l3.293 3.293a1 1 0 11-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L17.586 10l-3.293-3.293a1 1 0 010-1.414z"
+              clip-rule="evenodd" />
+          </svg>
+          <span>IDE Mode</span>
+        </button>
+        <button id="btn-mode-chat" class="mode-tab-btn" data-mode="chat">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15">
+            <path fill-rule="evenodd"
+              d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zm-4 0H9v2h2V9z"
+              clip-rule="evenodd" />
+          </svg>
+          <span>Chat &amp; GraphRAG</span>
+        </button>
+      </nav>
     </div>
 
-    <!-- Bottom Fixed Input Bar -->
-    <footer class="input-container">
-      <div class="input-wrapper glass-panel">
-        <button id="btn-attach" class="btn-attach" title="Upload Document (.pdf, .docx, .txt, .md)">📎</button>
-        <textarea id="user-input" placeholder="Message CodeGPT or type /impact <symbol>..." rows="1"></textarea>
-        <button id="btn-send" class="btn-send">
-          <span>Send</span> 🚀
-        </button>
+    <div class="header-right">
+      <!-- Open Workspace Folder Action -->
+      <button id="btn-open-folder" class="btn-header-action" title="Open a local folder on your PC">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15">
+          <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+        </svg>
+        <span id="open-folder-btn-text">Open Folder</span>
+      </button>
+
+      <!-- Active Workspace Pill -->
+      <div class="header-workspace-badge" id="header-workspace-pill" title="Current Active Workspace">
+        <span class="status-dot ready"></span>
+        <span class="workspace-pill-name" id="header-workspace-name">No Workspace Opened</span>
       </div>
-      <div class="input-footer-hint">
-        <span>CodeGPT uses PostgreSQL + pgvector & AST Knowledge Graphs. Sub-20ms SLA.</span>
+
+      <!-- User Account & Health -->
+      <div class="header-user-status">
+        <span class="pulse-indicator" id="health-dot" title="Server Status: Healthy"></span>
+        <span class="user-pill" id="display-auth-user">👤 Admin</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── 1. IDE MODE VIEW CONTAINER ──────────────────────────────── -->
+  <div id="view-ide" class="view-container active-view">
+    <div class="ide-layout-grid">
+
+      <!-- Left Explorer & Sidebar Panel -->
+      <aside class="ide-explorer-panel" id="ide-explorer">
+        <div class="explorer-header">
+          <span class="explorer-title">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
+              <path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"
+                clip-rule="evenodd" />
+            </svg>
+            EXPLORER
+          </span>
+          <div class="explorer-actions">
+            <button id="btn-new-file" class="btn-icon-xs" title="New File">+📄</button>
+            <button id="btn-new-folder" class="btn-icon-xs" title="New Folder">+📁</button>
+            <button id="btn-refresh-tree" class="btn-icon-xs" title="Refresh Tree">↻</button>
+            <button id="btn-collapse-tree" class="btn-icon-xs" title="Collapse All">⤓</button>
+          </div>
+        </div>
+
+        <!-- Workspace Root Info -->
+        <div class="explorer-workspace-root" id="explorer-root-info">
+          <span class="root-folder-icon">📁</span>
+          <span class="root-folder-name" id="explorer-root-label">No Workspace Opened</span>
+          <span class="root-badge" id="explorer-root-badge">Standby</span>
+        </div>
+
+        <!-- Inline New File/Folder Creator -->
+        <div id="explorer-inline-creator" class="explorer-inline-creator is-hidden">
+          <span id="creator-icon" class="creator-icon">📄</span>
+          <input type="text" id="creator-input" class="creator-input" placeholder="filename.ts or folder/"
+            aria-label="New item name" title="New file or folder name" />
+          <button id="creator-btn-ok" class="creator-btn creator-btn-ok" title="Confirm">✓</button>
+          <button id="creator-btn-cancel" class="creator-btn creator-btn-cancel" title="Cancel">✕</button>
+        </div>
+
+        <!-- File Tree Navigation -->
+        <div class="explorer-file-tree" id="ide-file-tree" aria-label="Workspace Files">
+          <div class="explorer-empty-state">
+            <span class="empty-state-icon">📁</span>
+            <h4>No Folder Opened</h4>
+            <p>Choose a local workspace folder to inspect files, edit code, and enable autonomous AI tools.</p>
+            <button id="btn-explorer-open-folder" class="btn-explorer-cta">📁 Open Folder</button>
+          </div>
+        </div>
+
+        <!-- Git Status & Tools Widget -->
+        <div class="explorer-bottom-widgets">
+          <div class="explorer-widget-header">
+            <span>GIT &amp; TOOLS</span>
+            <span class="widget-count-badge">8 Ready</span>
+          </div>
+          <div class="git-status-summary" id="ide-git-summary">
+            <span class="git-branch-tag">🌿 main</span>
+            <span class="git-clean-tag">✓ Clean</span>
+          </div>
+          <div class="tools-pills-container compact" id="ide-tools-list">
+            <span class="tool-pill" data-tool="read_file"><i class="tool-pill-dot ready"></i>read_file</span>
+            <span class="tool-pill" data-tool="edit_file"><i class="tool-pill-dot ready"></i>edit_file</span>
+            <span class="tool-pill" data-tool="write_file"><i class="tool-pill-dot ready"></i>write_file</span>
+            <span class="tool-pill" data-tool="delete_file"><i class="tool-pill-dot ready"></i>delete_file</span>
+            <span class="tool-pill" data-tool="list_directory"><i class="tool-pill-dot ready"></i>list_dir</span>
+            <span class="tool-pill" data-tool="git_status"><i class="tool-pill-dot ready"></i>git_status</span>
+            <span class="tool-pill" data-tool="run_test"><i class="tool-pill-dot ready"></i>run_test</span>
+            <span class="tool-pill" data-tool="retrieve_knowledge"><i class="tool-pill-dot ready"></i>knowledge</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center Code Editor & File Viewer -->
+      <section class="ide-editor-panel" id="ide-editor-section">
+        <!-- Open Tabs Header -->
+        <div class="editor-tabs-bar" id="editor-tabs-bar">
+          <div class="no-tabs-placeholder">No open tabs</div>
+        </div>
+
+        <!-- Editor Breadcrumbs / Action Bar -->
+        <div class="editor-action-bar is-hidden" id="editor-action-bar-wrapper">
+          <div class="editor-breadcrumbs" id="editor-breadcrumbs-container">
+            <span class="bc-item active">No file selected</span>
+            <span class="editor-dirty-indicator" id="editor-dirty-dot" title="Unsaved changes">●</span>
+          </div>
+          <div class="editor-toolbar-actions">
+            <button class="btn-editor-tool btn-save" id="btn-editor-save" title="Save File (Ctrl+S / ⌘S)">💾
+              Save</button>
+            <button class="btn-editor-tool" id="btn-editor-explain" title="Ask Agent to explain this file">⚡ Explain
+              Code</button>
+            <button class="btn-editor-tool" id="btn-editor-run-test" title="Run tests">🧪 Run Tests</button>
+            <button class="btn-editor-tool" id="btn-editor-delete-file" title="Delete current file">🗑️ Delete</button>
+            <button class="btn-editor-tool" id="btn-editor-copy" title="Copy file content">📋 Copy</button>
+          </div>
+        </div>
+
+        <!-- Center Welcome Canvas (when no file or folder open) -->
+        <div class="editor-welcome-screen" id="editor-welcome-screen">
+          <div class="welcome-card">
+            <div class="welcome-logo">⚡ CodeGPT IDE Studio</div>
+            <p class="welcome-desc">Autonomous AI Coding Agent, File Synchronization &amp; Enterprise GraphRAG</p>
+            <div class="welcome-actions">
+              <button class="welcome-action-btn primary" id="btn-welcome-open-folder">
+                <span class="btn-icon">📁</span>
+                <div class="btn-text">
+                  <span class="btn-title">Open Workspace Folder</span>
+                  <span class="btn-sub">Select local workspace project to explore, edit &amp; test</span>
+                </div>
+              </button>
+              <button class="welcome-action-btn" id="btn-welcome-new-file">
+                <span class="btn-icon">📄</span>
+                <div class="btn-text">
+                  <span class="btn-title">Create New File</span>
+                  <span class="btn-sub">Start coding immediately in a new file</span>
+                </div>
+              </button>
+              <button class="welcome-action-btn" id="btn-welcome-chat-mode">
+                <span class="btn-icon">💬</span>
+                <div class="btn-text">
+                  <span class="btn-title">Chat &amp; GraphRAG Mode</span>
+                  <span class="btn-sub">Ask questions with PDF upload and vector knowledge retrieval</span>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Interactive Code Editor Body -->
+        <div class="editor-code-container is-hidden" id="editor-code-container">
+          <div class="code-line-numbers" id="editor-line-numbers"></div>
+          <textarea id="editor-code-textarea" class="code-textarea" spellcheck="false" autocomplete="off"
+            autocorrect="off" aria-label="Source Code Editor" title="Source Code Editor" placeholder=""></textarea>
+        </div>
+      </section>
+
+      <!-- Right Autonomous Agent Copilot Panel -->
+      <section class="ide-agent-panel" id="ide-agent-section">
+        <div class="agent-panel-header">
+          <div class="agent-title-group">
+            <span class="agent-avatar">🤖</span>
+            <div>
+              <h2 class="agent-title">Autonomous Agent</h2>
+              <span class="agent-subtitle">Multi-step Code Reasoner &amp; Tool Caller</span>
+            </div>
+          </div>
+          <button id="btn-ide-new-chat" class="btn-icon-xs" title="Reset Session (⌘K)">✦ New</button>
+        </div>
+
+        <!-- Topbar Command Chips -->
+        <div class="agent-chips-strip">
+          <button class="agent-chip" data-query="/impact traverseGraph">⚡ /impact</button>
+          <button class="agent-chip" data-query="Find why login is failing and inspect relevant files">🔍 Debug
+            Login</button>
+          <button class="agent-chip" data-query="Run tests">🧪 Tests</button>
+          <button class="agent-chip" data-query="Show git status">🌿 Git</button>
+        </div>
+
+        <!-- Agent Chat Messages Stream -->
+        <div class="agent-messages-stream" id="ide-agent-messages" role="log" aria-live="polite">
+          <div class="agent-welcome-card">
+            <span class="sparkle">✦</span>
+            <h3>How can I help with your code?</h3>
+            <p>I can inspect files, traverse AST graphs, edit code, run test suites, and explain bugs autonomously.</p>
+          </div>
+        </div>
+
+        <!-- Agent Input Box -->
+        <div class="agent-input-container">
+          <div class="agent-input-box">
+            <div class="agent-input-main-row">
+              <textarea id="ide-user-input" placeholder="Ask the Agent to inspect, edit, test, or verify code..."
+                rows="1" autocomplete="off" spellcheck="false" aria-label="Agent Prompt Input"
+                title="Agent Prompt Input"></textarea>
+              <button id="btn-ide-send" class="btn-agent-send" aria-label="Send Agent Prompt"
+                title="Send Prompt (Enter)">
+                <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
+                  <path
+                    d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                </svg>
+              </button>
+            </div>
+            <div class="agent-input-footer-row">
+              <span class="agent-context-pill" id="agent-active-context-pill">📄 Active: None</span>
+              <span class="agent-input-hint">⏎ Send • ⇧⏎ Newline</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- IDE Bottom Status Bar -->
+    <footer class="ide-status-bar" role="contentinfo">
+      <div class="status-left">
+        <span class="status-item" id="status-workspace-path">📁 c:\ai-chatbot</span>
+        <span class="status-item">🌿 main</span>
+        <span class="status-item" id="status-tools-count">⚡ 8 Tools Active</span>
+      </div>
+      <div class="status-right">
+        <span class="status-item">UTF-8</span>
+        <span class="status-item" id="status-active-lang">TypeScript</span>
+        <span class="status-item ok">🟢 GraphRAG Online</span>
       </div>
     </footer>
+  </div>
 
-  </main>
+  <!-- ── 2. NORMAL CHAT & GRAPHRAG CONVERSATION VIEW ─────────────── -->
+  <div id="view-chat" class="view-container">
+    <div class="chat-mode-layout">
 
-  <!-- Drag & Drop Upload Overlay -->
-  <div id="drag-drop-overlay" class="drag-drop-overlay hidden">
-    <div class="drag-drop-modal">
-      <div class="drag-icon">📂</div>
-      <h3>Drop Document to Index</h3>
-      <p>Supports <strong>.pdf, .docx, .txt, .md</strong> files (up to 50MB)</p>
-      <div class="drag-badge">Release mouse to start indexing</div>
+      <!-- Left Knowledge & Documents Sidebar -->
+      <aside class="chat-documents-sidebar">
+        <div class="chat-sidebar-header">
+          <span class="sidebar-sec-title">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
+              <path fill-rule="evenodd"
+                d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"
+                clip-rule="evenodd" />
+            </svg>
+            KNOWLEDGE BASE
+          </span>
+          <button id="btn-chat-upload-doc" class="btn-group-action" title="Upload Document (.pdf, .docx, .txt, .md)">
+            <span>+ Upload</span>
+          </button>
+        </div>
+
+        <input type="file" id="chat-file-input" class="hidden-file-input" accept=".pdf,.docx,.txt,.md"
+          aria-hidden="true">
+
+        <div class="chat-docs-list" id="chat-uploaded-docs-list">
+          <div class="docs-empty-state">
+            <span>No documents indexed yet.</span>
+          </div>
+        </div>
+
+        <div class="chat-sidebar-footer">
+          <span class="rag-storage-tag">PostgreSQL / pgvector (540 Chunks)</span>
+        </div>
+      </aside>
+
+      <!-- Center Chat Stream Canvas -->
+      <main class="chat-main-canvas">
+        <div class="chat-stream-container" id="chat-mode-messages" role="log" aria-live="polite">
+          <div class="chat-welcome-hero" id="chat-welcome-card">
+            <div class="hero-badge">
+              <span class="sparkle">✦</span>
+              <span>Enterprise GraphRAG &amp; Knowledge Assistant</span>
+            </div>
+            <h1 class="hero-headline">
+              Ask deep questions across your <span class="gradient-text">documents &amp; knowledge base.</span>
+            </h1>
+            <p class="hero-subline">
+              Grounded answers powered by hybrid vector search, knowledge graph traversal, and verified source
+              citations.
+            </p>
+
+            <div class="hero-prompts-grid">
+              <div class="hero-prompt-card" data-prompt="What is GraphRAG and how does hybrid retrieval work?">
+                <div class="prompt-icon-box cyan">✦</div>
+                <div class="prompt-text-group">
+                  <span class="prompt-title">GraphRAG Concepts</span>
+                  <span class="prompt-desc">Explain vector + graph retrieval fusion</span>
+                </div>
+              </div>
+
+              <div class="hero-prompt-card" data-prompt="Summarize the key architectural patterns in this project">
+                <div class="prompt-icon-box indigo">✦</div>
+                <div class="prompt-text-group">
+                  <span class="prompt-title">Architecture Summary</span>
+                  <span class="prompt-desc">Overview of M1 database &amp; M2 agent</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Floating Chat Mode Prompt Bar -->
+        <div class="chat-input-bar-floating">
+          <div class="chat-input-panel">
+            <button id="btn-chat-attach" class="btn-attach-action" title="Attach Document (.pdf, .docx, .txt, .md)">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18">
+                <path fill-rule="evenodd"
+                  d="M8 4a3 3 0 00-3 3v4a5 5 0 0010 0V7a1 1 0 112 0v4a7 7 0 11-14 0V7a5 5 0 0110 0v4a3 3 0 11-6 0V7a1 1 0 012 0v4a1 1 0 102 0V7a3 3 0 00-3-3z"
+                  clip-rule="evenodd" />
+              </svg>
+            </button>
+            <textarea id="chat-user-input" placeholder="Ask anything, query knowledge, or summarize documents..."
+              rows="1" spellcheck="true" aria-label="Chat Query Input" title="Chat Query Input"></textarea>
+            <button id="btn-chat-send" class="btn-send-action" aria-label="Send Message">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
+                <path
+                  d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </main>
+
     </div>
   </div>
+
+  <!-- Toast Notification Stream -->
+  <div id="toast-container" class="toast-stream-container" role="status" aria-live="polite" aria-label="Alerts"></div>
 
   <script src="app.js"></script>
 </body>

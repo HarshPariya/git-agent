@@ -33,7 +33,7 @@ const initializeRetriever = (): Promise<boolean> => {
   return retrieverInitialization;
 };
 
-const getAgent = async () => {
+const getAgent = async (workspaceRoot?: string) => {
   const initialized = await initializeRetriever();
   if (!initialized && env.nodeEnv === "production") {
     throw new AppError(
@@ -46,6 +46,7 @@ const getAgent = async () => {
     memory,
     initialized ? unifiedRetriever : new MockRetriever(),
     env.nodeEnv === "test" ? mockProvider : groqProvider,
+    workspaceRoot ?? process.cwd(),
   );
 };
 
@@ -101,13 +102,39 @@ export async function chatHandler(
       ...(documentIds !== undefined && { documentIds }),
     });
 
-    const agent = await getAgent();
+    const workspaceId = typeof body.workspaceId === "string" && body.workspaceId.trim()
+      ? body.workspaceId.trim()
+      : request.workspaceId;
+
+    const activeFile = typeof body.activeFile === "object" && body.activeFile !== null
+      ? {
+        path: String((body.activeFile as Record<string, unknown>).path || ""),
+        name: String((body.activeFile as Record<string, unknown>).name || ""),
+        content: typeof (body.activeFile as Record<string, unknown>).content === "string"
+          ? (body.activeFile as Record<string, unknown>).content as string
+          : undefined,
+        selectedText: typeof (body.activeFile as Record<string, unknown>).selectedText === "string"
+          ? (body.activeFile as Record<string, unknown>).selectedText as string
+          : undefined,
+      }
+      : undefined;
+
+    const workspaceFiles = Array.isArray(body.workspaceFiles) &&
+      body.workspaceFiles.every((f) => typeof f === "string")
+      ? body.workspaceFiles as string[]
+      : undefined;
+
+    const agent = await getAgent(request.workspaceRoot);
     const result = await agent.run({
       tenantId: context.tenantId,
       sessionId,
       question: message,
       ...(documentIds !== undefined && { documentIds }),
       retrievalMode: route.mode,
+      workspaceRoot: request.workspaceRoot,
+      ...(workspaceId ? { workspaceId } : {}),
+      ...(activeFile ? { activeFile } : {}),
+      ...(workspaceFiles ? { workspaceFiles } : {}),
     });
 
     response.status(200).json({
@@ -116,6 +143,7 @@ export async function chatHandler(
       responseId: result.responseId,
       sources: result.sources,
       toolActivity: result.toolActivity,
+      ...(result.modifiedFile ? { modifiedFile: result.modifiedFile } : {}),
       pipeline: {
         retrievalMode: route.mode,
         routeReason: route.reason,

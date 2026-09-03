@@ -30,6 +30,14 @@ export interface ToolExecutionContext {
   readonly tenantId: string;
   readonly sessionId: string;
   readonly userPermissions: readonly ToolPermission[];
+  readonly workspaceId?: string | undefined;
+  readonly activeFile?: {
+    readonly path: string;
+    readonly name: string;
+    readonly content?: string | undefined;
+    readonly selectedText?: string | undefined;
+  } | undefined;
+  readonly workspaceFiles?: readonly string[] | undefined;
 }
 
 export interface ToolExecutionResult<TOutput = unknown> {

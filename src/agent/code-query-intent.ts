@@ -24,7 +24,7 @@ export interface CodeQueryAnalysis {
   readonly lastLines?: number | undefined;
 }
 
-const FILENAME_PATTERN = /\b[a-zA-Z0-9_$-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|html|css|yml|yaml)\b/g;
+const FILENAME_PATTERN = /\b[a-zA-Z0-9_$-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|html|css|yml|yaml|py|txt|sh|sql|toml|rs|go|java|cpp|c|h)\b/g;
 
 const unique = (values: readonly string[]): string[] =>
   [...new Set(values.map((value) => value.toLowerCase()))];
@@ -43,12 +43,11 @@ export function analyzeCodeQuery(query: string): CodeQueryAnalysis {
   const normalized = query.trim();
   const lower = normalized.toLowerCase();
 
-  // If the query is an active file operation (create, make, write, edit, modify, delete, remove),
-  // route it to the Agent tool execution pipeline rather than static AST code inspection.
+  // If the query is an active modification, creation, or deletion command,
+  // route it to the Agent autonomous tool execution loop rather than static inspection.
   if (
-    /\b(?:make|create|write|save|generate|touch|edit|modify|update|delete|remove|erase|unlink)\s+(?:a\s+)?(?:new\s+)?(?:temporary\s+)?(?:file\s+|at\s+|in\s+)?[a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9_]{1,10}\b/i.test(lower) ||
-    /\b(?:make|create|write|save|generate|touch|edit|modify|update|delete|remove|erase)\s+(?:a\s+)?(?:new\s+)?(?:temporary\s+)?(?:file|files)\b/i.test(lower) ||
-    /\b(?:change|replace|edit|update)\s+[\s\S]+\s+(?:to|with)\s+[\s\S]+\s+(?:in|for|at)\s+[a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9_]{1,10}\b/i.test(lower)
+    /\b(?:make|create|write|save|generate|touch|edit|modify|update|delete|remove|erase|unlink|append|insert|add|replace|change|fix|patch)\b/i.test(lower) &&
+    !/\b(?:where\s+is|who\s+calls|find\s+callers|explain\s+how|walk\s+me\s+through)\b/i.test(lower)
   ) {
     return { intent: "OTHER", filenames: [], symbols: [] };
   }
@@ -186,7 +185,11 @@ export function analyzeCodeQuery(query: string): CodeQueryAnalysis {
 
   if (
     filenames.length > 0 &&
-    /\b(?:show|read|display|open|contents?|source|code)\b/i.test(lower)
+    !/\b(?:write|create|make|add|insert|append|generate|edit|modify|update|replace|change|delete|remove|fix|patch)\b/i.test(lower) &&
+    (/\b(?:show|read|display|open|contents?|source)\b/i.test(lower) ||
+      /\bwhat\s+is\s+in\b/i.test(lower) ||
+      /\bwhat\s+is\s+(?:the\s+)?code\b/i.test(lower) ||
+      /\btell\s+me\s+about\b/i.test(lower))
   ) {
     return { intent: "FILE_CONTENT", filenames, symbols };
   }
