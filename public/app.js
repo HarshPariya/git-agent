@@ -16,6 +16,14 @@ const state = {
   activeTab: "evidence",
   currentBrowsedPath: null,
   browsedFolderGit: null,
+  gitDesktop: {
+    changedFiles: [],
+    currentFilter: "all",
+    selectedFile: null,
+    commitPlan: null,
+    gitStatus: null,
+    outgoingCommits: [],
+  },
 };
 
 // ============================================================
@@ -125,6 +133,8 @@ function navigate(pageId) {
     loadDashboardStats();
   } else if (pageId === "repositories") {
     loadRepositories();
+  } else if (pageId === "git-desktop") {
+    loadGitDesktop();
   } else if (pageId === "debug") {
     populateRepoDropdowns();
   } else if (pageId === "issues") {
@@ -133,6 +143,9 @@ function navigate(pageId) {
   } else if (pageId === "prs") {
     populateRepoDropdowns();
     loadPRs();
+  } else if (pageId === "conflicts") {
+    populateRepoDropdowns();
+    loadConflictsPage();
   } else if (pageId === "history") {
     loadHistory();
   } else if (pageId === "settings") {
@@ -2620,6 +2633,563 @@ function escapeHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
+// ============================================================
+// WORKSPACE B — GIT DESKTOP CONTROLLER
+// ============================================================
+
+async function loadGitDesktop() {
+  const repo = state.activeRepository || state.repositories[0];
+  if (!repo) {
+    document.getElementById("gd-repo-name").textContent = "No repository connected";
+    document.getElementById("gd-changes-list").innerHTML = `
+      <div class="empty-state" style="padding:36px 20px">
+        <div class="empty-icon">📁</div>
+        <div class="empty-title">No repository selected</div>
+        <div class="empty-desc">Connect or select a repository to use Git Desktop.</div>
+        <button class="btn btn-primary btn-sm" onclick="openFolderBrowser()" style="margin-top:10px">Connect Repository</button>
+      </div>`;
+    return;
+  }
+
+  state.activeRepository = repo;
+  document.getElementById("gd-repo-name").textContent = repo.name || repo.path || "Repository";
+
+  try {
+    const status = await api.getGitStatus(repo.id);
+    state.gitDesktop.gitStatus = status;
+
+    // Update Header metadata
+    document.getElementById("gd-branch-name").textContent = status.branch || "main";
+    document.getElementById("gd-ahead-behind").textContent = `↑ ${status.ahead || 0} · ↓ ${status.behind || 0}`;
+    const workingStatusEl = document.getElementById("gd-working-status");
+    if (status.clean) {
+      workingStatusEl.textContent = "Clean";
+      workingStatusEl.className = "badge badge-success";
+    } else {
+      workingStatusEl.textContent = `${status.entries.length} changes`;
+      workingStatusEl.className = "badge badge-warning";
+    }
+
+    // Map status entries to changed files
+    state.gitDesktop.changedFiles = status.entries.map((entry) => {
+      let code = "M";
+      if (entry.status === "added") code = "A";
+      else if (entry.status === "deleted") code = "D";
+      else if (entry.status === "renamed") code = "R";
+      else if (entry.status === "untracked") code = "?";
+
+      return {
+        filePath: entry.filePath,
+        status: entry.status,
+        code,
+        staged: entry.staged,
+        additions: entry.status === "added" ? 1 : 0,
+        deletions: 0,
+        risk: entry.filePath.includes("auth") || entry.filePath.includes("key") ? "high" : "low",
+        logicalGroup: null,
+      };
+    });
+
+    document.getElementById("gd-changes-count").textContent = `${state.gitDesktop.changedFiles.length} files`;
+    const statChanges = document.getElementById("stat-changes");
+    if (statChanges) statChanges.textContent = `${state.gitDesktop.changedFiles.length} files`;
+
+    renderGitDesktopChanges();
+  } catch (err) {
+    console.error("Failed to load Git Desktop status:", err);
+    showToast(`Git Desktop error: ${err.message}`, "error");
+  }
+}
+
+function filterChangedFiles(filter) {
+  state.gitDesktop.currentFilter = filter;
+  document.querySelectorAll(".git-filter-tab").forEach((tab) => {
+    if (tab.getAttribute("data-filter") === filter) tab.classList.add("active");
+    else tab.classList.remove("active");
+  });
+  renderGitDesktopChanges();
+}
+
+function renderGitDesktopChanges() {
+  const container = document.getElementById("gd-changes-list");
+  if (!container) return;
+
+  const filter = state.gitDesktop.currentFilter;
+  const files = state.gitDesktop.changedFiles.filter((f) => {
+    if (filter === "staged") return f.staged;
+    if (filter === "unstaged") return !f.staged && f.status !== "untracked";
+    if (filter === "untracked") return f.status === "untracked";
+    return true;
+  });
+
+  if (files.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state" style="padding:36px 20px">
+        <div class="empty-icon">✓</div>
+        <div class="empty-title">No changes found</div>
+        <div class="empty-desc">No files matching filter "${filter}".</div>
+      </div>`;
+    return;
+  }
+
+  let html = `<div style="display:flex;flex-direction:column">`;
+  for (const f of files) {
+    const riskBadgeClass = f.risk === "high" ? "badge-danger" : (f.risk === "medium" ? "badge-warning" : "badge-accent");
+    const groupBadge = f.logicalGroup ? `<span class="badge badge-accent" style="font-size:10px">${escapeHtml(f.logicalGroup)}</span>` : "";
+
+    html += `
+      <div class="git-change-row">
+        <div class="git-change-left">
+          <span class="git-status-badge ${f.code}">${f.code}</span>
+          <span class="git-file-name" title="${escapeHtml(f.filePath)}">${escapeHtml(f.filePath)}</span>
+          ${groupBadge}
+        </div>
+        <div class="git-change-right">
+          <span class="badge ${riskBadgeClass}" style="font-size:10px">${f.risk.toUpperCase()}</span>
+          <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" onclick="viewGitDesktopDiff('${escapeHtml(f.filePath)}')">
+            Diff
+          </button>
+        </div>
+      </div>`;
+  }
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+async function viewGitDesktopDiff(filePath) {
+  const repo = state.activeRepository;
+  if (!repo) return;
+
+  const viewer = document.getElementById("gd-diff-viewer");
+  viewer.textContent = `Loading diff for ${filePath}...`;
+  switchGitDesktopTab("gd-diff");
+
+  try {
+    const res = await api.getGitDiff(repo.id, undefined, undefined);
+    if (res && res.files && Array.isArray(res.files)) {
+      const match = res.files.find((f) => f.filePath === filePath);
+      if (match && match.diff) {
+        renderFormattedDiff("gd-diff-viewer", match.diff);
+        return;
+      }
+    }
+    if (res && res.diff) {
+      renderFormattedDiff("gd-diff-viewer", res.diff);
+    } else {
+      viewer.textContent = `No diff content found for ${filePath}.`;
+    }
+  } catch (err) {
+    viewer.textContent = `Error loading diff: ${err.message}`;
+  }
+}
+
+function renderFormattedDiff(containerId, diffText) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  const lines = diffText.split("\n");
+  let html = "";
+  for (const line of lines) {
+    const escaped = escapeHtml(line);
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      html += `<div style="background:#ecfdf5;color:#065f46;padding:1px 4px">${escaped}</div>`;
+    } else if (line.startsWith("-") && !line.startsWith("---")) {
+      html += `<div style="background:#fef2f2;color:#991b1b;padding:1px 4px">${escaped}</div>`;
+    } else if (line.startsWith("@@")) {
+      html += `<div style="background:#eff6ff;color:#1e40af;font-weight:600;padding:2px 4px">${escaped}</div>`;
+    } else {
+      html += `<div style="color:var(--c-text-secondary);padding:1px 4px">${escaped}</div>`;
+    }
+  }
+  el.innerHTML = html || diffText;
+}
+
+function switchGitDesktopTab(tabName) {
+  document.querySelectorAll("#page-git-desktop .tab-item").forEach((tab) => {
+    if (tab.getAttribute("data-tab") === tabName) tab.classList.add("active");
+    else tab.classList.remove("active");
+  });
+
+  const diffPanel = document.getElementById("panel-gd-diff");
+  const outputPanel = document.getElementById("panel-gd-output");
+  if (tabName === "gd-diff") {
+    diffPanel.style.display = "block";
+    outputPanel.style.display = "none";
+  } else {
+    diffPanel.style.display = "none";
+    outputPanel.style.display = "block";
+  }
+}
+
+async function triggerAIAnalyzeChanges() {
+  const repo = state.activeRepository;
+  if (!repo) {
+    showToast("Please select a repository first", "warning");
+    return;
+  }
+
+  const btn = document.getElementById("gd-btn-analyze");
+  const summaryEl = document.getElementById("gd-ai-summary");
+  const planContainer = document.getElementById("gd-commit-plan-container");
+
+  btn.disabled = true;
+  btn.innerHTML = `⚡ Analyzing...`;
+  summaryEl.textContent = "AI is inspecting AST symbols, imports, and git diffs...";
+
+  try {
+    const data = await api.analyzeChanges(repo.id);
+    const plan = data.plan || data;
+    state.gitDesktop.commitPlan = plan;
+
+    summaryEl.textContent = plan.summary || `${plan.totalFiles} files grouped into ${plan.groups.length} logical commits.`;
+
+    if (plan.changedFiles && Array.isArray(plan.changedFiles)) {
+      state.gitDesktop.changedFiles = plan.changedFiles.map((f) => ({
+        ...f,
+        code: f.status === "added" ? "A" : (f.status === "deleted" ? "D" : (f.status === "untracked" ? "?" : "M")),
+      }));
+      renderGitDesktopChanges();
+    }
+
+    if (!plan.groups || plan.groups.length === 0) {
+      planContainer.innerHTML = `
+        <div class="empty-state" style="padding:24px">
+          <div class="empty-title">Working tree clean</div>
+          <div class="empty-desc">No changes required for commit planning.</div>
+        </div>`;
+      document.getElementById("gd-btn-commit-all").style.display = "none";
+      return;
+    }
+
+    let planHtml = "";
+    plan.groups.forEach((grp, idx) => {
+      const commitMsg = grp.suggestedCommit ? `${grp.suggestedCommit.type}${grp.suggestedCommit.scope ? `(${grp.suggestedCommit.scope})` : ""}: ${grp.suggestedCommit.subject}` : grp.name;
+      const riskClass = grp.risk === "high" ? "badge-danger" : (grp.risk === "medium" ? "badge-warning" : "badge-accent");
+
+      planHtml += `
+        <div class="commit-plan-card">
+          <div class="commit-plan-header">
+            <div>
+              <span class="badge badge-accent" style="margin-bottom:4px">Commit ${idx + 1}</span>
+              <div class="commit-plan-title">${escapeHtml(commitMsg)}</div>
+            </div>
+            <span class="badge ${riskClass}">${grp.risk.toUpperCase()} RISK</span>
+          </div>
+          <div class="commit-plan-reason">${escapeHtml(grp.reason || "Logical semantic group")}</div>
+          <div class="commit-plan-meta">
+            <span>📦 ${grp.files.length} file${grp.files.length > 1 ? "s" : ""}</span>
+            <span>🧪 ~${grp.testCount || grp.files.length} tests</span>
+          </div>
+          <div class="commit-plan-files">
+            ${grp.files.map((f) => `<span class="commit-file-pill">${escapeHtml(f)}</span>`).join("")}
+          </div>
+        </div>`;
+    });
+
+    planContainer.innerHTML = planHtml;
+    document.getElementById("gd-btn-commit-all").style.display = "inline-flex";
+    showToast(`AI grouped ${plan.totalFiles} files into ${plan.groups.length} logical commits!`, "success");
+  } catch (err) {
+    summaryEl.textContent = `Analysis failed: ${err.message}`;
+    showToast(`Error analyzing changes: ${err.message}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `⚡ AI Analyze Changes`;
+  }
+}
+
+async function triggerAICommitAll() {
+  const repo = state.activeRepository;
+  if (!repo) return;
+
+  const btn = document.getElementById("gd-btn-commit-all");
+  btn.disabled = true;
+  btn.textContent = "Committing...";
+
+  try {
+    const groups = state.gitDesktop.commitPlan?.groups;
+    const res = await api.executeCommitPlan(repo.id, groups);
+
+    if (res.success) {
+      showToast(`Successfully created ${res.totalCreated} logical commits!`, "success");
+      const consoleOut = document.getElementById("gd-console-output");
+      let logText = `=== COMMIT ALL EXECUTION SUCCESSFUL ===\nBranch: ${res.branch}\nTotal commits created: ${res.totalCreated}\n\n`;
+      res.commits.forEach((c, idx) => {
+        logText += `[Commit ${idx + 1}] SHA: ${c.commitHash} | ${c.commitMessage}\nFiles (${c.files.length}):\n${c.files.map((f) => `  - ${f}`).join("\n")}\n\n`;
+      });
+      consoleOut.textContent = logText;
+      switchGitDesktopTab("gd-output");
+
+      await loadGitDesktop();
+      document.getElementById("gd-btn-commit-all").style.display = "none";
+      document.getElementById("gd-commit-plan-container").innerHTML = `
+        <div class="empty-state" style="padding:24px">
+          <div class="empty-icon">✓</div>
+          <div class="empty-title">All groups committed!</div>
+          <div class="empty-desc">${res.totalCreated} verified commits created on branch '${res.branch}'.</div>
+        </div>`;
+    } else {
+      showToast(`Commit failed: ${res.message || res.error}`, "error");
+    }
+  } catch (err) {
+    showToast(`Commit error: ${err.message}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "⚡ Commit All Groups";
+  }
+}
+
+async function triggerGitFetch() {
+  const repo = state.activeRepository;
+  if (!repo) return;
+
+  showToast("Fetching remote references...", "info");
+  try {
+    const res = await api.gitFetch(repo.id);
+    document.getElementById("gd-console-output").textContent = res.output || "Fetch completed.";
+    switchGitDesktopTab("gd-output");
+    await loadGitDesktop();
+    showToast("Fetched latest refs from origin", "success");
+  } catch (err) {
+    showToast(`Fetch error: ${err.message}`, "error");
+  }
+}
+
+async function triggerGitPull() {
+  const repo = state.activeRepository;
+  if (!repo) return;
+
+  try {
+    const res = await api.gitPull(repo.id);
+    document.getElementById("gd-console-output").textContent = res.output || res.error || "Pull executed.";
+    switchGitDesktopTab("gd-output");
+
+    if (!res.success && (res.error?.includes("conflict") || res.output?.includes("conflict"))) {
+      showToast("Merge conflict encountered during pull! Opening Conflict Center...", "warning");
+      navigate("conflicts");
+      return;
+    }
+
+    await loadGitDesktop();
+    showToast(res.success ? "Pulled successfully" : "Pull failed", res.success ? "success" : "error");
+  } catch (err) {
+    showToast(`Pull error: ${err.message}`, "error");
+  }
+}
+
+async function triggerGitSync() {
+  const repo = state.activeRepository;
+  if (!repo) return;
+
+  showToast("Syncing with remote...", "info");
+  try {
+    const res = await api.gitSync(repo.id);
+    document.getElementById("gd-console-output").textContent = `Sync Result: ${res.message}\nAhead: ${res.ahead}, Behind: ${res.behind}, Action: ${res.actionRequired}`;
+    switchGitDesktopTab("gd-output");
+    await loadGitDesktop();
+
+    if (res.actionRequired === "diverged") {
+      showToast("Branches have diverged! Rebase or merge required.", "warning");
+    } else {
+      showToast(res.message, "success");
+    }
+  } catch (err) {
+    showToast(`Sync error: ${err.message}`, "error");
+  }
+}
+
+async function openPushPreviewModal() {
+  const repo = state.activeRepository;
+  if (!repo) {
+    showToast("Select a repository first", "warning");
+    return;
+  }
+
+  document.getElementById("push-target-repo").textContent = repo.name || repo.path;
+  const branch = state.gitDesktop.gitStatus?.branch || "main";
+  document.getElementById("push-target-branch").textContent = branch;
+  document.getElementById("push-remote-branch").textContent = branch;
+
+  const branchRuleEl = document.getElementById("push-check-branch");
+  const isProtected = ["main", "master", "production"].includes(branch);
+  if (isProtected) {
+    branchRuleEl.textContent = "WARNING (Protected branch: push requires confirmation)";
+    branchRuleEl.className = "badge badge-warning";
+  } else {
+    branchRuleEl.textContent = "PASSED (Safe feature branch)";
+    branchRuleEl.className = "badge badge-success";
+  }
+
+  const commitsListEl = document.getElementById("push-commits-list");
+  commitsListEl.innerHTML = `<div class="text-muted" style="font-size:12px">Checking outgoing commits...</div>`;
+  openModal("modal-push-preview");
+
+  try {
+    const logData = await api.getGitLog(repo.id, 5);
+    const commits = logData.commits || logData.entries || [];
+    document.getElementById("push-commits-count").textContent = `${commits.length} outgoing commit(s)`;
+
+    if (commits.length === 0) {
+      commitsListEl.innerHTML = `<div class="text-muted" style="font-size:12px">No local commits waiting to be pushed.</div>`;
+    } else {
+      commitsListEl.innerHTML = commits.map((c) => `
+        <div style="display:flex;align-items:center;gap:8px;font-size:11px;padding:4px 0;border-bottom:1px solid var(--c-border-subtle)">
+          <code style="font-weight:700;color:var(--c-accent)">${escapeHtml(c.shortHash || c.hash?.slice(0, 7) || "")}</code>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(c.subject || c.message || "")}</span>
+        </div>`).join("");
+    }
+  } catch (err) {
+    commitsListEl.innerHTML = `<div class="text-muted" style="font-size:12px">Unable to retrieve commit log.</div>`;
+  }
+}
+
+async function executePushFromModal() {
+  const repo = state.activeRepository;
+  if (!repo) return;
+
+  const btn = document.getElementById("confirm-push-btn");
+  btn.disabled = true;
+  btn.textContent = "Pushing...";
+
+  try {
+    const res = await api.gitPush(repo.id);
+    closeModal("modal-push-preview");
+    document.getElementById("gd-console-output").textContent = res.output || "Push succeeded.";
+    switchGitDesktopTab("gd-output");
+    await loadGitDesktop();
+    showToast("Pushed successfully to remote!", "success");
+  } catch (err) {
+    showToast(`Push failed: ${err.message}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Confirm & Push to Remote";
+  }
+}
+
+async function triggerAIShip() {
+  const repo = state.activeRepository;
+  if (!repo) return;
+
+  const confirmed = confirm("🚀 Launch AI Ship?\n\nThis will automatically:\n1. Analyze and group all changed files\n2. Commit with verified Conventional Commits\n3. Push to remote\n4. Create a Pull Request on GitHub\n\nProceed?");
+  if (!confirmed) return;
+
+  showToast("AI Ship in progress...", "info");
+  try {
+    const res = await api.gitShip(repo.id);
+    document.getElementById("gd-console-output").textContent = `=== AI SHIP COMPLETED ===\n${res.message}\nBranch: ${res.branch}\nPR: ${res.pr ? JSON.stringify(res.pr, null, 2) : "None"}`;
+    switchGitDesktopTab("gd-output");
+    await loadGitDesktop();
+    showToast(res.message, "success");
+  } catch (err) {
+    showToast(`AI Ship error: ${err.message}`, "error");
+  }
+}
+
+// ============================================================
+// CONFLICT CENTER CONTROLLER
+// ============================================================
+
+async function loadConflictsPage() {
+  const repo = state.activeRepository || state.repositories[0];
+  const container = document.getElementById("conflicts-container");
+  if (!container) return;
+
+  if (!repo) {
+    container.innerHTML = `
+      <div class="empty-state" style="padding:48px 24px">
+        <div class="empty-icon">📁</div>
+        <div class="empty-title">Select a repository</div>
+        <div class="empty-desc">Choose a repository to inspect and resolve merge conflicts.</div>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="empty-state" style="padding:48px 24px">
+      <div class="empty-icon">⚡</div>
+      <div class="empty-title">Analyzing conflicts...</div>
+      <div class="empty-desc">Scanning repository for merge markers and analyzing common ancestors.</div>
+    </div>`;
+
+  try {
+    const data = await api.getGitConflicts(repo.id);
+    const conflicts = data.conflicts || data.files || [];
+
+    if (!conflicts || conflicts.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state" style="padding:48px 24px">
+          <div class="empty-icon">🌿</div>
+          <div class="empty-title">No Active Conflicts</div>
+          <div class="empty-desc">Working tree in "${escapeHtml(repo.name || "repo")}" has zero unresolved merge conflicts.</div>
+        </div>`;
+      return;
+    }
+
+    let html = `<div style="padding:16px"><div style="font-weight:700;margin-bottom:12px;color:var(--c-danger)">⚠️ ${conflicts.length} CONFLICTING FILE(S) DETECTED</div>`;
+
+    conflicts.forEach((c) => {
+      html += `
+        <div class="card" style="margin-bottom:16px;padding:0;overflow:hidden">
+          <div class="card-header" style="background:#fffbeb">
+            <div style="font-weight:700;font-family:var(--font-mono)">${escapeHtml(c.filePath)}</div>
+            <button class="btn btn-primary btn-sm" onclick="triggerResolveFileConflict('${escapeHtml(c.filePath)}')">
+              ⚡ Semantic Resolve This File
+            </button>
+          </div>
+          <div class="conflicts-4way-grid">
+            <div class="conflict-pane base">
+              <div class="conflict-pane-header">BASE (Merge Ancestor)</div>
+              <div class="conflict-pane-body">${escapeHtml(c.baseLines?.join("\n") || "No base version")}</div>
+            </div>
+            <div class="conflict-pane ours">
+              <div class="conflict-pane-header">OURS (Current Branch)</div>
+              <div class="conflict-pane-body">${escapeHtml(c.ourLines?.join("\n") || "No our version")}</div>
+            </div>
+            <div class="conflict-pane theirs">
+              <div class="conflict-pane-header">THEIRS (Incoming Branch)</div>
+              <div class="conflict-pane-body">${escapeHtml(c.theirLines?.join("\n") || "No their version")}</div>
+            </div>
+            <div class="conflict-pane resolved">
+              <div class="conflict-pane-header">AI RESOLUTION (Synthesized)</div>
+              <div class="conflict-pane-body">${escapeHtml(c.resolvedContent || "Ready to synthesize...")}</div>
+            </div>
+          </div>
+        </div>`;
+    });
+
+    html += `</div>`;
+    container.innerHTML = html;
+  } catch (err) {
+    container.innerHTML = `
+      <div class="empty-state" style="padding:48px 24px">
+        <div class="empty-title" style="color:var(--c-danger)">Conflict Check Error</div>
+        <div class="empty-desc">${escapeHtml(err.message)}</div>
+      </div>`;
+  }
+}
+
+async function triggerResolveAllConflicts() {
+  const repo = state.activeRepository;
+  if (!repo) return;
+
+  showToast("Resolving all conflicts with AI semantic synthesis...", "info");
+  try {
+    const res = await api.resolveConflicts(repo.id);
+    showToast(res.message || "Conflicts resolved successfully!", "success");
+    await loadConflictsPage();
+  } catch (err) {
+    showToast(`Conflict resolution error: ${err.message}`, "error");
+  }
+}
+
+function setInvestigationMode(mode) {
+  const select = document.getElementById("debug-type");
+  if (select) {
+    select.value = mode;
+    showToast(`Investigation mode set to: ${mode}`, "info");
+  }
+}
+
 // Global window registrations
 window.navigate = navigate;
 window.checkHealth = checkHealth;
@@ -2669,3 +3239,20 @@ window.gitCreateAndCheckoutBranch = gitCreateAndCheckoutBranch;
 window.openCreatePRModal = openCreatePRModal;
 window.submitCreatePR = submitCreatePR;
 window.reopenDebugSession = reopenDebugSession;
+
+// New Git Desktop & Conflict Center registrations
+window.loadGitDesktop = loadGitDesktop;
+window.filterChangedFiles = filterChangedFiles;
+window.viewGitDesktopDiff = viewGitDesktopDiff;
+window.switchGitDesktopTab = switchGitDesktopTab;
+window.triggerAIAnalyzeChanges = triggerAIAnalyzeChanges;
+window.triggerAICommitAll = triggerAICommitAll;
+window.triggerGitFetch = triggerGitFetch;
+window.triggerGitPull = triggerGitPull;
+window.triggerGitSync = triggerGitSync;
+window.openPushPreviewModal = openPushPreviewModal;
+window.executePushFromModal = executePushFromModal;
+window.triggerAIShip = triggerAIShip;
+window.loadConflictsPage = loadConflictsPage;
+window.triggerResolveAllConflicts = triggerResolveAllConflicts;
+window.setInvestigationMode = setInvestigationMode;

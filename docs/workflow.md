@@ -149,15 +149,53 @@ flowchart TD
 1. User navigates to the **Conflicts** tab in the UI or triggers conflict resolution on a branch.
 2. `src/git/conflicts.ts` runs `git status --porcelain`, identifying files marked with status codes `UU`, `AA`, `DD`, etc.
 3. For each conflicted file, `ConflictAnalyzer.analyzeFile()` decomposes the conflict blocks into `ConflictMarker` objects.
-4. The system calculates candidate resolutions:
-   - `ours`: Preserves current HEAD changes.
-   - `theirs`: Accepts incoming branch changes.
-   - `ai_semantic`: Uses LLM reasoning to merge both changes without breaking syntax or imports.
-5. User can click "Auto-Resolve Conflicts" to accept high-confidence resolutions, or pick individually on the UI diff cards.
+4. The system renders the **4-Way Conflict Center (`BASE | OURS | THEIRS | AI RESOLUTION`)**:
+   - `BASE`: Common ancestor version of the conflicting lines.
+   - `OURS`: Current HEAD changes on the local branch.
+   - `THEIRS`: Incoming changes from the target branch or remote.
+   - `AI RESOLUTION`: Groq LLM + GraphRAG semantic merge that reconciles logic, resolves conflicting imports, and eliminates syntax breakage.
+5. Developer can review side-by-side, click "Accept AI Resolution" or manually select "Accept Ours" / "Accept Theirs".
+6. The engine writes the resolved file, runs `git add <file>`, and executes verification tests to ensure the working tree builds cleanly before concluding the merge.
 
 ---
 
-## 5. Workflow 4: GitHub Issues & Pull Requests
+## 5. Workflow 4: Git Desktop (Workspace B) & AI Commit Planner
+
+Git Desktop provides a first-class visual repository controller powered by AI semantic code intelligence:
+
+```mermaid
+flowchart TD
+    GD_START[Open Git Desktop] --> GD_DETECT[Scan Working Tree Changes]
+    GD_DETECT --> GD_TABLE[Render Changed Files Table + Risk Badges]
+    
+    GD_TABLE --> GD_ACT{Developer Action}
+    GD_ACT -->|AI Analyze Changes| GD_PLAN[Groq LLM + GraphRAG Clustering]
+    GD_ACT -->|Fetch / Pull / Sync| GD_REMOTE[Execute Remote Operations with Dirty Tree Check]
+    GD_ACT -->|Push| GD_PREVIEW[Open Push Preview Modal & Check Safeguards]
+    GD_ACT -->|AI Ship| GD_SHIP[Analyze -> Plan -> Commit -> Push -> PR]
+    
+    GD_PLAN --> GD_CARDS[Display Logical Commit Plan Cards]
+    GD_CARDS --> GD_COMMIT_ALL[One-Click AI Commit All]
+    GD_COMMIT_ALL --> GD_SEQ[Sequential Atomic Staging: Reset Index -> Stage Group 1 -> Commit & Verify SHA -> Stage Group 2...]
+    GD_SEQ --> GD_CLEAN[Working Tree Cleaned & Log Updated]
+    
+    GD_PREVIEW --> GD_SAFE{Passes Safeguards?}
+    GD_SAFE -- No --> GD_BLOCK[Blocked: Force Push / Protected Branch Violation]
+    GD_SAFE -- Yes --> GD_PUSH_EXEC[Safe Push Executed]
+```
+
+### Key Technical Guarantees:
+1. **Never Blind `git add .`**:
+   - `src/git/change-analyzer.ts` groups files into cohesive functional units (e.g. Auth, API, Docs, Tests).
+   - In `executeCommitPlan`, the staging index is cleared (`git reset HEAD`), then each group's files are explicitly staged and committed with verified commit SHAs (`git rev-parse --short HEAD`).
+2. **Push Preview Modal**:
+   - Displays target remote/branch, commits to be pushed, files touched, protected branch check, and secret scanning status before any push packet is sent to GitHub.
+3. **Automated AI Ship**:
+   - Orchestrates the full development pipeline in one click: analyze -> generate commit plan -> atomic commit all -> pre-push safeguard check -> safe push -> open automated Pull Request.
+
+---
+
+## 6. Workflow 5: GitHub Issues & Pull Requests
 
 1. **Issue Triage**:
    - The user connects GitHub on the **Issues** tab.
@@ -175,7 +213,7 @@ flowchart TD
 
 ---
 
-## 6. Workflow 5: Controlled Git Operations & Push Safeguards
+## 7. Workflow 6: Controlled Git Operations & Push Safeguards
 
 The platform acts as a secure Git controller preventing accidental repo corruption.
 
@@ -208,7 +246,7 @@ flowchart TD
 
 ---
 
-## 7. Workflow 6: Automated Git Bisect & Regression Pinpointing
+## 8. Workflow 7: Automated Git Bisect & Regression Pinpointing
 
 When code breaks between two known revisions:
 1. User provides a **Good Commit** (where behavior worked) and a **Bad Commit** (current regression).

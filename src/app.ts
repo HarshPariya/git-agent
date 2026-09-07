@@ -20,6 +20,10 @@ import {
   gitExecuteHandler,
   gitOperationCatalogHandler,
   gitClassifyHandler,
+  gitAnalyzeChangesHandler,
+  gitExecuteCommitPlanHandler,
+  gitSyncHandler,
+  gitShipHandler,
 } from "./api/git.js";
 import {
   startDebugSessionHandler,
@@ -218,6 +222,11 @@ app.post("/api/git/log", securityMiddleware, gitLogHandler);
 app.post("/api/git/diff", securityMiddleware, gitDiffHandler);
 app.post("/api/git/branches", securityMiddleware, gitBranchesHandler);
 app.post("/api/git/operations/:operation", securityMiddleware, gitExecuteHandler);
+app.post("/api/git/analyze-changes", securityMiddleware, gitAnalyzeChangesHandler);
+app.post("/api/git/commit-plan/execute", securityMiddleware, gitExecuteCommitPlanHandler);
+app.post("/api/git/commit-all", securityMiddleware, gitExecuteCommitPlanHandler);
+app.post("/api/git/sync", securityMiddleware, gitSyncHandler);
+app.post("/api/git/ship", securityMiddleware, gitShipHandler);
 
 // Debugging agent
 app.get("/api/debug", securityMiddleware, listDebugSessionsHandler);

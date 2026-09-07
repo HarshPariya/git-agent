@@ -13,6 +13,7 @@ const SUITES: TestSuite[] = [
   { name: "Agent Orchestration & State Machine", command: "npx tsx tests/agent-orchestrator.test.ts" },
   { name: "Express API & Service Endpoints", command: "npx tsx tests/api.test.ts" },
   { name: "Guardrails, Security & Limits", command: "npx tsx tests/guardrails.test.ts" },
+  { name: "Git Desktop & Commit Plan Engine", command: "npx tsx tests/git-desktop.test.ts" },
 ];
 
 async function runAll() {

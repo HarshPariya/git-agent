@@ -15,6 +15,12 @@ import { AppError } from "../errors/app-error.js";
 import { conflictAnalyzer } from "../git/conflicts.js";
 import { executeSafeCommit } from "../git/commit.js";
 import { executeSafePush } from "../git/push.js";
+import {
+  analyzeAndPlanCommits,
+  executeCommitPlan,
+} from "../git/change-analyzer.js";
+import { getGitHubToken } from "../github/auth.js";
+import { createGitHubPR } from "../github/pull-requests.js";
 
 function getGitRequestData(request: Request): Record<string, unknown> {
   const query = request.query as Record<string, unknown>;
@@ -530,3 +536,276 @@ export async function gitClassifyHandler(
     next(error);
   }
 }
+
+/**
+ * AI Change Analysis:
+ * Inspects modified/untracked files, AST relations, groups into logical changes,
+ * and generates Conventional Commit plans.
+ */
+export async function gitAnalyzeChangesHandler(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId =
+      typeof body.repositoryId === "string" && body.repositoryId.trim()
+        ? body.repositoryId.trim()
+        : (() => {
+          throw new AppError("repositoryId is required", "VALIDATION_ERROR", 400);
+        })();
+
+    const repoPath = getExecutionPath(repoId);
+    const plan = await analyzeAndPlanCommits(repoPath);
+
+    response.status(200).json({
+      success: true,
+      plan,
+      summary: plan.summary,
+      totalFiles: plan.totalFiles,
+      totalCommits: plan.totalCommits,
+      groups: plan.groups,
+      changedFiles: plan.changedFiles,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * AI Commit All / Execute Commit Plan:
+ * Atomically stages each logical group's files and creates sequential commits
+ * with real SHA verification. Never blindly runs `git add .`.
+ */
+export async function gitExecuteCommitPlanHandler(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId =
+      typeof body.repositoryId === "string" && body.repositoryId.trim()
+        ? body.repositoryId.trim()
+        : (() => {
+          throw new AppError("repositoryId is required", "VALIDATION_ERROR", 400);
+        })();
+
+    const repoPath = getExecutionPath(repoId);
+    let groups = Array.isArray(body.groups) ? body.groups : undefined;
+
+    // If groups not provided, analyze on the fly
+    if (!groups || groups.length === 0) {
+      const plan = await analyzeAndPlanCommits(repoPath);
+      groups = plan.groups;
+    }
+
+    if (!groups || groups.length === 0) {
+      response.status(200).json({
+        success: false,
+        message: "No change groups to commit.",
+        commits: [],
+        totalCreated: 0,
+      });
+      return;
+    }
+
+    const result = await executeCommitPlan(repoPath, groups);
+    response.status(result.success ? 200 : 400).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Git Sync:
+ * Fetches remote metadata, checks ahead/behind status, and safely pulls or warns of conflicts.
+ */
+export async function gitSyncHandler(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId =
+      typeof body.repositoryId === "string" && body.repositoryId.trim()
+        ? body.repositoryId.trim()
+        : (() => {
+          throw new AppError("repositoryId is required", "VALIDATION_ERROR", 400);
+        })();
+
+    const repoPath = getExecutionPath(repoId);
+    const remote = typeof body.remote === "string" ? body.remote : "origin";
+
+    // 1. Fetch remote refs
+    try {
+      await execAsync(`git fetch ${remote} --prune`, { cwd: repoPath, timeout: 45_000 });
+    } catch (err: any) {
+      console.warn("[gitSync] Fetch warning:", err.message);
+    }
+
+    // 2. Check status and ahead/behind counts
+    const status = await executeGitStatus(repoId);
+    let actionRequired: "none" | "push" | "pull" | "diverged" | "commit_required" = "none";
+    let message = "Repository is in sync with remote.";
+
+    if (!status.clean) {
+      actionRequired = "commit_required";
+      message = "Uncommitted local changes present. Commit or stash before syncing.";
+    } else if (status.ahead > 0 && status.behind > 0) {
+      actionRequired = "diverged";
+      message = `Branches have diverged (${status.ahead} ahead, ${status.behind} behind). Rebase or merge required.`;
+    } else if (status.behind > 0) {
+      actionRequired = "pull";
+      // Perform safe pull
+      try {
+        const { stdout } = await execAsync(`git pull ${remote}`, { cwd: repoPath, timeout: 60_000 });
+        message = `Successfully pulled remote changes. ${stdout.trim()}`;
+        actionRequired = "none";
+      } catch (pullErr: any) {
+        message = `Pull encountered conflicts or issues: ${pullErr.message}`;
+      }
+    } else if (status.ahead > 0) {
+      actionRequired = "push";
+      message = `Local branch is ${status.ahead} commit(s) ahead of remote. Ready to push.`;
+    }
+
+    const updatedStatus = await executeGitStatus(repoId);
+
+    response.status(200).json({
+      success: true,
+      branch: updatedStatus.branch,
+      ahead: updatedStatus.ahead,
+      behind: updatedStatus.behind,
+      clean: updatedStatus.clean,
+      actionRequired,
+      message,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * AI Ship:
+ * High-velocity workflow: Analyze Changes -> Create Commit Plan -> Commit All Groups -> Push -> Create PR.
+ */
+export async function gitShipHandler(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId =
+      typeof body.repositoryId === "string" && body.repositoryId.trim()
+        ? body.repositoryId.trim()
+        : (() => {
+          throw new AppError("repositoryId is required", "VALIDATION_ERROR", 400);
+        })();
+
+    const repoPath = getExecutionPath(repoId);
+    const targetBranch = typeof body.targetBranch === "string" && body.targetBranch ? body.targetBranch : "main";
+    const prTitle = typeof body.prTitle === "string" ? body.prTitle : undefined;
+
+    // 1. Analyze and group changes
+    const plan = await analyzeAndPlanCommits(repoPath);
+    if (plan.groups.length === 0) {
+      // Check if already ahead and just needs push/PR
+      const status = await executeGitStatus(repoId);
+      if (status.ahead === 0) {
+        response.status(200).json({
+          success: false,
+          message: "No changes to ship and working tree is in sync.",
+        });
+        return;
+      }
+    }
+
+    // 2. Commit all groups if changes exist
+    let commitResult = { success: true, commits: [] as any[], totalCreated: 0 };
+    if (plan.groups.length > 0) {
+      const execRes = await executeCommitPlan(repoPath, plan.groups);
+      if (!execRes.success) {
+        response.status(400).json({
+          success: false,
+          message: `Commit step failed: ${execRes.message}`,
+          error: execRes.error,
+        });
+        return;
+      }
+      commitResult = execRes;
+    }
+
+    // 3. Push to remote
+    const pushResult = await executeSafePush(repoPath, { setUpstream: true });
+    if (!pushResult.success) {
+      response.status(400).json({
+        success: false,
+        message: `Push step failed: ${pushResult.error || pushResult.output || "Unknown push error"}`,
+        error: pushResult.error,
+        commits: commitResult.commits,
+      });
+      return;
+    }
+
+    // 4. Determine PR details
+    const branchStatus = await executeGitStatus(repoId);
+    const sourceBranch = branchStatus.branch;
+    let prData: any = null;
+
+    // Parse owner/repo from remote URL or body
+    let owner = typeof body.owner === "string" ? body.owner : "";
+    let repoName = typeof body.repo === "string" ? body.repo : "";
+    if (!owner || !repoName) {
+      try {
+        const { stdout: remoteUrl } = await execAsync("git remote get-url origin", { cwd: repoPath, timeout: 10000 });
+        const match = /github\.com[/:]([^/]+)\/([^/.]+)/.exec(remoteUrl.trim());
+        if (match && match[1] && match[2]) {
+          owner = match[1];
+          repoName = match[2];
+        }
+      } catch { }
+    }
+
+    // If GitHub credentials connected, attempt PR creation
+    const userId = (request as unknown as { user?: { id?: string } }).user?.id ?? "anonymous";
+    const token = getGitHubToken(userId);
+
+    if (token && owner && repoName && sourceBranch !== targetBranch) {
+      try {
+        const title = prTitle || commitResult.commits[0]?.commitMessage || `feat: ship updates on ${sourceBranch}`;
+        const prBody = `### 🚀 AI Ship Automated Pull Request\n\n**Source Branch:** \`${sourceBranch}\`\n**Target Branch:** \`${targetBranch}\`\n\n#### 📦 Commits Included (${commitResult.commits.length}):\n${commitResult.commits.map((c: any) => `- \`${c.commitHash}\`: ${c.commitMessage} (${c.files.length} files)`).join("\n")}\n\n*Verified and shipped automatically by AI Git Debugging Agent.*`;
+
+        const pr = await createGitHubPR(userId, owner, repoName, {
+          title,
+          body: prBody,
+          head: sourceBranch,
+          base: targetBranch,
+        });
+        prData = {
+          id: pr.id,
+          number: pr.number,
+          url: pr.htmlUrl,
+          title: pr.title,
+        };
+      } catch (prErr: any) {
+        console.warn("[gitShip] PR creation warning:", prErr.message);
+      }
+    }
+
+    response.status(200).json({
+      success: true,
+      message: `Shipped successfully: ${commitResult.totalCreated} commit(s) pushed on '${sourceBranch}'.${prData ? ` PR #${prData.number} created.` : ""}`,
+      branch: sourceBranch,
+      commits: commitResult.commits,
+      pushed: true,
+      pr: prData,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+

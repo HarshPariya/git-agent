@@ -99,9 +99,11 @@
       <nav class="header-nav">
         <div class="header-nav-item active" data-page="dashboard" id="nav-dashboard">Dashboard</div>
         <div class="header-nav-item" data-page="repositories" id="nav-repositories">Repositories</div>
-        <div class="header-nav-item" data-page="debug" id="nav-debug">Debug Tasks</div>
+        <div class="header-nav-item" data-page="git-desktop" id="nav-git-desktop">Git Desktop</div>
+        <div class="header-nav-item" data-page="debug" id="nav-debug">AI Debugging</div>
         <div class="header-nav-item" data-page="issues" id="nav-issues">Issues</div>
         <div class="header-nav-item" data-page="prs" id="nav-prs">Pull Requests</div>
+        <div class="header-nav-item" data-page="conflicts" id="nav-conflicts">Conflicts</div>
         <div class="header-nav-item" data-page="history" id="nav-history">History</div>
         <div class="header-nav-item" data-page="settings" id="nav-settings">Settings</div>
       </nav>
@@ -120,8 +122,12 @@
           Connect GitHub
         </button>
 
+        <button class="btn btn-secondary btn-sm" onclick="navigate('git-desktop')">
+          🖥️ Git Desktop
+        </button>
+
         <button class="btn btn-primary btn-sm" onclick="navigate('debug')">
-          ⚡ Debug Repository
+          ⚡ AI Debug
         </button>
 
         <button class="btn btn-secondary btn-sm btn-icon" id="user-menu-btn" title="Settings & Account">
@@ -146,8 +152,7 @@
               <div class="action-card-icon">⚡</div>
               <div class="action-card-title">Run AI Debugger</div>
               <div class="action-card-desc">
-                Describe a bug, test failure, regression, or merge conflict. The agent analyzes history & dependencies
-                to synthesize a fix.
+                Investigate bugs, test failures, regressions, and merge conflicts with autonomous multi-agent reasoning.
               </div>
             </div>
             <div class="action-card-footer">
@@ -156,32 +161,32 @@
             </div>
           </div>
 
-          <div class="action-card" onclick="openFolderBrowser()">
+          <div class="action-card" onclick="navigate('git-desktop')">
             <div>
-              <div class="action-card-icon" style="color:#0284c7">📁</div>
-              <div class="action-card-title">Browse Local Folders</div>
+              <div class="action-card-icon" style="color:#4f46e5">🖥️</div>
+              <div class="action-card-title">Open Git Desktop</div>
               <div class="action-card-desc">
-                Select any local repository on your system. Explore directories interactively with auto-detected Git
-                markers.
+                Inspect working tree changes, trigger AI semantic change grouping, review Conventional Commit plans, and
+                commit all.
               </div>
             </div>
-            <div class="action-card-footer" style="color:#0284c7">
-              <span>Browse files & folders</span>
+            <div class="action-card-footer" style="color:#4f46e5">
+              <span>Open Git Desktop</span>
               <span>→</span>
             </div>
           </div>
 
-          <div class="action-card" onclick="showGitHubModalFlow()">
+          <div class="action-card" onclick="openFolderBrowser()">
             <div>
-              <div class="action-card-icon" style="color:#1e293b">🐙</div>
-              <div class="action-card-title">Direct GitHub Connect</div>
+              <div class="action-card-icon" style="color:#0284c7">📁</div>
+              <div class="action-card-title">Connect Repository</div>
               <div class="action-card-desc">
-                Connect your GitHub account directly. Browse your cloud repositories, pull requests, and issues in one
-                click.
+                Connect any local folder or link GitHub cloud repositories to begin instant AI debugging and Git
+                operations.
               </div>
             </div>
-            <div class="action-card-footer" style="color:#1e293b">
-              <span>Connect & import repos</span>
+            <div class="action-card-footer" style="color:#0284c7">
+              <span>Browse & connect</span>
               <span>→</span>
             </div>
           </div>
@@ -189,21 +194,21 @@
 
         <!-- Stats Row -->
         <div class="grid-4" id="dashboard-stats">
-          <div class="stat-card">
+          <div class="stat-card" onclick="navigate('repositories')" style="cursor:pointer">
             <div class="stat-label">Connected Repositories</div>
             <div class="stat-value" id="stat-repos">0</div>
           </div>
-          <div class="stat-card">
+          <div class="stat-card" onclick="navigate('git-desktop')" style="cursor:pointer">
+            <div class="stat-label">Current Changes</div>
+            <div class="stat-value" id="stat-changes">0 files</div>
+          </div>
+          <div class="stat-card" onclick="navigate('debug')" style="cursor:pointer">
             <div class="stat-label">Debug Sessions</div>
             <div class="stat-value" id="stat-sessions">0</div>
           </div>
-          <div class="stat-card">
+          <div class="stat-card" onclick="navigate('history')" style="cursor:pointer">
             <div class="stat-label">Fixes Applied</div>
             <div class="stat-value" id="stat-fixes">0</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Agent Runs</div>
-            <div class="stat-value" id="stat-runs">0</div>
           </div>
         </div>
 
@@ -380,7 +385,144 @@
         </div>
       </div>
 
-      <!-- ===================== DEBUG SESSION ===================== -->
+      <!-- ===================== WORKSPACE B — GIT DESKTOP ===================== -->
+      <div id="page-git-desktop" class="page">
+        <!-- Git Desktop Repository Header -->
+        <div class="git-desktop-header card" style="margin-bottom:16px;padding:14px 18px">
+          <div class="git-desktop-repo-info">
+            <div class="git-repo-pill" onclick="openActiveRepoPicker()" title="Switch active repository"
+              style="cursor:pointer">
+              <span class="git-repo-icon">🌿</span>
+              <span id="gd-repo-name" class="git-repo-name" style="font-weight:700">Select a repository</span>
+              <span style="font-size:10px;color:var(--c-text-muted)">▾</span>
+            </div>
+            <div class="git-meta-item">
+              <span class="git-meta-label">Branch:</span>
+              <span id="gd-branch-name" class="badge badge-accent">main</span>
+            </div>
+            <div class="git-meta-item">
+              <span class="git-meta-label">Remote:</span>
+              <span id="gd-remote-name" class="git-meta-val">origin</span>
+            </div>
+            <div class="git-meta-item">
+              <span class="git-meta-label">Sync:</span>
+              <span id="gd-ahead-behind" class="badge" style="background:#f1f5f9;color:#334155">↑ 0 · ↓ 0</span>
+            </div>
+            <div class="git-meta-item">
+              <span class="git-meta-label">Working Tree:</span>
+              <span id="gd-working-status" class="badge badge-success">Clean</span>
+            </div>
+          </div>
+
+          <!-- Git Desktop Main Actions Toolbar -->
+          <div class="git-desktop-actions">
+            <button class="btn btn-primary btn-sm" id="gd-btn-analyze" onclick="triggerAIAnalyzeChanges()">
+              ⚡ AI Analyze Changes
+            </button>
+            <button class="btn btn-secondary btn-sm" id="gd-btn-fetch" onclick="triggerGitFetch()">
+              📥 Fetch
+            </button>
+            <button class="btn btn-secondary btn-sm" id="gd-btn-pull" onclick="triggerGitPull()">
+              ⬇️ Pull
+            </button>
+            <button class="btn btn-secondary btn-sm" id="gd-btn-sync" onclick="triggerGitSync()">
+              🔄 Sync
+            </button>
+            <button class="btn btn-secondary btn-sm" id="gd-btn-push" onclick="openPushPreviewModal()">
+              ⬆️ Push
+            </button>
+            <button class="btn btn-secondary btn-sm" id="gd-btn-ship" onclick="triggerAIShip()">
+              🚀 AI Ship
+            </button>
+          </div>
+        </div>
+
+        <!-- Git Desktop 2-Column Working Layout -->
+        <div class="git-desktop-grid">
+          <!-- Left Column: Changes Center -->
+          <div class="card" style="padding:0;overflow:hidden">
+            <div class="card-header"
+              style="padding:14px 18px;border-bottom:1px solid var(--c-border);display:flex;justify-content:space-between;align-items:center">
+              <div style="display:flex;align-items:center;gap:10px">
+                <div class="card-title" style="font-size:14px">Working Tree Changes</div>
+                <span class="badge badge-accent" id="gd-changes-count">0 files</span>
+              </div>
+              <div class="git-filter-tabs">
+                <button class="git-filter-tab active" data-filter="all" onclick="filterChangedFiles('all')">All</button>
+                <button class="git-filter-tab" data-filter="staged"
+                  onclick="filterChangedFiles('staged')">Staged</button>
+                <button class="git-filter-tab" data-filter="unstaged"
+                  onclick="filterChangedFiles('unstaged')">Unstaged</button>
+                <button class="git-filter-tab" data-filter="untracked"
+                  onclick="filterChangedFiles('untracked')">Untracked</button>
+              </div>
+            </div>
+
+            <!-- Changed Files Table Container -->
+            <div id="gd-changes-list" class="git-changes-table-container">
+              <div class="empty-state" style="padding:36px 20px">
+                <div class="empty-icon">✓</div>
+                <div class="empty-title">Working tree is clean</div>
+                <div class="empty-desc">No unstaged or modified files detected in the active repository.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: AI Semantic Grouping & Commit Plan -->
+          <div class="card" style="padding:0;overflow:hidden">
+            <div class="card-header"
+              style="padding:14px 18px;border-bottom:1px solid var(--c-border);background:var(--c-surface-hover);display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div class="card-title" style="font-size:14px">AI Change Analysis & Commit Plan</div>
+                <div class="card-subtitle" id="gd-ai-summary"
+                  style="font-size:12px;color:var(--c-text-secondary);margin-top:2px">
+                  Click "AI Analyze Changes" to inspect diffs and generate logical commits
+                </div>
+              </div>
+              <button class="btn btn-primary btn-sm" id="gd-btn-commit-all" onclick="triggerAICommitAll()"
+                style="display:none;white-space:nowrap">
+                ⚡ Commit All Groups
+              </button>
+            </div>
+
+            <div id="gd-commit-plan-container"
+              style="padding:16px;max-height:480px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
+              <div class="empty-state" style="padding:36px 20px">
+                <div class="empty-icon">🤖</div>
+                <div class="empty-title">No commit plan formulated yet</div>
+                <div class="empty-desc">Click "AI Analyze Changes" to classify files into logical commit groups with
+                  Conventional Commits.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom Panel: Diff & Output Inspector -->
+        <div class="card" style="margin-top:16px;padding:0;overflow:hidden">
+          <div class="tabs" style="padding:0 14px;border-bottom:1px solid var(--c-border)">
+            <div class="tab-item active" data-tab="gd-diff" onclick="switchGitDesktopTab('gd-diff')">Selected File Diff
+            </div>
+            <div class="tab-item" data-tab="gd-output" onclick="switchGitDesktopTab('gd-output')">Git Execution Output
+            </div>
+          </div>
+
+          <div id="panel-gd-diff" class="tab-panel active" style="padding:16px">
+            <div id="gd-diff-viewer" class="code-block"
+              style="height:260px;overflow-y:auto;font-family:var(--font-mono);font-size:12px">
+              Select any changed file above to inspect its unified diff.
+            </div>
+          </div>
+
+          <div id="panel-gd-output" class="tab-panel" style="display:none;padding:16px">
+            <div id="gd-console-output" class="code-block"
+              style="height:260px;overflow-y:auto;font-family:var(--font-mono);font-size:12px">
+              Git operation logs will appear here...
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== WORKSPACE A — AI DEBUGGING ===================== -->
       <div id="page-debug" class="page">
         <div id="debug-form-view">
           <div class="section-header">
@@ -725,6 +867,32 @@
         </div>
       </div>
 
+      <!-- ===================== 3-WAY MERGE CONFLICT CENTER ===================== -->
+      <div id="page-conflicts" class="page">
+        <div class="section-header">
+          <div>
+            <div class="section-title">3-Way Merge Conflict Center</div>
+            <div class="section-subtitle">Semantic resolution across merge, rebase, and cherry-pick branches</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <select class="form-select" id="conflicts-repo-select" style="width:220px" onchange="loadConflictsPage()">
+              <option value="">Select repository...</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="triggerResolveAllConflicts()">
+              ⚡ Resolve All Conflicts
+            </button>
+          </div>
+        </div>
+
+        <div id="conflicts-container" class="card" style="padding:0;overflow:hidden">
+          <div class="empty-state" style="padding:48px 24px">
+            <div class="empty-icon">🌿</div>
+            <div class="empty-title">No Active Conflicts</div>
+            <div class="empty-desc">The repository working tree is clean with no unresolved conflict markers.</div>
+          </div>
+        </div>
+      </div>
+
       <!-- ===================== HISTORY ===================== -->
       <div id="page-history" class="page">
         <div class="section-header">
@@ -987,13 +1155,71 @@
           Request</button>
       </div>
     </div>
-  </div>
+    <!-- Push Preview & Safeguards Modal -->
+    <div id="modal-push-preview" class="modal-overlay" style="display:none">
+      <div class="modal" style="max-width:640px;width:96vw">
+        <div class="modal-close" onclick="closeModal('modal-push-preview')">×</div>
+        <div class="modal-title">⬆️ Push Preview &amp; Pre-Push Safeguards</div>
+        <div class="modal-desc">Review outgoing commits, target remotes, and automated safety verifications before
+          pushing.</div>
 
-  <!-- Toast container -->
-  <div class="toast-container" id="toast-container"></div>
+        <div style="display:flex;flex-direction:column;gap:14px;margin-top:12px">
+          <!-- Target Branch Card -->
+          <div class="current-target-card" style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div style="font-weight:600;font-size:13px">Target Remote &amp; Branch:</div>
+              <div style="font-family:var(--font-mono);font-size:12px;margin-top:2px">
+                <code>origin</code> / <code id="push-target-branch" style="font-weight:700">main</code>
+              </div>
+            </div>
+            <div>
+              <span id="push-commits-count" class="badge badge-accent">0 outgoing commits</span>
+            </div>
+          </div>
 
-  <script src="/api.js"></script>
-  <script src="/app.js"></script>
+          <!-- Safeguards Checklist -->
+          <div class="card" style="padding:14px;background:var(--c-surface-hover);border:1px solid var(--c-border)">
+            <div style="font-weight:600;font-size:12px;margin-bottom:8px;color:var(--c-text)">AUTOMATED PRE-PUSH SAFETY
+              CHECKS</div>
+            <div style="display:flex;flex-direction:column;gap:8px;font-size:12px">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span>🌿 Branch Protection Rule</span>
+                <span id="push-check-branch" class="badge badge-success">PASSED (Safe Branch)</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span>🔐 Secret &amp; Credentials Leak Scanner</span>
+                <span id="push-check-secrets" class="badge badge-success">PASSED (0 Secrets)</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span>🧪 Pre-Push Test Suite Verification</span>
+                <span id="push-check-tests" class="badge badge-accent">READY</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Outgoing Commits List -->
+          <div>
+            <div style="font-weight:600;font-size:12px;margin-bottom:6px">OUTGOING COMMITS:</div>
+            <div id="push-commits-list"
+              style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:6px">
+              <div class="text-muted" style="font-size:12px">Loading outgoing commits...</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions" style="margin-top:16px">
+          <button class="btn btn-secondary" onclick="closeModal('modal-push-preview')">Cancel</button>
+          <button class="btn btn-primary" id="confirm-push-btn" onclick="executePushFromModal()">Confirm &amp; Push to
+            Remote</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="/api.js"></script>
+    <script src="/app.js"></script>
 </body>
 
 </html>

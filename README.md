@@ -31,13 +31,15 @@
 
 ## 🚀 Key Capabilities
 
+- **Dual-Workspace Architecture**:
+  - **Workspace A (AI Debugging)**: 22-state live agent loop with 6 quick modes (`DEBUG BUG`, `DEBUG ISSUE`, `DEBUG PR`, `DEBUG CI`, `DEBUG REGRESSION`, `RESOLVE CONFLICT`), ranked hypotheses, root-cause diagnosis, unified diffs, and 1-click rollback snapshots.
+  - **Workspace B (Git Desktop)**: Comprehensive working tree changes inspector (staged, unstaged, untracked, risk classification), `AI ANALYZE CHANGES` (semantic clustering via Groq LLM + GraphRAG), `AI COMMIT PLAN` (Conventional Commits), one-click `AI COMMIT ALL` (sequential atomic group commits with verified SHAs; never blind `git add .`), `FETCH`, `PULL`, `SYNC`, `PUSH` (with Push Preview Modal & branch safeguards), and end-to-end `AI SHIP`.
+- **4-Way Conflict Center**: Real-time side-by-side inspection (`BASE | OURS | THEIRS | AI RESOLUTION`) with syntax-safe semantic merge and automated test execution.
 - **Zero-Setup Local Workspace Mounting**: Connect any folder on your laptop (Windows, macOS, or Linux) directly from the dashboard using the built-in native filesystem browser, or connect remote GitHub repositories via Personal Access Token.
-- **Autonomous Multi-Agent Reasoning Loop**: Guided by a 28-state deterministic state machine (`TaskPlanner`, `ContextBuilder`, `HypothesisEngine`, `RootCauseAnalyzer`, `FixPlanner`, `CriticAgent`, `PatchEngine`).
 - **GraphRAG Code Intelligence**: Combines TypeScript Compiler AST extraction with 384-dimensional semantic feature hashing, dependency graph traversal, and Reciprocal Rank Fusion (RRF) reranking.
-- **Semantic 3-Way Merge Conflict Resolver**: Parses `<<<<<<<`, `|||||||`, `=======`, `>>>>>>>` markers, calculates AST impacts, and offers automated or selective resolutions.
-- **Strict Git Safety Rails & Push Safeguards**: Classifies 19 Git operations into `safe`, `controlled`, and `dangerous`. Blocks raw `--force` pushes and direct pushes to protected branches (`main`, `master`, `production`, `release`, etc.).
+- **Strict Git Safety Rails & Push Safeguards**: Classifies 19 Git operations into `safe`, `controlled`, and `dangerous`. Blocks raw `--force` pushes and direct pushes to protected branches (`main`, `master`, `production`, `release`).
 - **Deterministic 1-Click Rollback**: Automatically creates in-memory and disk snapshot backups before modifying any file, enabling instant reversion if tests fail.
-- **Real-Time Glassmorphic SPA Dashboard**: Sub-50ms responsive UI with live Server-Sent Events (SSE) log terminal, pipeline step progress, interactive diff viewers, and candidate hypothesis ranking cards.
+- **Professional Slate Developer-Tool UI**: Crisp, distraction-free modern interface with live Server-Sent Events (SSE) terminal, interactive change tables, and push safeguard modals.
 
 ---
 
@@ -147,7 +149,7 @@ Open **`http://localhost:3000`** in your browser to launch the Web Dashboard.
 The project includes an enterprise-grade automated test suite:
 
 ```bash
-# Run complete test suite (all 4 suites: Git Engine, Agent, API, Guardrails)
+# Run complete test suite (all 5 suites: Git Engine, Agent, API, Guardrails, Git Desktop)
 npm test
 
 # Run modular test suites individually
@@ -155,6 +157,7 @@ npm run test:git           # 24 tests: Git operations, branch protection, confli
 npm run test:agent         # 18 tests: State machine, Critic, Patch Engine
 npm run test:api           # 21 tests: Express routes, auth, filesystem browser
 npm run test:guardrails    # 22 tests: InputGuard, OutputGuard, resource limits
+npm run test:desktop       # 38 tests: File change detection, semantic clustering, atomic commits
 
 # Run Ingestion & GraphRAG verification
 npm run rag:security-test  # Path traversal and secret filtering

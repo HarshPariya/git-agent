@@ -173,6 +173,23 @@ Operations are partitioned into three distinct risk tiers:
   - `>>>>>>> incoming` (Their changes)
 - Generates resolutions with semantic confidence ratings and allows instant resolution via `ours`, `theirs`, or AI-merged strategies.
 
+### 4.4 Smart Change Analyzer & Commit Planner (`src/git/change-analyzer.ts`)
+- **Working Tree Inspection**: Detailed per-file additions, deletions, modified hunks, staged status, and risk calculation (`high` for auth/security, `medium` for api/core, `low` for docs/tests).
+- **Semantic Clustering**: Uses Groq LLM with GraphRAG context (with deterministic heuristic fallback) to cluster changed files into 1 to 4 logical commits instead of monolithic commits or single-file noise.
+- **Conventional Commit Generation**: Each logical group automatically receives an imperative Conventional Commit message (type, scope, subject <= 72 chars, and explanatory body).
+- **Atomic Sequential Commit Execution**:
+  - `executeCommitPlan` guarantees safe atomic staging:
+  1. Clears staging index (`git reset HEAD`).
+  2. For Group 1: stages only Group 1 files (`git add "<path>"`).
+  3. Commits and verifies resulting commit SHA via `git rev-parse --short HEAD`.
+  4. Repeats for Group 2, Group 3, etc.
+  - Guarantees working tree cleanliness without ever executing blind `git add .`.
+
+### 4.5 Dedicated 4-Way Conflict Center (`BASE | OURS | THEIRS | AI RESOLUTION`)
+- Side-by-side synchronized diff visualizer in the frontend SPA.
+- AST and semantic merge synthesis using Groq LLM with GraphRAG symbol graph awareness.
+- Auto-validation against automated build/test scripts before marking conflicts resolved.
+
 ---
 
 ## 5. GraphRAG & Code Intelligence Pipeline

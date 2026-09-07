@@ -256,3 +256,82 @@ Scans the repository for merge conflicts and returns 3-way conflict hunks.
 
 ### `POST /api/git/conflicts/resolve` *(Protected)*
 Resolves a conflicted file using strategy `"ours"`, `"theirs"`, or `"ai_semantic"`.
+
+### `POST /api/git/analyze-changes` *(Protected)*
+Analyzes working tree changed files, computes risk classifications, and uses Groq LLM + GraphRAG to synthesize a multi-group logical commit plan.
+- **Request Body**:
+  ```json
+  {
+    "repositoryId": "my-service"
+  }
+  ```
+- **Response `200 OK`**:
+  ```json
+  {
+    "summary": "4 changed files grouped into 2 logical commits.",
+    "totalFiles": 4,
+    "totalCommits": 2,
+    "groups": [
+      {
+        "id": "group-1",
+        "name": "Auth Service",
+        "reason": "Security and session expiration handling",
+        "risk": "high",
+        "files": ["src/auth/service.ts"],
+        "suggestedCommit": {
+          "type": "fix",
+          "scope": "auth",
+          "subject": "handle session expiration safely",
+          "body": "Ensures token renewal without unhandled exceptions."
+        }
+      }
+    ],
+    "changedFiles": [
+      {
+        "filePath": "src/auth/service.ts",
+        "status": "modified",
+        "staged": false,
+        "additions": 12,
+        "deletions": 3,
+        "risk": "high"
+      }
+    ]
+  }
+  ```
+
+### `POST /api/git/commit-plan/execute` *(Protected)*
+Executes the logical commit plan sequentially, staging only each group's files and verifying each resulting SHA.
+- **Request Body**:
+  ```json
+  {
+    "repositoryId": "my-service",
+    "groups": [ /* LogicalChangeGroup[] from analyze-changes */ ]
+  }
+  ```
+
+### `POST /api/git/commit-all` *(Protected)*
+Analyzes working tree and executes the full logical commit plan in a single autonomous request.
+
+### `POST /api/git/sync` *(Protected)*
+Executes safe fetch followed by pull, verifying dirty tree safeguards before merging remote commits.
+
+### `POST /api/git/ship` *(Protected)*
+One-click autonomous shipping pipeline:
+1. Analyzes working tree changes
+2. Generates logical commit plan
+3. Executes sequential atomic commits
+4. Validates pre-push safety controls and branch protection
+5. Pushes to remote repository
+6. Automatically creates GitHub Pull Request (if GitHub token is configured)
+- **Response `200 OK`**:
+  ```json
+  {
+    "success": true,
+    "branch": "feature/agent-llm",
+    "commitsCreated": 2,
+    "push": { "success": true, "output": "..." },
+    "pullRequest": { "number": 12, "url": "https://github.com/..." },
+    "message": "Successfully analyzed, committed, pushed, and shipped pull request."
+  }
+  ```
+

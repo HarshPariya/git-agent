@@ -189,10 +189,63 @@ class ApiClient {
   async getGitConflicts(repositoryId) {
     return this.request("/api/git/conflicts", { method: "POST", body: JSON.stringify({ repositoryId }) });
   }
-  async executeGitOperation(operation, data) {
-    return this.request(`/api/git/operations/${operation}`, { method: "POST", body: JSON.stringify(data) });
-  }
   async getOperationCatalog() { return this.request("/api/git/catalog"); }
+
+  // Git Desktop & AI Change Analysis
+  async analyzeChanges(repositoryId) {
+    return this.request("/api/git/analyze-changes", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId }),
+    });
+  }
+  async executeCommitPlan(repositoryId, groups) {
+    return this.request("/api/git/commit-plan/execute", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, groups }),
+    });
+  }
+  async commitAll(repositoryId) {
+    return this.request("/api/git/commit-all", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId }),
+    });
+  }
+  async gitFetch(repositoryId, remote = "origin") {
+    return this.request("/api/git/fetch", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, remote }),
+    });
+  }
+  async gitPull(repositoryId, remote = "origin", branch = "") {
+    return this.request("/api/git/pull", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, remote, branch }),
+    });
+  }
+  async gitPush(repositoryId, remote = "origin", branch = "", setUpstream = true) {
+    return this.request("/api/git/push", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, remote, branch, setUpstream }),
+    });
+  }
+  async gitSync(repositoryId, remote = "origin") {
+    return this.request("/api/git/sync", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, remote }),
+    });
+  }
+  async gitShip(repositoryId, targetBranch = "main", prTitle = "") {
+    return this.request("/api/git/ship", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, targetBranch, prTitle }),
+    });
+  }
+  async resolveConflicts(repositoryId) {
+    return this.request("/api/git/conflicts/resolve", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId }),
+    });
+  }
 
   // GraphRAG
   async indexRepository(repositoryId) {

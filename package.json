@@ -13,6 +13,7 @@
     "test:agent": "tsx tests/agent-orchestrator.test.ts",
     "test:api": "tsx tests/api.test.ts",
     "test:guardrails": "tsx tests/guardrails.test.ts",
+    "test:desktop": "tsx tests/git-desktop.test.ts",
     "rag:parse": "tsx src/ingestion/test-parser.ts",
     "rag:graph": "tsx src/retrieval/test-graph-search.ts",
     "rag:vector": "tsx src/retrieval/test-vector-search.ts",
