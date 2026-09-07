@@ -12,7 +12,12 @@ import type {
   ToolLlmResponse,
 } from "../types/llm.js";
 
-export type { LlmTool, ToolLlmResponse };
+export type { LlmTool, LlmResponse, ToolLlmResponse };
+
+export interface LlmMessage {
+  readonly role: "system" | "user";
+  readonly content: string;
+}
 
 const MAX_COMPLETION_TOKENS = 4096;
 
@@ -274,6 +279,24 @@ export const generateText = async ({
 
 export const groqProvider: LlmProvider = {
   generate: generateText,
+};
+
+export const isLlmAvailable = async (): Promise<boolean> =>
+  Boolean(env.groqApiKey);
+
+export const callLlm = async (
+  messages: readonly LlmMessage[],
+  options: { readonly maxTokens?: number; readonly temperature?: number } = {},
+): Promise<LlmResponse & { readonly content: string }> => {
+  void options;
+  const system = messages.find((message) => message.role === "system");
+  const user = messages.find((message) => message.role === "user");
+  const response = await generateText({
+    instructions: system?.content ?? "",
+    input: user?.content ?? "",
+  });
+
+  return { ...response, content: response.text };
 };
 
 export const generateWithTools = async ({

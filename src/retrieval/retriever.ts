@@ -266,7 +266,13 @@ export class CodeRetriever {
       for (const chunk of fileLookupChunks) {
         if (!uniqueFiles.has(chunk.filePath)) uniqueFiles.set(chunk.filePath, chunk);
       }
-      return [...uniqueFiles.values()].slice(0, requestedLimit).map((chunk, index) => ({
+      return [...uniqueFiles.values()]
+        .sort((a, b) => {
+          const depth = (filePath: string) => filePath.split(/[\\/]/).length;
+          return depth(a.filePath) - depth(b.filePath) || a.filePath.localeCompare(b.filePath);
+        })
+        .slice(0, requestedLimit)
+        .map((chunk, index) => ({
         rank: index + 1,
         name: chunk.name ?? path.basename(chunk.filePath),
         type: chunk.type,
@@ -279,7 +285,7 @@ export class CodeRetriever {
         graphScore: 0,
         rerankScore: 1,
         sources: ["vector"],
-      }));
+        }));
     }
 
     if (requestedFilename) {

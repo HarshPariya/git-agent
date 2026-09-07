@@ -17,6 +17,7 @@ export const IGNORED_DIRECTORIES = new Set([
   "coverage",
   ".turbo",
   ".cache",
+  ".claude",
 ]);
 
 export const IGNORED_FILES = new Set([

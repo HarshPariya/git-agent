@@ -20,7 +20,11 @@ export interface AuthSession {
   readonly exp: number;
 }
 
-const JWT_SECRET = process.env.AUTH_SECRET || "codegpt-enterprise-auth-secret-key-2026";
+const JWT_SECRET = process.env.AUTH_SECRET?.trim();
+if (!JWT_SECRET && process.env.NODE_ENV === "production") {
+  throw new Error("AUTH_SECRET must be configured in production");
+}
+const SESSION_SECRET = JWT_SECRET || "development-only-auth-secret";
 const TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 const hashPassword = (password: string, salt: string): string => {
@@ -122,7 +126,7 @@ export const createSessionToken = (user: User): string => {
   };
 
   const encodedPayload = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  const signature = crypto.createHmac("sha256", JWT_SECRET).update(encodedPayload).digest("base64url");
+  const signature = crypto.createHmac("sha256", SESSION_SECRET).update(encodedPayload).digest("base64url");
   return `${encodedPayload}.${signature}`;
 };
 
@@ -140,7 +144,7 @@ export const verifySessionToken = (token: string): AuthSession => {
     throw new AppError("Invalid authentication token", "AUTHENTICATION_ERROR", 401);
   }
 
-  const expectedSignature = crypto.createHmac("sha256", JWT_SECRET).update(encodedPayload).digest("base64url");
+  const expectedSignature = crypto.createHmac("sha256", SESSION_SECRET).update(encodedPayload).digest("base64url");
   const sigBuf = Buffer.from(signature);
   const expBuf = Buffer.from(expectedSignature);
   if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {

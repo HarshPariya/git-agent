@@ -256,3 +256,51 @@ export function getGraphStats(graph: CodeGraph) {
     ),
   };
 }
+
+export const graphBuilder = {
+  async indexRepository(repository: Repository) {
+    const parsedFiles = await parseRepository(repository.localPath);
+    const entities = extractEntities(parsedFiles);
+    const relationships = extractRelationships(parsedFiles, entities);
+    const nodes: CodeGraphNode[] = entities.map((entity) => ({
+      id: entity.id,
+      filePath: entity.filePath ?? "",
+      name: entity.name,
+      kind: entity.type === "file" ? "module" : entity.type,
+      startLine: entity.startLine ?? 1,
+      endLine: entity.endLine ?? entity.startLine ?? 1,
+    }));
+    const edges: CodeGraphEdge[] = relationships.map((relationship) => ({
+      sourceId: relationship.sourceId,
+      targetId: relationship.targetId,
+      relationship:
+        relationship.type === "contains" ||
+        relationship.type === "imports" ||
+        relationship.type === "calls"
+          ? relationship.type
+          : "references",
+    }));
+    const symbols: CodeSymbol[] = nodes.map((node) => ({
+      id: node.id,
+      repositoryId: repository.id,
+      filePath: node.filePath,
+      name: node.name,
+      kind: node.kind,
+      startLine: node.startLine,
+      endLine: node.endLine,
+      language: "unknown",
+    }));
+
+    return { nodes, edges, symbols };
+  },
+};
+
+import { parseRepository } from "../ingestion/parser.js";
+import { extractEntities } from "./entity-extractor.js";
+import { extractRelationships } from "./relationship-extractor.js";
+import type {
+  CodeGraphEdge,
+  CodeGraphNode,
+  CodeSymbol,
+  Repository,
+} from "../types/git.js";

@@ -1,92 +1,184 @@
-import type { CriticRequest, CriticResult } from "../types/agent.js";
+/**
+ * Critic Agent
+ * Reviews proposed fixes for correctness, safety, and completeness.
+ * Returns APPROVED or REJECTED with detailed feedback.
+ */
 
-export type { CriticRequest, CriticResult };
+import { callLlm, isLlmAvailable } from "../llm/client.js";
+import type { FixPlan } from "./fix-planner.js";
+import type { DebugContext } from "./context-builder.js";
 
-const normalize = (value: string): readonly string[] =>
-  value
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .split(/\s+/)
-    .filter((token) => token.length > 2);
+export type CriticVerdict = "APPROVED" | "REJECTED" | "NEEDS_REVISION";
 
-const getNumbers = (value: string): readonly string[] =>
-  value.match(/\b\d+(?:\.\d+)?\b/g) ?? [];
+export interface CriticFinding {
+  readonly severity: "critical" | "major" | "minor" | "info";
+  readonly category:
+    | "correctness"
+    | "security"
+    | "performance"
+    | "test_coverage"
+    | "scope_creep"
+    | "git_safety"
+    | "regression_risk";
+  readonly description: string;
+  readonly suggestion?: string;
+}
 
-const hasConflictingNumbers = (answer: string, context: string): boolean => {
-  const answerNumbers = new Set(getNumbers(answer));
-  const contextNumbers = new Set(getNumbers(context));
-  return (
-    answerNumbers.size > 0 &&
-    contextNumbers.size > 0 &&
-    [...answerNumbers].some((number) => !contextNumbers.has(number))
-  );
-};
+export interface CriticReview {
+  readonly verdict: CriticVerdict;
+  readonly score: number; // 0-100
+  readonly summary: string;
+  readonly findings: readonly CriticFinding[];
+  readonly fixesRootCause: boolean;
+  readonly testsAdequate: boolean;
+  readonly gitStateSafe: boolean;
+  readonly reviewedAt: string;
+}
 
-const getOverlap = (
-  answerTokens: readonly string[],
-  contextTokens: ReadonlySet<string>,
-): number => answerTokens.filter((token) => contextTokens.has(token)).length;
-
-type ValidationRule = (ctx: {
-  normalizedAnswer: string;
-  normalizedContext: string;
-  questionTokens: readonly string[];
-  answerTokens: readonly string[];
-  contextTokens: Set<string>;
-}) => CriticResult | null;
-
-const CRITIC_RULES: readonly ValidationRule[] = [
-  ({ normalizedAnswer }) =>
-    !normalizedAnswer
-      ? { passed: false, reason: "The answer is empty." }
-      : null,
-  ({ normalizedContext }) =>
-    !normalizedContext
-      ? { passed: false, reason: "No supporting context was provided." }
-      : null,
-  ({ normalizedAnswer, normalizedContext }) =>
-    hasConflictingNumbers(normalizedAnswer, normalizedContext)
-      ? {
-        passed: false,
-        reason:
-          "The answer contains numeric claims that conflict with the provided context.",
-      }
-      : null,
-  ({ questionTokens, answerTokens }) =>
-    getOverlap(questionTokens, new Set(answerTokens)) === 0
-      ? { passed: false, reason: "The answer does not address the question." }
-      : null,
-  ({ answerTokens, contextTokens }) =>
-    getOverlap(answerTokens, contextTokens) === 0
-      ? {
-        passed: false,
-        reason:
-          "The answer does not contain information supported by the provided context.",
-      }
-      : null,
-];
-
-export const evaluateAnswer = ({
-  question,
-  answer,
-  context,
-}: CriticRequest): CriticResult => {
-  const normalizedAnswer = answer.trim();
-  const normalizedContext = context.trim();
-  const state = {
-    normalizedAnswer,
-    normalizedContext,
-    questionTokens: normalize(question),
-    answerTokens: normalize(normalizedAnswer),
-    contextTokens: new Set(normalize(normalizedContext)),
-  };
-
-  const failure = CRITIC_RULES.map((rule) => rule(state)).find(Boolean);
-  return (
-    failure ?? {
-      passed: true,
-      reason:
-        "The answer contains information supported by the provided context.",
+export class CriticAgent {
+  async review(
+    plan: FixPlan,
+    ctx: DebugContext,
+    testsPassed: boolean,
+  ): Promise<CriticReview> {
+    if (await isLlmAvailable()) {
+      return this.reviewWithLlm(plan, ctx, testsPassed);
     }
-  );
-};
+    return this.reviewDeterministic(plan, ctx, testsPassed);
+  }
+
+  private async reviewWithLlm(
+    plan: FixPlan,
+    ctx: DebugContext,
+    testsPassed: boolean,
+  ): Promise<CriticReview> {
+    const prompt = `You are a senior software engineer conducting a critical code review.
+
+DEBUGGING TASK: ${ctx.query}
+ROOT CAUSE: ${plan.rootCause}
+RISK LEVEL: ${plan.riskLevel}
+TESTS PASSED: ${testsPassed}
+
+FILES CHANGED:
+${plan.filesToChange.map((f) => `- ${f.filePath}: ${f.description}`).join("\n") || "None"}
+
+EVIDENCE USED:
+${plan.evidence.slice(0, 5).join("\n")}
+
+Review this fix and respond in JSON:
+{
+  "verdict": "APPROVED|REJECTED|NEEDS_REVISION",
+  "score": 0-100,
+  "summary": "One paragraph review summary",
+  "findings": [
+    {
+      "severity": "critical|major|minor|info",
+      "category": "correctness|security|performance|test_coverage|scope_creep|git_safety|regression_risk",
+      "description": "Specific finding",
+      "suggestion": "Optional suggestion"
+    }
+  ],
+  "fixesRootCause": true|false,
+  "testsAdequate": true|false,
+  "gitStateSafe": true|false
+}
+
+REVIEW CRITERIA:
+- Does the fix address the actual root cause?
+- Are tests adequate?
+- Does it introduce regressions?
+- Is the scope limited to the problem?
+- Is the git state safe?
+- Are security implications considered?
+- CRITICAL findings => REJECTED
+- Score >= 80 => APPROVED
+- Score 60-79 => NEEDS_REVISION
+- Score < 60 => REJECTED`;
+
+    try {
+      const response = await callLlm([
+        { role: "system", content: "You are a senior code reviewer. Output only valid JSON." },
+        { role: "user", content: prompt },
+      ]);
+
+      const jsonMatch = /\{[\s\S]*\}/.exec(response.content);
+      if (!jsonMatch) throw new Error("No JSON");
+
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        verdict?: CriticVerdict;
+        score?: number;
+        summary?: string;
+        findings?: CriticFinding[];
+        fixesRootCause?: boolean;
+        testsAdequate?: boolean;
+        gitStateSafe?: boolean;
+      };
+
+      return {
+        verdict: parsed.verdict ?? "NEEDS_REVISION",
+        score: Math.min(100, Math.max(0, parsed.score ?? 70)),
+        summary: parsed.summary ?? "Review complete.",
+        findings: parsed.findings ?? [],
+        fixesRootCause: parsed.fixesRootCause ?? true,
+        testsAdequate: parsed.testsAdequate ?? testsPassed,
+        gitStateSafe: parsed.gitStateSafe ?? true,
+        reviewedAt: new Date().toISOString(),
+      };
+    } catch {
+      return this.reviewDeterministic(plan, ctx, testsPassed);
+    }
+  }
+
+  private reviewDeterministic(
+    plan: FixPlan,
+    _ctx: DebugContext,
+    testsPassed: boolean,
+  ): CriticReview {
+    const findings: CriticFinding[] = [];
+    let score = 75;
+
+    if (!testsPassed) {
+      score -= 30;
+      findings.push({
+        severity: "critical",
+        category: "correctness",
+        description: "Tests did not pass after applying fix.",
+        suggestion: "Investigate failing tests before approving.",
+      });
+    }
+
+    if (plan.filesToChange.length === 0) {
+      score -= 10;
+      findings.push({
+        severity: "minor",
+        category: "correctness",
+        description: "No files were changed. Fix may be incomplete.",
+      });
+    }
+
+    if (plan.riskLevel === "HIGH" || plan.riskLevel === "CRITICAL") {
+      score -= 15;
+      findings.push({
+        severity: "major",
+        category: "git_safety",
+        description: `Fix carries ${plan.riskLevel} risk. Manual review strongly recommended.`,
+      });
+    }
+
+    const verdict: CriticVerdict =
+      score >= 80 ? "APPROVED" : score >= 60 ? "NEEDS_REVISION" : "REJECTED";
+
+    return {
+      verdict,
+      score,
+      summary: `Deterministic review: ${verdict}. Score: ${score}/100. Tests: ${testsPassed ? "PASSED" : "FAILED"}.`,
+      findings,
+      fixesRootCause: true,
+      testsAdequate: testsPassed,
+      gitStateSafe: plan.riskLevel !== "CRITICAL",
+      reviewedAt: new Date().toISOString(),
+    };
+  }
+}
+
+export const criticAgent = new CriticAgent();

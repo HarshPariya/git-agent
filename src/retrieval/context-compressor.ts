@@ -1,8 +1,13 @@
-import type { UnifiedRetrievalResult } from "./unified-retriever.js";
+import type { RetrievalResult } from "./types.js";
+
+export interface UnifiedRetrievalResult extends RetrievalResult {
+  readonly sourceType?: "code" | undefined;
+  readonly pageNumber?: number | undefined;
+}
 
 export interface CompressedEvidence {
   readonly id: string;
-  readonly sourceType: "code" | "document";
+  readonly sourceType: "code";
   readonly source: string;
   readonly location?: string | undefined;
   readonly page?: number | undefined;
@@ -50,7 +55,7 @@ export function compressContext(
     const pg = item.pageNumber ?? (item.metadata?.pageNumber ? Number(item.metadata.pageNumber) : undefined);
     return {
       id: `S${index + 1}`,
-      sourceType: item.sourceType ?? "code",
+      sourceType: "code",
       source: item.source,
       ...(loc !== undefined && { location: loc }),
       ...(pg !== undefined && { page: pg }),

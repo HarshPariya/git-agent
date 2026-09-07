@@ -5,6 +5,7 @@ import { authorize, type Permission } from "../security/authorization.js";
 import { InMemoryRateLimiter } from "../security/rate-limit.js";
 import { createTenantContext } from "../security/tenant-context.js";
 import { verifySessionToken } from "../security/auth.js";
+import { getPermissionFromPath } from "./permission.js";
 
 const DEFAULT_RATE_LIMIT_MAX = 30;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
@@ -66,16 +67,24 @@ export const rateLimiter = new InMemoryRateLimiter(
 export const createSecurityMiddleware = (requiredPermission?: Permission) => {
   return (request: Request, response: Response, next: NextFunction): void => {
     try {
-      let tenantId = request.header("x-tenant-id")?.trim();
-      let userId = request.header("x-user-id")?.trim();
-      let role = request.header("x-user-role")?.trim() ?? "user";
+      let tenantId: string | undefined;
+      let userId: string | undefined;
+      let role = "user";
 
-      // 1. Check for Bearer token authorization
+      // 1. Check for Bearer token authorization (header or query param for SSE EventSource)
       const authHeader = request.header("authorization")?.trim();
-      if (authHeader && authHeader.startsWith("Bearer ")) {
-        const token = authHeader.slice(7).trim();
+      const queryToken =
+        typeof request.query?.token === "string"
+          ? request.query.token.trim()
+          : undefined;
+      const rawToken =
+        authHeader && authHeader.startsWith("Bearer ")
+          ? authHeader.slice(7).trim()
+          : queryToken;
+
+      if (rawToken) {
         try {
-          const session = verifySessionToken(token);
+          const session = verifySessionToken(rawToken);
           tenantId = session.tenantId;
           userId = session.userId;
           role = session.role;
@@ -88,6 +97,22 @@ export const createSecurityMiddleware = (requiredPermission?: Permission) => {
           });
           return;
         }
+      }
+
+      if (!rawToken && process.env.NODE_ENV === "production") {
+        response.status(401).json({
+          error: {
+            code: "AUTHENTICATION_ERROR",
+            message: "Bearer authentication is required.",
+          },
+        });
+        return;
+      }
+
+      if (!rawToken) {
+        tenantId = (request.header("x-tenant-id") ?? (request.query["x-tenant-id"] as string | undefined) ?? (request.query["tenantId"] as string | undefined))?.trim();
+        userId = (request.header("x-user-id") ?? (request.query["x-user-id"] as string | undefined) ?? (request.query["userId"] as string | undefined))?.trim();
+        role = (request.header("x-user-role") ?? (request.query["x-user-role"] as string | undefined) ?? (request.query["role"] as string | undefined))?.trim() ?? "developer";
       }
 
       if (!tenantId || !userId) {
@@ -108,12 +133,7 @@ export const createSecurityMiddleware = (requiredPermission?: Permission) => {
       const reqMethod = request.method ?? "POST";
 
       const permissionToCheck: Permission =
-        requiredPermission ??
-        (reqPath.includes("/documents")
-          ? reqMethod === "GET"
-            ? "documents:read"
-            : "documents:write"
-          : "chat:write");
+        requiredPermission ?? getPermissionFromPath(reqPath, reqMethod);
 
       const unauthorized = !authorize({
         context,

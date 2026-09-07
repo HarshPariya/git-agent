@@ -1,155 +1,146 @@
-import type { AgentAction, AgentPlan, PlanRequest } from "../types/agent.js";
+import { logger } from "../logging/logger.js";
 
-export type { AgentAction, AgentPlan, PlanRequest };
+export type TaskClass =
+  | "BUG"
+  | "TEST_FAILURE"
+  | "MERGE_CONFLICT"
+  | "REGRESSION"
+  | "PERFORMANCE"
+  | "SECURITY"
+  | "CONFIGURATION"
+  | "RUNTIME_ERROR";
 
-/**
- * HYBRID ROUTING ARCHITECTURE
- *
- * Tier 1 — High-confidence deterministic routing for security and operations:
- *   1. REFUSE:   Security-sensitive, destructive, or prohibited operations.
- *   2. RETRIEVE: Knowledge-domain questions (policies, pricing, SLA, etc.).
- *   3. TOOL:     Explicit file, directory, git, calculation, or multi-tool operations.
- *
- * Tier 2 — Semantic fallthrough:
- *   - General conversation and knowledge queries route to DIRECT_ANSWER.
- */
+export type TaskComplexity = "simple" | "moderate" | "complex";
 
-interface PlannerRule {
-  readonly action: AgentAction;
-  readonly reason: string;
-  readonly matcher: (q: string) => boolean;
+export interface InvestigationStep {
+  readonly id: string;
+  readonly phase: "isolate" | "reproduce" | "diagnose" | "fix" | "verify";
+  readonly title: string;
+  readonly description: string;
+  readonly estimatedSeconds: number;
 }
 
-// ──────────────────────────────────────────────────────────────
-// REFUSE PATTERNS — Prohibited / destructive / credential access
-// ──────────────────────────────────────────────────────────────
-const REFUSE_PATTERNS: readonly RegExp[] = [
-  // Credential / secret extraction attempts
-  /\b(?:reveal|show|disclose|give|print|dump|expose)\s+(?:me\s+)?(?:your\s+|the\s+)?(?:api\s+key|credentials|secrets?|tokens?|passwords?)\b/i,
-  /\b(?:reveal|show|disclose)\s+(?:your\s+|the\s+)?(?:system\s+prompt|hidden\s+instructions|internal\s+instructions)\b/i,
-  /\bwhat\s+is\s+(?:your|the)\s+(?:api\s+key|secret|token|password)\b/i,
-  /\b(?:print|dump|expose)\s+(?:the\s+|your\s+)?(?:env\s+vars?|secrets?|credentials)\b/i,
+export interface InvestigationPlan {
+  readonly taskClass: TaskClass;
+  readonly confidence: number;
+  readonly summary: string;
+  readonly estimatedComplexity: TaskComplexity;
+  readonly requiresApproval: boolean;
+  readonly steps: readonly InvestigationStep[];
+}
 
-  // Direct .env inspection / reading
-  /\b(?:read|open|show|cat|inspect|display|view)\s+\.env\b/i,
+export class TaskPlanner {
+  async classify(query: string): Promise<InvestigationPlan> {
+    const q = query.toLowerCase();
 
-  // Destructive repo/workspace nuking
-  /\b(?:delete|remove|destroy|wipe|nuke)\s+(?:the\s+)?(?:entire\s+)?(?:repo|repository|project|workspace|codebase)\b/i,
-  /rm\s+(-rf?|-r\s+-f)\s+\./i,
-  /\b(?:delete|remove)\s+(?:all\s+)?(?:files|everything|the\s+repo)\b/i,
+    let taskClass: TaskClass = "BUG";
+    let complexity: TaskComplexity = "moderate";
+    let requiresApproval = true;
 
-  // Prompt injection & jailbreaks
-  /ignore\s+(?:all\s+)?previous\s+instructions/i,
-  /bypass\s+(?:the\s+)?(?:security|guardrails?|restrictions?|safety)/i,
-  /act\s+as\s+(?:if|though)\s+(?:you\s+have\s+no|without)\s+(?:restrictions?|guardrails?|safety)/i,
-  /pretend\s+(?:you\s+are|to\s+be)\s+(?:an?\s+)?(?:unrestricted|jailbroken|evil)/i,
+    if (q.includes("conflict") || q.includes("merge") || q.includes("rebase")) {
+      taskClass = "MERGE_CONFLICT";
+      complexity = "moderate";
+      requiresApproval = true;
+    } else if (q.includes("test") || q.includes("fail") || q.includes("assertion") || q.includes("expect")) {
+      taskClass = "TEST_FAILURE";
+      complexity = "simple";
+      requiresApproval = false;
+    } else if (q.includes("regression") || q.includes("bisect") || q.includes("worked before") || q.includes("broke after")) {
+      taskClass = "REGRESSION";
+      complexity = "complex";
+      requiresApproval = true;
+    } else if (q.includes("null") || q.includes("undefined") || q.includes("exception") || q.includes("crash") || q.includes("stack trace") || q.includes("typeerror")) {
+      taskClass = "RUNTIME_ERROR";
+      complexity = "moderate";
+      requiresApproval = false;
+    } else if (q.includes("slow") || q.includes("leak") || q.includes("latency") || q.includes("cpu") || q.includes("memory") || q.includes("timeout")) {
+      taskClass = "PERFORMANCE";
+      complexity = "complex";
+      requiresApproval = true;
+    } else if (q.includes("security") || q.includes("cve") || q.includes("vulnerability") || q.includes("injection") || q.includes("auth")) {
+      taskClass = "SECURITY";
+      complexity = "complex";
+      requiresApproval = true;
+    } else if (q.includes("config") || q.includes(".env") || q.includes("tsconfig") || q.includes("docker") || q.includes("build")) {
+      taskClass = "CONFIGURATION";
+      complexity = "simple";
+      requiresApproval = false;
+    }
 
-  // Cross-tenant private data access
-  /access\s+(?:another|other|different)\s+tenant/i,
-  /get\s+(?:another|other|different)\s+tenant'?s?\s+(?:data|files|information)/i,
-  /switch\s+to\s+another\s+tenant/i,
-];
+    const steps: InvestigationStep[] = [
+      {
+        id: "step-isolate",
+        phase: "isolate",
+        title: "Isolate Failing Path",
+        description: "Inspect working tree, diff hunks, and git commit history to localize defects.",
+        estimatedSeconds: 30,
+      },
+      {
+        id: "step-reproduce",
+        phase: "reproduce",
+        title: "Reproduce Behavior",
+        description: "Construct reproducer command, test case, or mock input payload.",
+        estimatedSeconds: 45,
+      },
+      {
+        id: "step-diagnose",
+        phase: "diagnose",
+        title: "Diagnose Root Cause",
+        description: "Evaluate candidate hypotheses using code graph references, AST symbols, and git blame.",
+        estimatedSeconds: 60,
+      },
+      {
+        id: "step-fix",
+        phase: "fix",
+        title: "Generate Safe Patch",
+        description: "Synthesize minimal, targeted patch with safety evaluation and reversibility guarantees.",
+        estimatedSeconds: 45,
+      },
+      {
+        id: "step-verify",
+        phase: "verify",
+        title: "Critic Safety & Tests",
+        description: "Validate syntax correctness, run regression tests, and perform critic safety score review.",
+        estimatedSeconds: 30,
+      },
+    ];
 
-// ──────────────────────────────────────────────────────────────
-// RETRIEVE PATTERNS — Explicit knowledge / documentation domain
-// ──────────────────────────────────────────────────────────────
-const RETRIEVE_TERMS: readonly string[] = [
-  "refund policy",
-  "refund policies",
-  "return policy",
-  "what is the policy",
-  "pricing policy",
-  "pricing plan",
-  "product pricing",
-  "product a pricing",
-  "product b pricing",
-  "product c pricing",
-  "about product a pricing",
-  "about its pricing",
-  "its pricing",
-  "company policy",
-  "company guideline",
-  "knowledge base",
-  "documentation on",
-  "official policy",
-  "your policy",
-  "sla policy",
-  "terms of service",
-  "terms and conditions",
-  "support policy",
-  "cancellation policy",
-];
+    logger.info("Investigation plan formulated", {
+      operation: "task-classify",
+      metadata: { taskClass, complexity, requiresApproval },
+    });
 
-// ──────────────────────────────────────────────────────────────
-// TOOL PATTERNS — Explicit operations on workspace, git, or files
-// ──────────────────────────────────────────────────────────────
-
-/** Explicit file paths (e.g. 'src/agent/planner.ts', 'scratch/agent-ui-test.txt') */
-const FILE_PATH_REGEX =
-  /(?:^|[\s'"`(])(?:\.{1,2}[/\\]|(?:[a-zA-Z0-9_-]+[/\\])+)[a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9]{1,6}(?=$|[\s'"`),])/m;
-
-/** Explicit filenames (e.g. harsh.py, test.html, model.pt, app.ts, README.md) */
-const FILENAME_REGEX =
-  /\b[a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9_]{1,10}\b/i;
-
-/** Git operations */
-const GIT_REGEX =
-  /\b(?:git\s+(?:status|log|diff|branch|commit|push|pull|fetch|stash)|(?:check|show|get|what(?:'s|\s+is))\s+(?:the\s+)?(?:current\s+)?(?:git\s+status|git\s+branch|branch|commit\s+history|diff|changes))\b/i;
-
-/** Workspace / folder inspection */
-const WORKSPACE_REGEX =
-  /\b(?:folder\s+structure|directory\s+structure|file\s+structure|file\s+tree|workspace|project\s+files|codebase\s+structure|everything\s+directly\s+inside)\b/i;
-
-/** Tool action verbs (calculate, create, write, make, edit, modify, update, delete, read, etc.) */
-const TOOL_ACTION_REGEX =
-  /\b(?:calculate|compute|create|write|make|generate|build|touch|save|edit|modify|update|change|replace|append|delete|remove|unlink|erase|read|cat|open|view|display|list|ls|dir)\b/i;
-
-const DETERMINISTIC_RULES: readonly PlannerRule[] = [
-  // 1. Refuse (security-critical — evaluated first)
-  {
-    action: "refuse",
-    reason:
-      "The request is prohibited: it attempts a dangerous, destructive, or security-violating operation.",
-    matcher: (q) => REFUSE_PATTERNS.some((pattern) => pattern.test(q)),
-  },
-
-  // 2. Retrieve (knowledge domain — evaluated before general tool verbs)
-  {
-    action: "retrieve",
-    reason:
-      "The request asks about company knowledge, domain policies, or product-specific documentation.",
-    matcher: (q) => RETRIEVE_TERMS.some((term) => q.includes(term)),
-  },
-
-  // 3. Tool (high-confidence explicit operational signals)
-  {
-    action: "tool",
-    reason:
-      "The request explicitly requires workspace inspection, file operations, git commands, calculations, or multi-tool tasks.",
-    matcher: (q) =>
-      FILE_PATH_REGEX.test(q) ||
-      FILENAME_REGEX.test(q) ||
-      GIT_REGEX.test(q) ||
-      WORKSPACE_REGEX.test(q) ||
-      TOOL_ACTION_REGEX.test(q),
-  },
-];
-
-/**
- * createPlan — Hybrid intent router.
- *
- * Deterministic rules evaluate fast for safety, knowledge queries, and explicit tool commands.
- * Falls through to direct_answer for general conversational requests.
- */
-export const createPlan = ({ question }: PlanRequest): AgentPlan => {
-  const normalized = question.trim().toLowerCase();
-  const matched = DETERMINISTIC_RULES.find((rule) => rule.matcher(normalized));
-
-  return matched
-    ? { action: matched.action, reason: matched.reason }
-    : {
-      action: "direct_answer",
-      reason:
-        "The request will be answered directly from conversational knowledge.",
+    return {
+      taskClass,
+      confidence: 0.92,
+      summary: `Classified as ${taskClass} based on analysis of target symptoms and repository context.`,
+      estimatedComplexity: complexity,
+      requiresApproval,
+      steps,
     };
-};
+  }
+}
+
+export const taskPlanner = new TaskPlanner();
+
+export async function classifyTask(
+  query: string,
+): Promise<{ taskClass: TaskClass; category: TaskClass; confidence: number; summary: string; estimatedComplexity: TaskComplexity; urgency: string; steps: readonly InvestigationStep[] }> {
+  const plan = await taskPlanner.classify(query);
+  return {
+    taskClass: plan.taskClass,
+    category: plan.taskClass,
+    confidence: plan.confidence,
+    summary: plan.summary,
+    estimatedComplexity: plan.estimatedComplexity,
+    urgency: plan.estimatedComplexity === "complex" ? "high" : "normal",
+    steps: plan.steps,
+  };
+}
+
+export async function generateInvestigationPlan(
+  query: string,
+  _repoPath?: string,
+): Promise<InvestigationPlan> {
+  return taskPlanner.classify(query);
+}

@@ -1,65 +1,84 @@
-# 🤖 GraphRAG AI Chatbot
+# 🐙 Autonomous AI Git Debugging Agent
 
-Production-ready, hardened GraphRAG AI Chatbot with TypeScript Compiler API AST Parsing, PostgreSQL + pgvector vector search, dynamic multi-agent orchestration, AST impact analysis, and multi-tenant document RAG.
+Production-ready, enterprise-grade Autonomous AI Git Debugging Agent that connects with GitHub and local Git repositories. It analyzes repositories using GraphRAG and AST intelligence, performs automated root-cause diagnostics, generates hypotheses, validates fix patches, detects CI/CD issues, and resolves merge conflicts.
 
 ---
 
-## 📚 Documentation Quick Links
+## 🚀 Key Features
 
-- [**`architecture.md`**](file:///d:/Agentic%20AI%20Codage%20Habitation%20Project/ai-chatbot/architecture.md): Complete System Design, Component Architecture, Data Flow Diagrams, Entity-Relationship Models, and API Specifications.
-- [**`RETRIEVAL_GRAPHRAG.md`**](file:///d:/Agentic%20AI%20Codage%20Habitation%20Project/ai-chatbot/RETRIEVAL_GRAPHRAG.md): Production Readiness Report, Hardening Verification, and Retrieval Ablation Benchmark Matrix.
+- **Multi-Source Repository Connection**: Connect via GitHub Personal Access Token or directly browse and mount local folders and workspaces.
+- **Automated Root Cause Diagnosis**: Hypothesize, test, and isolate bugs with structured step-by-step debug sessions (`isolate`, `reproduce`, `diagnose`, `fix`, `verify`, `observe`).
+- **GraphRAG & AST Semantic Retrieval**: Hybrid code search combining TypeScript Compiler AST parsing, PostgreSQL + pgvector embeddings, and dependency graph traversal.
+- **CI/CD Failure Analysis**: Diagnose build, test, and lint failures with actionable remedy steps and diff recommendations.
+- **Merge Conflict Resolution**: Semantic 3-way conflict analysis with deterministic AST impact assessment.
+- **Security & Sandboxing**: Strict repository access isolation, PII scrubbing, rate limiting, and RBAC authorization.
+- **Modern Glassmorphic UI**: High-contrast, clean professional dashboard with dark theme, real-time repository browser, step-by-step pipeline visualizer, and live patch view.
 
 ---
 
 ## ⚡ Quick Start
 
-### 1. Prerequisites & Services
-Ensure Docker Desktop is running, then start the PostgreSQL + pgvector database container:
+### 1. Prerequisites
+- Node.js 20+
+- (Optional) Docker Desktop for PostgreSQL + pgvector database
+
+### 2. Install Dependencies
 ```bash
-docker-compose up -d
+npm install
 ```
 
-### 2. Environment Setup
-Create a `.env` file based on `.env.example`:
+### 3. Configure Environment
+Copy `.env.example` to `.env`:
 ```ini
 PORT=3000
 NODE_ENV=development
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5433
-POSTGRES_DB=ai_chatbot
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=password
-GROQ_API_KEY=your_groq_api_key
-OPENAI_API_KEY=your_openai_api_key
+GROQ_API_KEY=your_groq_api_key_here
+GITHUB_TOKEN=your_optional_github_token_here
+DATABASE_URL=postgresql://postgres:password@localhost:5433/ai_chatbot
 ```
 
-### 3. Run Migrations & Build
+### 4. Build and Run
 ```bash
-npm install
-npm run db:migrate
+# Build TypeScript
 npm run build
-```
 
-### 4. Start Server
-```bash
-# Development Mode (Hot Reload)
-npm run dev
-
-# Production Mode
+# Start Production Server
 npm run start
+
+# Or Development Mode with Live Reload
+npm run dev
 ```
+
+Open your browser at `http://localhost:3000` to launch the debugging dashboard.
 
 ---
 
 ## 🧪 Verification & Benchmarks
 
 ```bash
-# Run Full Integration Test Suite
+# Verify TypeScript Build
+npm run build
+
+# Run GraphRAG Integration Suite
 npm run rag:integration-test
 
-# Run Retrieval Ablation Benchmark Matrix
+# Run Retrieval Ablation Benchmark
 npm run rag:ablation
 
 # Run AST Impact Analysis Tool Verification
 npm run tool:impact-analysis
 ```
+
+---
+
+## 📂 Architecture Overview
+
+- `src/agent/`: Autonomous debugging orchestrator, state machine, hypothesis engine, root cause analyzer.
+- `src/git/`: Git command engine, conflict analyzer, diff generator, and patch validator.
+- `src/github/`: GitHub REST API client, webhook handler, PR creator, and CI status monitor.
+- `src/graph/`: AST code knowledge graph builder, graph cache, and traversal engine.
+- `src/ingestion/`: TypeScript Compiler AST parser, chunker, and vector indexer.
+- `src/retrieval/`: Hybrid GraphRAG retriever, vector search, explainable search, and reranker.
+- `src/repositories/`: In-memory and persistent repository state management.
+- `src/security/`: Role-based authorization, rate limiting, and tenant isolation.
+- `public/`: Production Web Dashboard with responsive UI, local folder picker, and real-time debug pipeline.

@@ -9,11 +9,44 @@ export type { AuthorizeRequest, Permission, Role, TenantContext };
 export type AuthorizationRequest = AuthorizeRequest;
 
 const rolePermissions: Readonly<Record<string, readonly Permission[]>> = {
-  user: ["chat:read", "chat:write", "workspace:read", "workspace:write", "connector:read", "connector:write"],
-  developer: ["chat:read", "chat:write", "documents:read", "documents:write", "workspace:read", "workspace:write", "connector:read", "connector:write"],
-  admin: ["chat:read", "chat:write", "documents:read", "documents:write", "workspace:read", "workspace:write", "connector:read", "connector:write"],
-  superadmin: ["chat:read", "chat:write", "documents:read", "documents:write", "workspace:read", "workspace:write", "connector:read", "connector:write"],
-  viewer: ["chat:read", "workspace:read", "documents:read"],
+  viewer: ["repository:read", "graphrag:read"],
+  user: [
+    "repository:read",
+    "repository:write",
+    "repository:debug",
+    "graphrag:read",
+    "graphrag:write",
+  ],
+  developer: [
+    "repository:read",
+    "repository:write",
+    "repository:ci",
+    "repository:pr",
+    "repository:debug",
+    "repository:audit",
+    "graphrag:read",
+    "graphrag:write",
+  ],
+  admin: [
+    "repository:read",
+    "repository:write",
+    "repository:ci",
+    "repository:pr",
+    "repository:debug",
+    "repository:audit",
+    "graphrag:read",
+    "graphrag:write",
+  ],
+  superadmin: [
+    "repository:read",
+    "repository:write",
+    "repository:ci",
+    "repository:pr",
+    "repository:debug",
+    "repository:audit",
+    "graphrag:read",
+    "graphrag:write",
+  ],
 };
 
 export const authorize = ({

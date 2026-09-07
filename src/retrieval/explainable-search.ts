@@ -1,5 +1,10 @@
 import type { RetrievedContext } from "./retriever.js";
-import type { ImpactAnalysisReport } from "../tools/impact-analysis.js";
+
+export interface ImpactAnalysisReport {
+  targetFile?: string;
+  affectedFiles: string[];
+  depth?: number;
+}
 
 export interface ExplainableRetrievedContext extends RetrievedContext {
   explanation: {

@@ -6,14 +6,14 @@ export interface TenantContext {
 export type Role = "user" | "developer" | "admin" | "superadmin" | "viewer";
 
 export type Permission =
-  | "chat:read"
-  | "chat:write"
-  | "documents:read"
-  | "documents:write"
-  | "workspace:read"
-  | "workspace:write"
-  | "connector:read"
-  | "connector:write";
+  | "repository:read"
+  | "repository:write"
+  | "repository:ci"
+  | "repository:pr"
+  | "repository:debug"
+  | "repository:audit"
+  | "graphrag:read"
+  | "graphrag:write";
 
 export interface AuthorizeRequest {
   readonly context: TenantContext;

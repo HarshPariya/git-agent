@@ -1,0 +1,319 @@
+/**
+ * Git Debugging Agent - API Client
+ * Clean HTTP client for all backend endpoints
+ */
+
+const API_BASE = window.location.origin;
+
+class ApiClient {
+  constructor() {
+    this.token = localStorage.getItem("gda_token") || null;
+    this.user = JSON.parse(localStorage.getItem("gda_user") || "null");
+  }
+
+  setToken(token, user) {
+    this.token = token;
+    this.user = user;
+    if (token) {
+      localStorage.setItem("gda_token", token);
+    } else {
+      localStorage.removeItem("gda_token");
+    }
+    if (user) {
+      localStorage.setItem("gda_user", JSON.stringify(user));
+    } else {
+      localStorage.removeItem("gda_user");
+    }
+  }
+
+  clearToken() {
+    this.setToken(null, null);
+  }
+
+  getHeaders(extraHeaders = {}) {
+    const headers = {
+      "Content-Type": "application/json",
+      ...extraHeaders,
+    };
+    if (this.token) {
+      headers["Authorization"] = `Bearer ${this.token}`;
+    } else {
+      // Dev-mode fallback: inject tenant/user identity so security middleware accepts the request
+      headers["x-tenant-id"] = "tenant-default";
+      headers["x-user-id"] = "user-default";
+      headers["x-user-role"] = "developer";
+    }
+    return headers;
+  }
+
+  async request(endpoint, options = {}) {
+    const url = `${API_BASE}${endpoint}`;
+    const headers = this.getHeaders(options.headers);
+    const config = { ...options, headers };
+
+    try {
+      const response = await fetch(url, config);
+
+      if (response.status === 401 && this.token) {
+        this.clearToken();
+        window.location.reload();
+      }
+
+      const contentType = response.headers.get("content-type") || "";
+      let data;
+      try {
+        data = contentType.includes("application/json")
+          ? await response.json()
+          : await response.text();
+      } catch (e) {
+        data = null;
+      }
+
+      if (!response.ok) {
+        const message = (data?.error?.message || data?.error || data?.message) || `Request failed (${response.status})`;
+        const err = new Error(message);
+        err.status = response.status;
+        err.data = data;
+        throw err;
+      }
+
+      return data;
+    } catch (err) {
+      console.error(`API Error [${options.method || "GET"} ${endpoint}]:`, err);
+      throw err;
+    }
+  }
+
+  // Auth
+  async login(email, password) {
+    const data = await this.request("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    });
+    this.setToken(data.token, data.user);
+    return data;
+  }
+
+  async register(email, password, name = "") {
+    const data = await this.request("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email, password, name }),
+    });
+    this.setToken(data.token, data.user);
+    return data;
+  }
+
+  async getMe() {
+    return this.request("/api/auth/me");
+  }
+
+  // Health & Info
+  async getHealth() { return this.request("/health"); }
+  async getReadiness() { return this.request("/ready"); }
+  async getInfo() { return this.request("/api/info"); }
+
+  // Repositories
+  async listRepositories() { return this.request("/api/repositories"); }
+  async connectRepository(data) {
+    return this.request("/api/repositories/connect", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+  async getRepository(id) { return this.request(`/api/repositories/${id}`); }
+  async browseFilesystem(targetPath = "") {
+    const q = targetPath ? `?path=${encodeURIComponent(targetPath)}` : "";
+    return this.request(`/api/fs/browse${q}`);
+  }
+  async syncRepository(id) {
+    return this.request(`/api/repositories/${id}/sync`, { method: "POST" });
+  }
+  async disconnectRepository(id) {
+    return this.request(`/api/repositories/${id}/disconnect`, { method: "POST" });
+  }
+  async getRepositoryStatus(id) { return this.request(`/api/repositories/${id}/status`); }
+  async listProtectedBranches(id) { return this.request(`/api/repositories/${id}/protected-branches`); }
+  async addProtectedBranch(id, branch, rules = {}) {
+    return this.request(`/api/repositories/${id}/protected-branches`, {
+      method: "POST",
+      body: JSON.stringify({ branch, ...rules }),
+    });
+  }
+  async removeProtectedBranch(id, branch) {
+    return this.request(`/api/repositories/${id}/protected-branches/${encodeURIComponent(branch)}`, { method: "DELETE" });
+  }
+
+  // Debug Agent
+  async listDebugSessions() { return this.request("/api/debug"); }
+  async listAgentRuns() { return this.request("/api/agent/runs"); }
+  async startDebugSession(data) {
+    return this.request("/api/debug", { method: "POST", body: JSON.stringify(data) });
+  }
+  async runDebug(data) {
+    return this.request("/api/debug/run", { method: "POST", body: JSON.stringify(data) });
+  }
+  async getDebugSession(sessionId) { return this.request(`/api/debug/${sessionId}`); }
+  async getSessionFindings(sessionId) { return this.request(`/api/debug/${sessionId}/findings`); }
+  async executeDebugStep(sessionId, stepType, description, query = "") {
+    return this.request(`/api/debug/${sessionId}/steps`, {
+      method: "POST",
+      body: JSON.stringify({ stepType, description, query }),
+    });
+  }
+  async completeDebugSession(sessionId) {
+    return this.request(`/api/debug/${sessionId}/complete`, { method: "POST" });
+  }
+  async abortDebugSession(sessionId) {
+    return this.request(`/api/debug/${sessionId}/abort`, { method: "POST" });
+  }
+
+  // Git Engine
+  async getGitStatus(repositoryId) {
+    return this.request("/api/git/status", { method: "POST", body: JSON.stringify({ repositoryId }) });
+  }
+  async getGitLog(repositoryId, maxCount = 10) {
+    return this.request("/api/git/log", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, maxCount }),
+    });
+  }
+  async getGitDiff(repositoryId, ref1, ref2) {
+    return this.request("/api/git/diff", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, ref1, ref2 }),
+    });
+  }
+  async getGitBranches(repositoryId) {
+    return this.request("/api/git/branches", { method: "POST", body: JSON.stringify({ repositoryId }) });
+  }
+  async getGitConflicts(repositoryId) {
+    return this.request("/api/git/conflicts", { method: "POST", body: JSON.stringify({ repositoryId }) });
+  }
+  async executeGitOperation(operation, data) {
+    return this.request(`/api/git/operations/${operation}`, { method: "POST", body: JSON.stringify(data) });
+  }
+  async getOperationCatalog() { return this.request("/api/git/catalog"); }
+
+  // GraphRAG
+  async indexRepository(repositoryId) {
+    return this.request("/api/graphrag/index", { method: "POST", body: JSON.stringify({ repositoryId }) });
+  }
+  async getGraph(repositoryId) { return this.request(`/api/graphrag/${repositoryId}/graph`); }
+  async searchCode(repositoryId, query, limit = 10) {
+    return this.request("/api/graphrag/search", { method: "POST", body: JSON.stringify({ repositoryId, query, limit }) });
+  }
+  async getSymbols(repositoryId, query) {
+    return this.request("/api/graphrag/symbols", { method: "POST", body: JSON.stringify({ repositoryId, query }) });
+  }
+  async getIndexStatus(repositoryId) { return this.request(`/api/graphrag/${repositoryId}/status`); }
+
+  // GitHub
+  async connectGitHub(token) { return this.request("/api/github/connect", { method: "POST", body: JSON.stringify({ token }) }); }
+  async disconnectGitHub() { return this.request("/api/github/connect", { method: "DELETE" }); }
+  async getGitHubStatus() { return this.request("/api/github/status"); }
+  async listGitHubRepos(options = {}) {
+    const params = new URLSearchParams(options);
+    return this.request(`/api/github/repos?${params.toString()}`);
+  }
+  async getGitHubRepo(owner, repo) { return this.request(`/api/github/repos/${owner}/${repo}`); }
+  async listGitHubBranches(owner, repo) { return this.request(`/api/github/repos/${owner}/${repo}/branches`); }
+  async listGitHubIssues(owner, repo, options = {}) {
+    const params = new URLSearchParams(options);
+    return this.request(`/api/github/repos/${owner}/${repo}/issues?${params.toString()}`);
+  }
+  async getGitHubIssue(owner, repo, number) { return this.request(`/api/github/repos/${owner}/${repo}/issues/${number}`); }
+  async listGitHubPRs(owner, repo, options = {}) {
+    const params = new URLSearchParams(options);
+    return this.request(`/api/github/repos/${owner}/${repo}/pulls?${params.toString()}`);
+  }
+  async getGitHubPR(owner, repo, number) { return this.request(`/api/github/repos/${owner}/${repo}/pulls/${number}`); }
+  async createGitHubPR(owner, repo, data) {
+    return this.request(`/api/github/repos/${owner}/${repo}/pulls`, { method: "POST", body: JSON.stringify(data) });
+  }
+
+  // Workflows
+  async listCiBuilds(repositoryId) {
+    const q = repositoryId ? `?repositoryId=${encodeURIComponent(repositoryId)}` : "";
+    return this.request(`/api/ci${q}`);
+  }
+  async listPullRequests(repositoryId) {
+    const q = repositoryId ? `?repositoryId=${encodeURIComponent(repositoryId)}` : "";
+    return this.request(`/api/pr${q}`);
+  }
+  async createPR(repositoryId, title, sourceBranch, targetBranch = "main", description = "") {
+    return this.request("/api/pr", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, title, sourceBranch, targetBranch, description }),
+    });
+  }
+  async getAuditLog(limit = 50) { return this.request(`/api/audit?limit=${limit}`); }
+  async runBisect(data) { return this.request("/api/bisect", { method: "POST", body: JSON.stringify(data) }); }
+  async classifyTask(query) { return this.request("/api/debug/classify", { method: "POST", body: JSON.stringify({ query }) }); }
+  async planTask(query, repositoryId) { return this.request("/api/debug/plan", { method: "POST", body: JSON.stringify({ query, repositoryId }) }); }
+  async approveFix(sessionId) { return this.request(`/api/debug/${sessionId}/fix/approve`, { method: "POST" }); }
+  async revertFix(sessionId, backupId) {
+    return this.request(`/api/debug/${sessionId}/fix/revert`, { method: "POST", body: JSON.stringify({ backupId }) });
+  }
+  async resolveConflicts(repositoryId) {
+    return this.request("/api/git/conflicts/resolve", { method: "POST", body: JSON.stringify({ repositoryId }) });
+  }
+  async commitChanges(repositoryId, message, stageAll = true) {
+    return this.request("/api/git/commit", { method: "POST", body: JSON.stringify({ repositoryId, message, stageAll }) });
+  }
+  async pushChanges(repositoryId, options = {}) {
+    return this.request("/api/git/push", { method: "POST", body: JSON.stringify({ repositoryId, ...options }) });
+  }
+  async pullChanges(repositoryId, options = {}) {
+    return this.request("/api/git/pull", { method: "POST", body: JSON.stringify({ repositoryId, ...options }) });
+  }
+  async fetchChanges(repositoryId, options = {}) {
+    return this.request("/api/git/fetch", { method: "POST", body: JSON.stringify({ repositoryId, ...options }) });
+  }
+  async checkoutBranch(repositoryId, branch, create = false) {
+    return this.request("/api/git/checkout", { method: "POST", body: JSON.stringify({ repositoryId, branch, create }) });
+  }
+
+  // Async debug run - returns sessionId immediately, pipeline runs in background
+  async runDebugAsync(data) {
+    return this.request("/api/debug/run-async", { method: "POST", body: JSON.stringify(data) });
+  }
+
+  // Filesystem & Local Folders
+  async browseFilesystem(targetPath = "") {
+    const q = targetPath ? `?path=${encodeURIComponent(targetPath)}` : "";
+    return this.request(`/api/fs/browse${q}`);
+  }
+
+  async resolveFolder(folderName, sampleFiles = [], currentBrowsedPath = "") {
+    return this.request("/api/fs/resolve-folder", {
+      method: "POST",
+      body: JSON.stringify({ folderName, sampleFiles, currentBrowsedPath }),
+    });
+  }
+
+  async pickNativeFolderDialog() {
+    return this.request("/api/fs/pick-native-dialog", {
+      method: "POST",
+    });
+  }
+
+
+  // Real-time SSE — EventSource cannot send custom headers, so auth is passed as query params
+  streamSession(sessionId, onEvent, onError) {
+    let url = `${API_BASE}/api/debug/${sessionId}/stream`;
+    if (this.token) {
+      url += `?token=${encodeURIComponent(this.token)}`;
+    } else {
+      // Dev mode: pass tenant/user as query params
+      url += `?x-tenant-id=tenant-default&x-user-id=user-default`;
+    }
+    const eventSource = new EventSource(url);
+    eventSource.onmessage = (e) => {
+      try { onEvent(JSON.parse(e.data)); } catch (err) { console.error("SSE parse error", err); }
+    };
+    eventSource.onerror = (err) => { if (onError) onError(err); };
+    return eventSource;
+  }
+}
+
+window.api = new ApiClient();
