@@ -288,8 +288,8 @@ export async function executeGitLog(
 ): Promise<GitLogEntry[]> {
   const count = options?.count ?? 20;
   const ref = options?.branch ?? "HEAD";
-  const cmd = `log --oneline -${count} --pretty=format:%H|%h|%an|%ae|%ai|%s ${ref}`;
-  const output = await runGit(getExecutionPath(repoPath), cmd);
+  const args = ["log", `--max-count=${count}`, "--pretty=format:%H|%h|%an|%ae|%ai|%s", ref];
+  const output = await runGit(getExecutionPath(repoPath), args);
   if (!output.trim()) return [];
 
   return output
@@ -407,16 +407,18 @@ export async function executeGitOperation(
     };
   }
 
-  const output = await runGit(getExecutionPath(repoPath), `${type} ${args.join(" ")}`);
+  const output = await runGit(getExecutionPath(repoPath), [type, ...args]);
   return { output, success: true };
 }
 
-async function runGit(repoPath: string, args: string): Promise<string> {
-  const { exec } = await import("node:child_process");
+async function runGit(repoPath: string, args: string | readonly string[]): Promise<string> {
+  const { execFile } = await import("node:child_process");
+  const argArray = Array.isArray(args) ? [...args] : (args as string).split(" ").filter(Boolean);
 
   return new Promise((resolve, reject) => {
-    exec(
-      `git ${args}`,
+    execFile(
+      "git",
+      argArray,
       {
         cwd: repoPath,
         maxBuffer: 10 * 1024 * 1024,

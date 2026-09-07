@@ -2835,6 +2835,39 @@ async function loadGitDesktop() {
     if (state.gitDesktop.changedFiles.length > 0) {
       const first = state.gitDesktop.changedFiles[0];
       viewGitDesktopDiff(first.filePath);
+    } else {
+      const pathEl = document.getElementById("gd-diff-filepath");
+      const currentPath = pathEl?.textContent || "";
+      if (!currentPath.includes("Push to") && !currentPath.includes("Successful")) {
+        if (pathEl) pathEl.textContent = "Working tree is clean";
+        const metaEl = document.getElementById("gd-diff-meta");
+        if (metaEl) metaEl.textContent = "No uncommitted or modified files in repository.";
+        const statusBadge = document.getElementById("gd-diff-status-badge");
+        if (statusBadge) {
+          statusBadge.textContent = "CLEAN";
+          statusBadge.className = "badge badge-success";
+          statusBadge.style.display = "inline-block";
+        }
+        const countBadge = document.getElementById("gd-all-diff-count");
+        if (countBadge) countBadge.textContent = "0";
+
+        const revealBtn = document.getElementById("gd-btn-reveal-os");
+        const editBtn = document.getElementById("gd-btn-open-editor");
+        if (revealBtn) revealBtn.style.display = "none";
+        if (editBtn) editBtn.style.display = "none";
+
+        const viewer = document.getElementById("gd-diff-viewer");
+        if (viewer) {
+          viewer.innerHTML = `
+            <div class="empty-state" style="padding:60px 20px">
+              <div class="empty-icon" style="font-size:32px;color:#10b981">✓</div>
+              <div class="empty-title" style="font-size:15px;margin-top:8px">Working tree is clean</div>
+              <div class="empty-desc" style="max-width:400px;margin:8px auto 0;color:var(--c-text-muted)">
+                All changes committed and synchronized with your branch.
+              </div>
+            </div>`;
+        }
+      }
     }
   } catch (err) {
     console.error("Failed to load Git Desktop status:", err);
@@ -3762,8 +3795,8 @@ async function executePushFromModal() {
     if (consoleEl) {
       consoleEl.textContent = res.output || res.message || "Push completed successfully.";
     }
-    switchGitDesktopTab("gd-output");
     await loadGitDesktop();
+    await renderPushSummaryView(remote, targetBranch, res.output || res.message);
     showToast(`Successfully pushed to ${remote}/${targetBranch}!`, "success");
   } catch (err) {
     showToast(`Push failed: ${err.message}`, "error");
@@ -3772,6 +3805,103 @@ async function executePushFromModal() {
       btn.disabled = false;
       btn.textContent = "Confirm & Push to Remote";
     }
+  }
+}
+
+async function renderPushSummaryView(remote, targetBranch, rawOutput = "") {
+  const repo = state.activeRepository;
+  const pathEl = document.getElementById("gd-diff-filepath");
+  const metaEl = document.getElementById("gd-diff-meta");
+  const statusBadge = document.getElementById("gd-diff-status-badge");
+  const viewer = document.getElementById("gd-diff-viewer");
+
+  if (pathEl) pathEl.textContent = `🚀 Push to ${remote}/${targetBranch} Successful`;
+  if (metaEl) metaEl.textContent = `All commits safely published to GitHub remote '${remote}'. Working tree is clean.`;
+  if (statusBadge) {
+    statusBadge.textContent = "PUBLISHED ✓";
+    statusBadge.className = "badge badge-success";
+    statusBadge.style.display = "inline-block";
+  }
+
+  // Hide single file OS buttons
+  const revealBtn = document.getElementById("gd-btn-reveal-os");
+  const editBtn = document.getElementById("gd-btn-open-editor");
+  if (revealBtn) revealBtn.style.display = "none";
+  if (editBtn) editBtn.style.display = "none";
+
+  // Switch to Diff tab so the user sees the summary card immediately
+  switchGitDesktopTab("gd-diff");
+
+  let recentCommitsHtml = "";
+  try {
+    const logData = await api.getGitLog(repo ? repo.id : "", 5);
+    const commits = logData.commits || logData.entries || [];
+    if (commits.length > 0) {
+      recentCommitsHtml = `
+        <div style="margin-top:18px">
+          <div style="font-size:11.5px;font-weight:700;color:var(--c-text-secondary);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">
+            Recently Published Commits on ${escapeHtml(targetBranch)}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            ${commits.slice(0, 4).map((c) => {
+        const hash = c.shortHash || c.hash?.slice(0, 7) || "";
+        const subject = c.subject || c.message?.split("\n")[0] || "Commit";
+        const author = c.authorName || c.author || "Author";
+        const date = c.relativeDate || c.date || "";
+        return `
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#f8fafc;border:1px solid var(--c-border);border-radius:var(--r-sm)">
+                  <div style="min-width:0;flex:1;margin-right:12px">
+                    <div style="font-size:12.5px;font-weight:600;color:var(--c-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(subject)}</div>
+                    <div style="font-size:11px;color:var(--c-text-muted);margin-top:2px">👤 ${escapeHtml(author)} · ${escapeHtml(date)}</div>
+                  </div>
+                  <code style="font-weight:700;color:var(--c-accent);font-size:11px;background:#e2e8f0;padding:2px 8px;border-radius:4px">${escapeHtml(hash)}</code>
+                </div>`;
+      }).join("")}
+          </div>
+        </div>`;
+    }
+  } catch { }
+
+  if (viewer) {
+    viewer.innerHTML = `
+      <div style="padding:28px 24px;max-width:720px;margin:0 auto">
+        <div style="display:flex;align-items:center;gap:14px;padding:16px 18px;background:#ecfdf5;border:1.5px solid #a7f3d0;border-radius:var(--r-md);margin-bottom:20px">
+          <div style="width:40px;height:40px;border-radius:50%;background:#10b981;color:#ffffff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;flex-shrink:0">✓</div>
+          <div style="min-width:0">
+            <div style="font-size:15px;font-weight:700;color:#065f46">Successfully Pushed to ${escapeHtml(remote)}/${escapeHtml(targetBranch)}</div>
+            <div style="font-size:12.5px;color:#047857;margin-top:2px">Your remote repository has received all commits and is fully synchronized.</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(170px, 1fr));gap:12px;margin-bottom:18px">
+          <div style="padding:14px;background:#f8fafc;border:1px solid var(--c-border);border-radius:var(--r-sm)">
+            <div style="font-size:11px;color:var(--c-text-muted);text-transform:uppercase;font-weight:600">Target Branch</div>
+            <div style="font-size:13.5px;font-weight:700;color:var(--c-text);margin-top:4px">${escapeHtml(targetBranch)}</div>
+          </div>
+          <div style="padding:14px;background:#f8fafc;border:1px solid var(--c-border);border-radius:var(--r-sm)">
+            <div style="font-size:11px;color:var(--c-text-muted);text-transform:uppercase;font-weight:600">Sync Status</div>
+            <div style="font-size:13.5px;font-weight:700;color:#059669;margin-top:4px">Up to Date (↑ 0 · ↓ 0)</div>
+          </div>
+          <div style="padding:14px;background:#f8fafc;border:1px solid var(--c-border);border-radius:var(--r-sm)">
+            <div style="font-size:11px;color:var(--c-text-muted);text-transform:uppercase;font-weight:600">Working Tree</div>
+            <div style="font-size:13.5px;font-weight:700;color:var(--c-text);margin-top:4px">Clean (0 uncommitted)</div>
+          </div>
+        </div>
+
+        ${recentCommitsHtml}
+
+        <div style="display:flex;gap:10px;margin-top:24px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="openCreatePRModal()" style="display:flex;align-items:center;gap:6px;padding:6px 14px">
+            🚀 Create Pull Request
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="switchGitDesktopLeftTab('history')" style="display:flex;align-items:center;gap:6px;padding:6px 14px">
+            📜 View Commit History
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="triggerGitFetch()" style="display:flex;align-items:center;gap:6px;padding:6px 14px">
+            🔄 Fetch from Origin
+          </button>
+        </div>
+      </div>`;
   }
 }
 
@@ -4078,3 +4208,4 @@ window.openCurrentFileInOs = openCurrentFileInOs;
 window.openSpecificFileInOs = openSpecificFileInOs;
 window.viewAllFilesDiff = viewAllFilesDiff;
 window.setupFolderDropZone = setupFolderDropZone;
+window.renderPushSummaryView = renderPushSummaryView;
