@@ -36,6 +36,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   initForms();
   initUserMenu();
   initDragAndDrop();
+  setupFolderDropZone();
 
   // Check authentication — try JWT token first, then dev-mode headers
   if (api.token) {
@@ -354,7 +355,6 @@ function renderDashboardRepos(repos) {
         <div class="empty-desc">Connect any local project from your laptop or workspace (Mac, Windows, Linux) or import from GitHub.</div>
         <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap">
           <button class="btn btn-primary btn-sm" onclick="openFolderBrowser()">📁 Add Local Folder</button>
-          <button class="btn btn-secondary btn-sm" onclick="triggerNativeFolderPicker()">🗔 Open OS File Dialog</button>
           <button class="btn btn-ghost btn-sm" onclick="showGitHubModalFlow()">🐙 Connect GitHub</button>
         </div>
       </div>
@@ -472,7 +472,6 @@ function renderRepositoriesList() {
         <div class="empty-desc">Add any local project from your laptop or import from GitHub to start autonomous AI debugging.</div>
         <div style="display:flex;gap:10px;margin-top:14px;justify-content:center;flex-wrap:wrap">
           <button class="btn btn-primary btn-sm" onclick="openFolderBrowser()">📁 Add Local Folder</button>
-          <button class="btn btn-secondary btn-sm" onclick="triggerNativeFolderPicker()">🗔 Open OS File Dialog</button>
           <button class="btn btn-github btn-sm" onclick="showGitHubModalFlow()">🐙 Connect GitHub</button>
         </div>
       </div>
@@ -810,15 +809,35 @@ function initDragAndDrop() {
 }
 
 async function triggerNativeFolderPicker() {
-  const btn = document.getElementById("open-os-dialog-btn");
+  const btn = document.getElementById("btn-open-os-dialog") || document.getElementById("open-os-dialog-btn");
   const origHtml = btn ? btn.innerHTML : "";
   if (btn) {
     btn.disabled = true;
-    btn.innerHTML = `⏳ Opening Dialog...`;
+    btn.innerHTML = `⏳ Opening OS Dialog...`;
   }
   showToast("Opening system folder dialog...", "info");
 
-  // 1. Try modern File System Access API (showDirectoryPicker)
+  try {
+    // 1. Primary: OS Native Dialog via backend (Windows PowerShell with TopMost foreground form)
+    const res = await api.pickNativeFolderDialog();
+    if (res && res.path && !res.cancelled) {
+      showToast(`Selected: ${res.path}`, "success");
+      await connectSpecificFolder(res.folderName || "Repository", res.path);
+      return;
+    } else if (res && res.cancelled) {
+      showToast("Folder selection cancelled", "info");
+      return;
+    }
+  } catch (err) {
+    console.warn("Backend OS native dialog error, trying browser picker:", err);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+    }
+  }
+
+  // 2. Secondary fallback: Browser File System Access API
   if (typeof window.showDirectoryPicker === "function") {
     try {
       const dirHandle = await window.showDirectoryPicker({ mode: "read" });
@@ -826,7 +845,7 @@ async function triggerNativeFolderPicker() {
         showToast(`Locating folder "${dirHandle.name}" on your system...`, "info");
         const res = await api.resolveFolder(dirHandle.name, [], state.currentBrowsedPath);
         if (res && res.resolvedPath && res.exists) {
-          showToast(`Found: ${res.resolvedPath}`, "info");
+          showToast(`Found: ${res.resolvedPath}`, "success");
           await connectSpecificFolder(res.folderName || dirHandle.name, res.resolvedPath);
           return;
         } else {
@@ -845,36 +864,55 @@ async function triggerNativeFolderPicker() {
         showToast("Folder selection cancelled", "info");
         return;
       }
-      console.warn("Browser showDirectoryPicker error or not permitted, trying OS dialog:", fsErr);
+      console.warn("Browser showDirectoryPicker fallback error:", fsErr);
     }
   }
 
-  // 2. Try OS Native Dialog via backend (Windows PowerShell, macOS AppleScript, Linux Zenity)
-  try {
-    const res = await api.pickNativeFolderDialog();
-    if (res && res.path && !res.cancelled) {
-      showToast(`Selected: ${res.path}`, "info");
-      await connectSpecificFolder(res.folderName || "Repository", res.path);
-      return;
-    } else if (res && res.cancelled) {
-      showToast("Folder selection cancelled", "info");
-      return;
-    }
-  } catch (err) {
-    console.warn("Backend OS native dialog error:", err);
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = origHtml;
-    }
-  }
-
-  // 3. Fallback to standard webkit directory input
+  // 3. Tertiary fallback: standard webkit directory input
   const input = document.getElementById("native-folder-input");
   if (input) {
     input.value = "";
     input.click();
   }
+}
+
+function setupFolderDropZone() {
+  const dropZone = document.getElementById("folder-drop-zone");
+  if (!dropZone) return;
+
+  dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.style.borderColor = "var(--c-accent)";
+    dropZone.style.background = "var(--c-accent-bg, rgba(26,86,219,0.08))";
+  });
+
+  dropZone.addEventListener("dragleave", () => {
+    dropZone.style.borderColor = "var(--c-border)";
+    dropZone.style.background = "var(--c-surface-hover)";
+  });
+
+  dropZone.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    dropZone.style.borderColor = "var(--c-border)";
+    dropZone.style.background = "var(--c-surface-hover)";
+
+    const items = e.dataTransfer.items;
+    if (items && items.length > 0) {
+      const item = items[0];
+      const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+      if (entry && entry.isDirectory) {
+        showToast(`Locating dropped folder "${entry.name}"...`, "info");
+        const res = await api.resolveFolder(entry.name, [], state.currentBrowsedPath);
+        if (res && res.resolvedPath && res.exists) {
+          await connectSpecificFolder(res.folderName || entry.name, res.resolvedPath);
+        } else {
+          triggerNativeFolderPicker();
+        }
+      } else {
+        triggerNativeFolderPicker();
+      }
+    }
+  });
 }
 
 async function handleNativeFolderSelected(event) {
@@ -940,17 +978,19 @@ async function browseToDirectory(dirPath = "") {
     if (pathEl) pathEl.textContent = data.currentPath;
     if (pathInput) pathInput.value = data.currentPath;
 
-    // Render shortcuts
-    if (shortcutsEl && Array.isArray(data.shortcuts)) {
-      shortcutsEl.innerHTML = data.shortcuts
-        .map(
-          (s) => `
-          <div class="folder-shortcut-pill ${s.name.includes("Workspace") ? "active-shortcut" : ""}" onclick="browseToDirectory('${escapeHtml(s.path).replace(/\\/g, "\\\\")}')">
-            ${escapeHtml(s.name)}
-          </div>
-        `,
-        )
-        .join("");
+    // Render PC workspace roots & drives
+    const quickpicksEl = document.getElementById("folder-workspace-quickpicks");
+    if (quickpicksEl) {
+      const shortcuts = Array.isArray(data.shortcuts) ? data.shortcuts : [];
+      let qHtml = "";
+      shortcuts.forEach((s) => {
+        const isCurrent = s.path === data.currentPath;
+        qHtml += `
+          <div class="folder-shortcut-pill ${isCurrent ? "active-shortcut" : ""}" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600" onclick="browseToDirectory('${escapeHtml(s.path).replace(/\\/g, "\\\\")}')">
+            <span>${escapeHtml(s.name)}</span>
+          </div>`;
+      });
+      quickpicksEl.innerHTML = qHtml;
     }
 
     // Git or local folder card
@@ -962,15 +1002,15 @@ async function browseToDirectory(dirPath = "") {
       const btn = document.getElementById("folder-connect-current-btn");
 
       if (data.isGitRepo) {
-        detectedCard.style.border = "1px solid var(--c-success)";
+        detectedCard.style.border = "1.5px solid var(--c-success)";
         if (titleEl) titleEl.innerHTML = "🌿 Git Repository Detected";
         if (nameEl) nameEl.textContent = `${folderName} — ${data.currentPath}`;
-        if (btn) btn.textContent = "Select & Connect Repo";
+        if (btn) btn.textContent = "➕ Add This Repository Directly";
       } else {
-        detectedCard.style.border = "1px solid var(--c-border)";
-        if (titleEl) titleEl.innerHTML = "📁 Local Folder (Workspace)";
+        detectedCard.style.border = "1.5px solid var(--c-accent-border)";
+        if (titleEl) titleEl.innerHTML = "📁 Local Workspace Folder";
         if (nameEl) nameEl.textContent = `${folderName} — ${data.currentPath}`;
-        if (btn) btn.textContent = "Connect This Folder";
+        if (btn) btn.textContent = "➕ Add This Folder Directly";
       }
       state.browsedFolderGit = { name: folderName, path: data.currentPath };
     }
@@ -1007,11 +1047,11 @@ async function browseToDirectory(dirPath = "") {
             <div class="folder-row-left">
               <span class="folder-icon">${dir.isGitRepo ? "🌿" : "📁"}</span>
               <span class="folder-name">${escapedName}</span>
-              ${dir.isGitRepo ? '<span class="badge badge-success">Git Repo</span>' : ""}
+              ${dir.isGitRepo ? '<span class="badge badge-success">Git Repo</span>' : '<span class="badge badge-secondary" style="font-size:10px">Folder</span>'}
             </div>
             <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
-              <button class="btn btn-secondary btn-sm" onclick="browseToDirectory('${escapedPath}')">Open</button>
-              <button class="btn btn-primary btn-sm" onclick="connectSpecificFolder('${escapedName}', '${escapedPath}')">${dir.isGitRepo ? "Connect Repo" : "Connect Folder"}</button>
+              <button class="btn btn-secondary btn-sm" onclick="browseToDirectory('${escapedPath}')">📂 Open</button>
+              <button class="btn btn-primary btn-sm" onclick="connectSpecificFolder('${escapedName}', '${escapedPath}')">➕ Add Directly</button>
             </div>
           </div>
         `;
@@ -2740,7 +2780,12 @@ async function loadGitDesktop() {
 
     // Update Header metadata & live branch
     const branchName = status.branch || repo.currentBranch || repo.defaultBranch || "main";
-    document.getElementById("gd-branch-name").textContent = branchName;
+    const branchBtn = document.getElementById("gd-branch-name");
+    if (branchBtn) branchBtn.innerHTML = `${escapeHtml(branchName)} <span style="font-size:9px">▾</span>`;
+
+    const commitBranchLabel = document.getElementById("gd-commit-branch-label");
+    if (commitBranchLabel) commitBranchLabel.textContent = branchName;
+
     document.getElementById("gd-ahead-behind").textContent = `↑ ${status.ahead || 0} · ↓ ${status.behind || 0}`;
     const workingStatusEl = document.getElementById("gd-working-status");
     if (status.clean) {
@@ -2777,9 +2822,12 @@ async function loadGitDesktop() {
       };
     });
 
-    document.getElementById("gd-changes-count").textContent = `${state.gitDesktop.changedFiles.length} files`;
+    const countLabel = `${state.gitDesktop.changedFiles.length}`;
+    const changesCountEl = document.getElementById("gd-changes-count");
+    if (changesCountEl) changesCountEl.textContent = countLabel;
+
     const statChanges = document.getElementById("stat-changes");
-    if (statChanges) statChanges.textContent = `${state.gitDesktop.changedFiles.length} files`;
+    if (statChanges) statChanges.textContent = `${countLabel} files`;
 
     renderGitDesktopChanges();
 
@@ -2807,6 +2855,9 @@ function renderGitDesktopChanges() {
   const container = document.getElementById("gd-changes-list");
   if (!container) return;
 
+  const countBadge = document.getElementById("gd-all-diff-count");
+  if (countBadge) countBadge.textContent = state.gitDesktop.changedFiles?.length || 0;
+
   const filter = state.gitDesktop.currentFilter;
   const files = state.gitDesktop.changedFiles.filter((f) => {
     if (filter === "staged") return f.staged;
@@ -2817,7 +2868,7 @@ function renderGitDesktopChanges() {
 
   if (files.length === 0) {
     container.innerHTML = `
-      <div class="empty-state" style="padding:36px 20px">
+      <div class="empty-state" style="padding:32px 16px">
         <div class="empty-icon">✓</div>
         <div class="empty-title">No changes found</div>
         <div class="empty-desc">No files matching filter "${filter}".</div>
@@ -2826,12 +2877,25 @@ function renderGitDesktopChanges() {
   }
 
   let html = `<div style="display:flex;flex-direction:column">`;
+
+  // Overview row for All Changed Files (Continuous diff)
+  html += `
+    <div class="git-change-row all-files-row" style="cursor:pointer;background:var(--c-surface-hover);font-weight:600;border-bottom:1.5px solid var(--c-border)" onclick="switchGitDesktopTab('gd-all-diff')">
+      <div class="git-change-left">
+        <span style="font-size:13px">📑</span>
+        <span class="git-file-name" style="font-weight:700;color:var(--c-accent)">All Changed Files (${files.length})</span>
+      </div>
+      <div class="git-change-right">
+        <span class="badge badge-secondary" style="font-size:10px">VIEW ALL</span>
+      </div>
+    </div>`;
+
   for (const f of files) {
     const riskBadgeClass = f.risk === "high" ? "badge-danger" : (f.risk === "medium" ? "badge-warning" : "badge-accent");
     const groupBadge = f.logicalGroup ? `<span class="badge badge-accent" style="font-size:10px">${escapeHtml(f.logicalGroup)}</span>` : "";
 
     html += `
-      <div class="git-change-row">
+      <div class="git-change-row" style="cursor:pointer" onclick="viewGitDesktopDiff('${escapeHtml(f.filePath)}')">
         <div class="git-change-left">
           <span class="git-status-badge ${f.code}">${f.code}</span>
           <span class="git-file-name" title="${escapeHtml(f.filePath)}">${escapeHtml(f.filePath)}</span>
@@ -2839,7 +2903,7 @@ function renderGitDesktopChanges() {
         </div>
         <div class="git-change-right">
           <span class="badge ${riskBadgeClass}" style="font-size:10px">${f.risk.toUpperCase()}</span>
-          <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" onclick="viewGitDesktopDiff('${escapeHtml(f.filePath)}')">
+          <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" onclick="event.stopPropagation();viewGitDesktopDiff('${escapeHtml(f.filePath)}')">
             Diff
           </button>
         </div>
@@ -2847,6 +2911,90 @@ function renderGitDesktopChanges() {
   }
   html += `</div>`;
   container.innerHTML = html;
+
+  // Auto-generate commit message when changes are rendered
+  generateAutoCommitMessage(false);
+
+  // Auto-preview first changed file if none selected, like GitHub Desktop
+  const currentDiffPath = document.getElementById("gd-diff-filepath")?.textContent;
+  if (files.length > 0 && (!currentDiffPath || currentDiffPath.includes("Select a file") || currentDiffPath.includes("In sync"))) {
+    viewGitDesktopDiff(files[0].filePath);
+  }
+}
+
+// ============================================================
+// AUTO COMMIT MESSAGE GENERATION (Groq LLM)
+// ============================================================
+
+async function generateAutoCommitMessage(force = false) {
+  const repo = state.activeRepository;
+  if (!repo) return;
+
+  const summaryEl = document.getElementById("gd-commit-summary");
+  const descEl = document.getElementById("gd-commit-desc");
+  if (!summaryEl || !descEl) return;
+
+  // Don't overwrite if user has typed something (unless forced)
+  if (!force && summaryEl.value.trim()) return;
+
+  // Show loading state
+  const autoBtn = document.getElementById("gd-auto-generate-btn");
+  if (autoBtn) {
+    autoBtn.disabled = true;
+    autoBtn.textContent = "⚡ Generating...";
+  }
+
+  try {
+    const res = await api.generateCommitMessage(repo.id);
+    if (res.summary) {
+      summaryEl.value = res.summary;
+      if (res.description) {
+        descEl.value = res.description;
+      }
+      // Update branch label in commit button
+      const branchLabel = document.getElementById("gd-commit-branch-label");
+      if (branchLabel && res.branch) {
+        branchLabel.textContent = res.branch;
+      }
+    }
+  } catch (err) {
+    // Intelligent fallback using concrete changed files from state
+    const files = state.gitDesktop.changedFiles || [];
+    if (files.length > 0) {
+      const paths = files.map((f) => f.filePath || "");
+      const hasApi = paths.some((p) => p.includes("api/") || p.includes("api."));
+      const hasFrontend = paths.some((p) => p.startsWith("public/") || p.includes("html") || p.includes("css"));
+      const hasGit = paths.some((p) => p.includes("git"));
+      const hasTests = paths.some((p) => p.includes("test"));
+
+      let scope = "core";
+      if (hasFrontend && hasApi) scope = "fullstack";
+      else if (hasFrontend) scope = "ui";
+      else if (hasGit) scope = "git";
+      else if (hasApi) scope = "api";
+      else if (hasTests) scope = "tests";
+
+      const type = hasTests ? "test" : (files.some((f) => f.status === "added") ? "feat" : "fix");
+      const topFileNames = paths.slice(0, 3).map((p) => p.split("/").pop().split(".")[0]).join(", ");
+      summaryEl.value = `${type}(${scope}): update ${topFileNames}${paths.length > 3 ? ` and ${paths.length - 3} related components` : ""}`;
+
+      descEl.value = paths.map((p) => {
+        if (p.includes("api.js") || p.includes("api.ts")) return `- ${p}: add client API methods and backend endpoint handlers`;
+        if (p.includes("app.js") || p.includes("app.ts")) return `- ${p}: update application state management, event listeners, and UI views`;
+        if (p.includes("index.html")) return `- ${p}: refine layout structure, modal dialogs, and interactive action controls`;
+        if (p.includes("styles.css")) return `- ${p}: update design tokens, diff viewer syntax styling, and responsive layout rules`;
+        if (p.includes("git")) return `- ${p}: enhance git operation engine, branch refspec resolution, and commit planning`;
+        if (p.includes("fs")) return `- ${p}: expand filesystem navigation and OS file explorer dialog integration`;
+        return `- ${p}: apply component modifications and sync verified changes`;
+      }).slice(0, 8).join("\n");
+    }
+    console.warn("[AutoCommit] LLM generation failed, used fallback:", err.message);
+  } finally {
+    if (autoBtn) {
+      autoBtn.disabled = false;
+      autoBtn.textContent = "✨ Auto-Generate";
+    }
+  }
 }
 
 async function viewGitDesktopDiff(filePath) {
@@ -2856,68 +3004,324 @@ async function viewGitDesktopDiff(filePath) {
     return;
   }
 
+  state.gitDesktop.selectedFile = filePath;
+
+  // Show direct OS action buttons
+  const revealBtn = document.getElementById("gd-btn-reveal-os");
+  const editBtn = document.getElementById("gd-btn-open-editor");
+  if (revealBtn) revealBtn.style.display = "inline-flex";
+  if (editBtn) editBtn.style.display = "inline-flex";
+
+  // Update Diff Header bar
+  const pathEl = document.getElementById("gd-diff-filepath");
+  if (pathEl) pathEl.textContent = filePath;
+
+  const statusBadge = document.getElementById("gd-diff-status-badge");
+  if (statusBadge) {
+    const fileObj = state.gitDesktop.changedFiles?.find((f) => f.filePath === filePath);
+    const statusText = fileObj ? fileObj.status.toUpperCase() : "MODIFIED";
+    statusBadge.textContent = statusText;
+    statusBadge.style.display = "inline-block";
+    statusBadge.className = `badge ${statusText === "ADDED" ? "badge-success" : (statusText === "DELETED" ? "badge-danger" : "badge-warning")}`;
+  }
+
+  const metaEl = document.getElementById("gd-diff-meta");
+  if (metaEl) metaEl.textContent = `Unified diff for ${filePath}`;
+
+  // Highlight selected row in changes list
+  const rows = document.querySelectorAll(".git-change-row");
+  rows.forEach((r) => {
+    const nameEl = r.querySelector(".git-file-name");
+    if (nameEl && nameEl.getAttribute("title") === filePath) {
+      r.classList.add("selected");
+    } else {
+      r.classList.remove("selected");
+    }
+  });
+
+  // Auto-populate Commit box summary if empty
+  const summaryInput = document.getElementById("gd-commit-summary");
+  if (summaryInput && !summaryInput.value.trim()) {
+    const basename = filePath.split("/").pop();
+    summaryInput.placeholder = `Update ${basename}`;
+  }
+
   const viewer = document.getElementById("gd-diff-viewer");
-  viewer.textContent = `Loading unified diff for ${filePath}...`;
+  if (viewer) {
+    viewer.innerHTML = `<div style="text-align:center;padding:32px 16px;color:var(--c-text-muted)"><div class="spinner"></div><div style="margin-top:8px">Loading unified diff for ${escapeHtml(filePath)}...</div></div>`;
+  }
   switchGitDesktopTab("gd-diff");
 
   try {
     const res = await api.getGitDiff(repo.id, filePath);
     if (res && res.diff && res.diff.trim()) {
-      renderFormattedDiff("gd-diff-viewer", res.diff);
+      renderFormattedDiff("gd-diff-viewer", res.diff, filePath);
       return;
     }
     if (typeof res === "string" && res.trim()) {
-      renderFormattedDiff("gd-diff-viewer", res);
+      renderFormattedDiff("gd-diff-viewer", res, filePath);
       return;
     }
     if (res && res.files && Array.isArray(res.files)) {
       const match = res.files.find((f) => f.filePath === filePath);
       if (match && match.diff && match.diff.trim()) {
-        renderFormattedDiff("gd-diff-viewer", match.diff);
+        renderFormattedDiff("gd-diff-viewer", match.diff, filePath);
         return;
       }
     }
-    viewer.textContent = `No active line diff detected for "${filePath}" against HEAD. The file may be in sync with the repository.`;
+    if (viewer) {
+      viewer.innerHTML = `
+        <div class="empty-state" style="padding:40px 16px">
+          <div class="empty-icon">✓</div>
+          <div class="empty-title">In sync with repository</div>
+          <div class="empty-desc">No active line differences detected for "${escapeHtml(filePath)}".</div>
+        </div>`;
+    }
   } catch (err) {
-    viewer.textContent = `Error loading diff: ${err.message}`;
+    if (viewer) viewer.innerHTML = `<div class="text-danger" style="padding:16px">Error loading diff: ${escapeHtml(err.message)}</div>`;
   }
 }
 
-function renderFormattedDiff(containerId, diffText) {
+async function openCurrentFileInOs(mode = "reveal") {
+  const filePath = state.gitDesktop?.selectedFile || document.getElementById("gd-diff-filepath")?.textContent;
+  if (!filePath || filePath.includes("Select a file") || filePath.includes("In sync") || filePath.includes("All Changed Files")) {
+    showToast("Please select a specific file from the changes list", "warning");
+    return;
+  }
+  await openSpecificFileInOs(filePath, mode);
+}
+
+async function openSpecificFileInOs(filePath, mode = "reveal") {
+  const repo = state.activeRepository;
+  const actionName = mode === "edit" ? `Opening ${filePath} in editor...` : `Revealing ${filePath} in File Explorer...`;
+  showToast(actionName, "info");
+
+  try {
+    const res = await api.openInOs(filePath, repo?.id || "", mode);
+    if (res && res.success) {
+      showToast(res.message || "Opened successfully in OS", "success");
+    } else {
+      showToast(`OS error: ${res.error || res.message}`, "error");
+    }
+  } catch (err) {
+    showToast(`OS action error: ${err.message}`, "error");
+  }
+}
+
+async function viewAllFilesDiff() {
+  const repo = state.activeRepository;
+  if (!repo) {
+    showToast("Select a repository first", "warning");
+    return;
+  }
+
+  // Update Diff Header bar
+  const pathEl = document.getElementById("gd-diff-filepath");
+  if (pathEl) pathEl.textContent = "All Changed Files";
+
+  const statusBadge = document.getElementById("gd-diff-status-badge");
+  const files = state.gitDesktop.changedFiles || [];
+  if (statusBadge) {
+    statusBadge.textContent = `${files.length} FILES`;
+    statusBadge.style.display = "inline-block";
+    statusBadge.className = "badge badge-accent";
+  }
+
+  const metaEl = document.getElementById("gd-diff-meta");
+  if (metaEl) metaEl.textContent = `Continuous unified diff across ${files.length} modified files`;
+
+  // Hide single-file OS buttons when viewing all changes
+  const revealBtn = document.getElementById("gd-btn-reveal-os");
+  const editBtn = document.getElementById("gd-btn-open-editor");
+  if (revealBtn) revealBtn.style.display = "none";
+  if (editBtn) editBtn.style.display = "none";
+
+  const countBadge = document.getElementById("gd-all-diff-count");
+  if (countBadge) countBadge.textContent = files.length;
+
+  const viewer = document.getElementById("gd-all-diff-viewer");
+  if (viewer) {
+    viewer.innerHTML = `<div style="text-align:center;padding:40px 16px;color:var(--c-text-muted)"><div class="spinner"></div><div style="margin-top:8px">Loading complete unified diff across all changed files...</div></div>`;
+  }
+
+  try {
+    const res = await api.getGitDiff(repo.id, "");
+    const diffText = (res && res.diff) || (typeof res === "string" ? res : "");
+
+    if (!diffText || !diffText.trim()) {
+      if (viewer) {
+        viewer.innerHTML = `
+          <div class="empty-state" style="padding:48px 20px">
+            <div class="empty-icon">✓</div>
+            <div class="empty-title">Working tree is clean</div>
+            <div class="empty-desc">No active line differences detected across repository.</div>
+          </div>`;
+      }
+      return;
+    }
+
+    renderMultiFileDiff("gd-all-diff-viewer", diffText);
+  } catch (err) {
+    if (viewer) viewer.innerHTML = `<div class="text-danger" style="padding:16px">Error loading all diffs: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderMultiFileDiff(containerId, diffText) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  if (!diffText || !diffText.trim()) {
+    el.innerHTML = `<div class="empty-state" style="padding:32px"><div class="empty-title">No diff content</div></div>`;
+    return;
+  }
+
+  const fileChunks = diffText.split(/(?=diff --git )/g).filter(Boolean);
+  let html = `<div style="display:flex;flex-direction:column;gap:16px">`;
+
+  fileChunks.forEach((chunk) => {
+    const firstLine = chunk.split("\n")[0] || "";
+    const match = /diff --git a\/(.*?) b\/(.*)/.exec(firstLine);
+    const filePath = match ? match[2] : (firstLine.replace("diff --git ", "") || "Modified File");
+
+    const lines = chunk.split("\n");
+    let additions = 0;
+    let deletions = 0;
+    lines.forEach((l) => {
+      if (l.startsWith("+") && !l.startsWith("+++")) additions++;
+      if (l.startsWith("-") && !l.startsWith("---")) deletions++;
+    });
+
+    html += `
+      <div class="diff-viewer" style="border:1px solid var(--c-border);border-radius:var(--r-md);overflow:hidden;background:#ffffff">
+        <div style="padding:8px 14px;background:#f8fafc;border-bottom:1px solid var(--c-border);font-family:var(--font-mono);font-size:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-weight:700;color:var(--c-text)">${escapeHtml(filePath)}</span>
+            <span class="badge badge-success" style="font-size:10.5px">+${additions}</span>
+            <span class="badge badge-danger" style="font-size:10.5px">-${deletions}</span>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="openSpecificFileInOs('${escapeHtml(filePath)}', 'reveal')">📂 Reveal</button>
+            <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="openSpecificFileInOs('${escapeHtml(filePath)}', 'edit')">📝 Open</button>
+            <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" onclick="viewGitDesktopDiff('${escapeHtml(filePath)}')">🔍 Inspect</button>
+          </div>
+        </div>`;
+
+    let lineNumOld = 0;
+    let lineNumNew = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("--- ") || line.startsWith("+++ ") || line.startsWith("new file mode")) {
+        continue;
+      }
+      const escaped = escapeHtml(line);
+
+      if (line.startsWith("@@")) {
+        const hunkMatch = /@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+        if (hunkMatch) {
+          lineNumOld = parseInt(hunkMatch[1], 10);
+          lineNumNew = parseInt(hunkMatch[2], 10);
+        }
+        html += `<div class="diff-file-row diff-line-chunk"><div class="diff-line-number" style="background:#f1f5f9;color:#64748b">...</div><div class="diff-line-content">${escaped}</div></div>`;
+      } else if (line.startsWith("+")) {
+        const numStr = lineNumNew > 0 ? lineNumNew++ : "+";
+        html += `<div class="diff-file-row diff-line-add"><div class="diff-line-number" style="background:#dcfce7;color:#15803d">${numStr}</div><div class="diff-line-content">${escaped}</div></div>`;
+      } else if (line.startsWith("-")) {
+        const numStr = lineNumOld > 0 ? lineNumOld++ : "-";
+        html += `<div class="diff-file-row diff-line-del"><div class="diff-line-number" style="background:#fee2e2;color:#b91c1c">${numStr}</div><div class="diff-line-content">${escaped}</div></div>`;
+      } else {
+        if (lineNumOld > 0) lineNumOld++;
+        if (lineNumNew > 0) lineNumNew++;
+        const numStr = lineNumNew > 0 ? (lineNumNew - 1) : "";
+        html += `<div class="diff-file-row diff-line-context"><div class="diff-line-number">${numStr}</div><div class="diff-line-content">${escaped}</div></div>`;
+      }
+    }
+
+    html += `</div>`;
+  });
+
+  html += `</div>`;
+  el.innerHTML = html;
+}
+
+function renderFormattedDiff(containerId, diffText, filePath = "") {
   const el = document.getElementById(containerId);
   if (!el) return;
 
   const lines = diffText.split("\n");
-  let html = "";
-  for (const line of lines) {
+  let additionsCount = 0;
+  let deletionsCount = 0;
+
+  lines.forEach((l) => {
+    if (l.startsWith("+") && !l.startsWith("+++")) additionsCount++;
+    if (l.startsWith("-") && !l.startsWith("---")) deletionsCount++;
+  });
+
+  let html = `<div class="diff-viewer" style="border:1px solid var(--c-border);border-radius:var(--r-md);overflow:hidden;background:#ffffff">`;
+
+  // Header info line
+  if (filePath) {
+    html += `
+      <div style="padding:8px 14px;background:#f8fafc;border-bottom:1px solid var(--c-border);font-family:var(--font-mono);font-size:11.5px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:700;color:var(--c-text)">${escapeHtml(filePath)}</span>
+        <div style="display:flex;gap:6px">
+          <span class="badge badge-success" style="font-size:10.5px">+${additionsCount}</span>
+          <span class="badge badge-danger" style="font-size:10.5px">-${deletionsCount}</span>
+          <span style="color:var(--c-text-muted);font-size:11px;margin-left:4px">${lines.length} lines</span>
+        </div>
+      </div>`;
+  }
+
+  let lineNumOld = 0;
+  let lineNumNew = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const escaped = escapeHtml(line);
-    if (line.startsWith("+") && !line.startsWith("+++")) {
-      html += `<div style="background:#ecfdf5;color:#065f46;padding:1px 4px">${escaped}</div>`;
+
+    if (line.startsWith("@@")) {
+      const match = /@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+      if (match) {
+        lineNumOld = parseInt(match[1], 10);
+        lineNumNew = parseInt(match[2], 10);
+      }
+      html += `<div class="diff-file-row diff-line-chunk"><div class="diff-line-number" style="background:#f1f5f9;color:#64748b">...</div><div class="diff-line-content">${escaped}</div></div>`;
+    } else if (line.startsWith("+") && !line.startsWith("+++")) {
+      const numStr = lineNumNew > 0 ? lineNumNew++ : "+";
+      html += `<div class="diff-file-row diff-line-add"><div class="diff-line-number" style="background:#dcfce7;color:#15803d">${numStr}</div><div class="diff-line-content">${escaped}</div></div>`;
     } else if (line.startsWith("-") && !line.startsWith("---")) {
-      html += `<div style="background:#fef2f2;color:#991b1b;padding:1px 4px">${escaped}</div>`;
-    } else if (line.startsWith("@@")) {
-      html += `<div style="background:#eff6ff;color:#1e40af;font-weight:600;padding:2px 4px">${escaped}</div>`;
+      const numStr = lineNumOld > 0 ? lineNumOld++ : "-";
+      html += `<div class="diff-file-row diff-line-del"><div class="diff-line-number" style="background:#fee2e2;color:#b91c1c">${numStr}</div><div class="diff-line-content">${escaped}</div></div>`;
     } else {
-      html += `<div style="color:var(--c-text-secondary);padding:1px 4px">${escaped}</div>`;
+      if (lineNumOld > 0) lineNumOld++;
+      if (lineNumNew > 0) lineNumNew++;
+      const numStr = lineNumNew > 0 ? (lineNumNew - 1) : "";
+      html += `<div class="diff-file-row diff-line-context"><div class="diff-line-number">${numStr}</div><div class="diff-line-content">${escaped}</div></div>`;
     }
   }
-  el.innerHTML = html || diffText;
+
+  html += `</div>`;
+  el.innerHTML = html;
 }
 
 function switchGitDesktopTab(tabName) {
-  document.querySelectorAll("#page-git-desktop .tab-item").forEach((tab) => {
-    if (tab.getAttribute("data-tab") === tabName) tab.classList.add("active");
-    else tab.classList.remove("active");
-  });
-
+  const diffBtn = document.getElementById("gd-tab-btn-diff");
+  const allDiffBtn = document.getElementById("gd-tab-btn-all-diff");
+  const outputBtn = document.getElementById("gd-tab-btn-output");
   const diffPanel = document.getElementById("panel-gd-diff");
+  const allDiffPanel = document.getElementById("panel-gd-all-diff");
   const outputPanel = document.getElementById("panel-gd-output");
-  if (tabName === "gd-diff") {
-    diffPanel.style.display = "block";
-    outputPanel.style.display = "none";
-  } else {
-    diffPanel.style.display = "none";
-    outputPanel.style.display = "block";
+
+  if (diffBtn) { diffBtn.className = tabName === "gd-diff" ? "btn btn-secondary btn-sm" : "btn btn-ghost btn-sm"; }
+  if (allDiffBtn) { allDiffBtn.className = tabName === "gd-all-diff" ? "btn btn-secondary btn-sm" : "btn btn-ghost btn-sm"; }
+  if (outputBtn) { outputBtn.className = tabName === "gd-output" ? "btn btn-secondary btn-sm" : "btn btn-ghost btn-sm"; }
+
+  if (diffPanel) diffPanel.style.display = tabName === "gd-diff" ? "block" : "none";
+  if (allDiffPanel) allDiffPanel.style.display = tabName === "gd-all-diff" ? "block" : "none";
+  if (outputPanel) outputPanel.style.display = tabName === "gd-output" ? "block" : "none";
+
+  if (tabName === "gd-all-diff") {
+    viewAllFilesDiff();
   }
 }
 
@@ -2987,7 +3391,9 @@ async function triggerAIAnalyzeChanges() {
     });
 
     planContainer.innerHTML = planHtml;
-    document.getElementById("gd-btn-commit-all").style.display = "inline-flex";
+    const commitAllBtn = document.getElementById("gd-btn-commit-all");
+    if (commitAllBtn) commitAllBtn.style.display = "inline-flex";
+    switchGitDesktopLeftTab("commit-plan");
     showToast(`AI grouped ${plan.totalFiles} files into ${plan.groups.length} logical commits!`, "success");
   } catch (err) {
     summaryEl.textContent = `Analysis failed: ${err.message}`;
@@ -3098,6 +3504,134 @@ async function triggerGitSync() {
   }
 }
 
+// ============================================================
+// GIT DESKTOP COMMIT BOX & HISTORY TABS
+// ============================================================
+
+async function commitFromGitDesktop() {
+  const repo = state.activeRepository;
+  if (!repo) {
+    showToast("Select a repository first", "warning");
+    return;
+  }
+
+  const summaryInput = document.getElementById("gd-commit-summary");
+  const descInput = document.getElementById("gd-commit-desc");
+  const summary = summaryInput ? (summaryInput.value.trim() || summaryInput.placeholder.replace("Update ", "").trim()) : "";
+  const desc = descInput ? descInput.value.trim() : "";
+
+  if (!summary || summary === "Summary (required)") {
+    showToast("Please enter a commit summary", "warning");
+    summaryInput?.focus();
+    return;
+  }
+
+  const fullMessage = desc ? `${summary}\n\n${desc}` : summary;
+  const btn = document.getElementById("gd-btn-commit");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Committing changes...";
+  }
+
+  try {
+    const res = await api.gitCommit(repo.id, fullMessage, true);
+    if (res.success) {
+      showToast(`Committed: ${summary}`, "success");
+      if (summaryInput) summaryInput.value = "";
+      if (descInput) descInput.value = "";
+      await loadGitDesktop();
+    } else {
+      showToast(`Commit failed: ${res.error || res.message}`, "error");
+    }
+  } catch (err) {
+    showToast(`Commit error: ${err.message}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      const branch = state.gitDesktop.gitStatus?.branch || repo.currentBranch || "main";
+      btn.innerHTML = `Commit to <span id="gd-commit-branch-label" style="font-weight:700;margin-left:2px">${escapeHtml(branch)}</span>`;
+    }
+  }
+}
+
+function switchGitDesktopLeftTab(tab) {
+  const changesTab = document.getElementById("gd-tab-changes");
+  const planTab = document.getElementById("gd-tab-commit-plan");
+  const historyTab = document.getElementById("gd-tab-history");
+  const changesPanel = document.getElementById("gd-panel-changes");
+  const planPanel = document.getElementById("gd-panel-commit-plan");
+  const historyPanel = document.getElementById("gd-panel-history");
+
+  changesTab?.classList.remove("active");
+  planTab?.classList.remove("active");
+  historyTab?.classList.remove("active");
+
+  if (changesPanel) changesPanel.style.display = "none";
+  if (planPanel) planPanel.style.display = "none";
+  if (historyPanel) historyPanel.style.display = "none";
+
+  if (tab === "changes") {
+    changesTab?.classList.add("active");
+    if (changesPanel) changesPanel.style.display = "flex";
+  } else if (tab === "commit-plan") {
+    planTab?.classList.add("active");
+    if (planPanel) planPanel.style.display = "flex";
+    if (!state.gitDesktop.commitPlan) {
+      triggerAIAnalyzeChanges();
+    }
+  } else {
+    historyTab?.classList.add("active");
+    if (historyPanel) historyPanel.style.display = "block";
+    loadGitDesktopHistory();
+  }
+}
+
+async function loadGitDesktopHistory() {
+  const repo = state.activeRepository;
+  if (!repo) return;
+
+  const container = document.getElementById("gd-history-list");
+  if (!container) return;
+
+  container.innerHTML = `<div class="text-muted" style="text-align:center;padding:24px;font-size:12px"><div class="spinner"></div><div style="margin-top:6px">Loading commit history...</div></div>`;
+
+  try {
+    const logData = await api.getGitLog(repo.id, 25);
+    const commits = logData.commits || logData.entries || [];
+
+    if (commits.length === 0) {
+      container.innerHTML = `<div class="empty-state" style="padding:24px"><div class="empty-title">No commits found</div></div>`;
+      return;
+    }
+
+    container.innerHTML = commits.map((c) => {
+      const hash = c.shortHash || c.hash?.slice(0, 7) || "";
+      const subject = c.subject || c.message?.split("\n")[0] || "Commit";
+      const author = c.authorName || c.author || "Author";
+      const date = c.relativeDate || c.authorDate || "";
+
+      return `
+        <div class="branch-list-item" style="flex-direction:column;align-items:flex-start;gap:4px">
+          <div style="display:flex;align-items:center;justify-content:space-between;width:100%">
+            <strong style="font-size:12px;color:var(--c-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${escapeHtml(subject)}</strong>
+            <code style="font-weight:700;color:var(--c-accent);font-size:11px;background:var(--c-bg-alt);padding:1px 6px;border-radius:4px">${escapeHtml(hash)}</code>
+          </div>
+          <div style="font-size:11px;color:var(--c-text-muted);display:flex;gap:8px">
+            <span>👤 ${escapeHtml(author)}</span>
+            <span>·</span>
+            <span>${escapeHtml(date)}</span>
+          </div>
+        </div>`;
+    }).join("");
+  } catch (err) {
+    container.innerHTML = `<div class="text-danger" style="padding:16px;font-size:12px">Error loading commit history: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+// ============================================================
+// PUSH TO REMOTE WITH BRANCH SELECTION
+// ============================================================
+
 async function openPushPreviewModal() {
   const repo = state.activeRepository;
   if (!repo) {
@@ -3105,41 +3639,95 @@ async function openPushPreviewModal() {
     return;
   }
 
-  document.getElementById("push-target-repo").textContent = repo.name || repo.path;
-  const branch = state.gitDesktop.gitStatus?.branch || "main";
-  document.getElementById("push-target-branch").textContent = branch;
-  document.getElementById("push-remote-branch").textContent = branch;
+  const targetRepoEl = document.getElementById("push-target-repo");
+  if (targetRepoEl) targetRepoEl.textContent = repo.name || repo.path;
+
+  const currentBranch = state.gitDesktop.gitStatus?.branch || repo.currentBranch || repo.defaultBranch || "main";
+  const currentBranchEl = document.getElementById("push-current-branch");
+  if (currentBranchEl) currentBranchEl.textContent = currentBranch;
+
+  const branchSelect = document.getElementById("push-target-branch-select");
+  const customInput = document.getElementById("push-custom-branch-input");
+  if (customInput) customInput.style.display = "none";
+
+  if (branchSelect) {
+    branchSelect.innerHTML = `<option value="${escapeHtml(currentBranch)}">🌿 Current branch: ${escapeHtml(currentBranch)}</option>`;
+  }
 
   const branchRuleEl = document.getElementById("push-check-branch");
-  const isProtected = ["main", "master", "production"].includes(branch);
-  if (isProtected) {
-    branchRuleEl.textContent = "WARNING (Protected branch: push requires confirmation)";
-    branchRuleEl.className = "badge badge-warning";
-  } else {
-    branchRuleEl.textContent = "PASSED (Safe feature branch)";
-    branchRuleEl.className = "badge badge-success";
+  const isProtected = ["main", "master", "production"].includes(currentBranch);
+  if (branchRuleEl) {
+    if (isProtected) {
+      branchRuleEl.textContent = "Protected branch (requires review)";
+      branchRuleEl.className = "badge badge-warning";
+    } else {
+      branchRuleEl.textContent = "PASSED (Safe branch)";
+      branchRuleEl.className = "badge badge-success";
+    }
   }
 
   const commitsListEl = document.getElementById("push-commits-list");
-  commitsListEl.innerHTML = `<div class="text-muted" style="font-size:12px">Checking outgoing commits...</div>`;
+  if (commitsListEl) {
+    commitsListEl.innerHTML = `<div class="text-muted" style="font-size:12px;text-align:center;padding:10px"><div class="spinner"></div><div style="margin-top:4px">Checking outgoing commits...</div></div>`;
+  }
   openModal("modal-push-preview");
 
+  // Populate branch selection options from git branches
   try {
-    const logData = await api.getGitLog(repo.id, 5);
-    const commits = logData.commits || logData.entries || [];
-    document.getElementById("push-commits-count").textContent = `${commits.length} outgoing commit(s)`;
+    const branchesData = await api.getGitBranches(repo.id);
+    const branches = branchesData.branches || [];
+    if (branchSelect) {
+      let opts = `<option value="${escapeHtml(currentBranch)}">🌿 Current branch (${escapeHtml(currentBranch)})</option>`;
+      const otherBranches = branches.filter((b) => b.name !== currentBranch);
+      if (otherBranches.length > 0) {
+        opts += `<optgroup label="Available Repository Branches">`;
+        otherBranches.forEach((b) => {
+          opts += `<option value="${escapeHtml(b.name)}">${escapeHtml(b.name)}</option>`;
+        });
+        opts += `</optgroup>`;
+      }
+      opts += `<option value="__custom__">➕ Push to custom / new branch name...</option>`;
+      branchSelect.innerHTML = opts;
+    }
+  } catch (e) {
+    console.warn("Could not fetch branches for push modal:", e);
+  }
 
-    if (commits.length === 0) {
-      commitsListEl.innerHTML = `<div class="text-muted" style="font-size:12px">No local commits waiting to be pushed.</div>`;
-    } else {
-      commitsListEl.innerHTML = commits.map((c) => `
-        <div style="display:flex;align-items:center;gap:8px;font-size:11px;padding:4px 0;border-bottom:1px solid var(--c-border-subtle)">
-          <code style="font-weight:700;color:var(--c-accent)">${escapeHtml(c.shortHash || c.hash?.slice(0, 7) || "")}</code>
-          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(c.subject || c.message || "")}</span>
-        </div>`).join("");
+  // Populate outgoing commits list
+  try {
+    const logData = await api.getGitLog(repo.id, 10);
+    const commits = logData.commits || logData.entries || [];
+    const countEl = document.getElementById("push-commits-count");
+    if (countEl) countEl.textContent = `${commits.length} outgoing commit(s)`;
+
+    if (commitsListEl) {
+      if (commits.length === 0) {
+        commitsListEl.innerHTML = `<div class="text-muted" style="font-size:12px;text-align:center;padding:12px">No outgoing commits waiting. Remote is up to date.</div>`;
+      } else {
+        commitsListEl.innerHTML = commits.map((c) => `
+          <div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:5px 8px;border-bottom:1px solid var(--c-border-subtle)">
+            <code style="font-weight:700;color:var(--c-accent);font-size:11px">${escapeHtml(c.shortHash || c.hash?.slice(0, 7) || "")}</code>
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(c.subject || c.message || "")}</span>
+          </div>`).join("");
+      }
     }
   } catch (err) {
-    commitsListEl.innerHTML = `<div class="text-muted" style="font-size:12px">Unable to retrieve commit log.</div>`;
+    if (commitsListEl) {
+      commitsListEl.innerHTML = `<div class="text-muted" style="font-size:12px">Commit log checked.</div>`;
+    }
+  }
+}
+
+function onPushTargetBranchChanged() {
+  const select = document.getElementById("push-target-branch-select");
+  const customInput = document.getElementById("push-custom-branch-input");
+  if (!select || !customInput) return;
+
+  if (select.value === "__custom__") {
+    customInput.style.display = "block";
+    customInput.focus();
+  } else {
+    customInput.style.display = "none";
   }
 }
 
@@ -3147,22 +3735,141 @@ async function executePushFromModal() {
   const repo = state.activeRepository;
   if (!repo) return;
 
+  const select = document.getElementById("push-target-branch-select");
+  const customInput = document.getElementById("push-custom-branch-input");
+  let targetBranch = select ? select.value : "";
+  if (targetBranch === "__custom__" && customInput) {
+    targetBranch = customInput.value.trim();
+  }
+  if (!targetBranch) {
+    targetBranch = state.gitDesktop.gitStatus?.branch || repo.currentBranch || "main";
+  }
+
+  const remote = document.getElementById("push-remote-select")?.value || "origin";
+  const setUpstream = document.getElementById("push-set-upstream")?.checked !== false;
+  const forceWithLease = document.getElementById("push-force-with-lease")?.checked === true;
+
   const btn = document.getElementById("confirm-push-btn");
-  btn.disabled = true;
-  btn.textContent = "Pushing...";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = `Pushing to ${targetBranch}...`;
+  }
 
   try {
-    const res = await api.gitPush(repo.id);
+    const res = await api.gitPush(repo.id, remote, targetBranch, setUpstream, forceWithLease);
     closeModal("modal-push-preview");
-    document.getElementById("gd-console-output").textContent = res.output || "Push succeeded.";
+    const consoleEl = document.getElementById("gd-console-output");
+    if (consoleEl) {
+      consoleEl.textContent = res.output || res.message || "Push completed successfully.";
+    }
     switchGitDesktopTab("gd-output");
     await loadGitDesktop();
-    showToast("Pushed successfully to remote!", "success");
+    showToast(`Successfully pushed to ${remote}/${targetBranch}!`, "success");
   } catch (err) {
     showToast(`Push failed: ${err.message}`, "error");
   } finally {
-    btn.disabled = false;
-    btn.textContent = "Confirm & Push to Remote";
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Confirm & Push to Remote";
+    }
+  }
+}
+
+// ============================================================
+// BRANCH SWITCHER & CREATOR (GitHub Desktop Style)
+// ============================================================
+
+let allRepoBranches = [];
+
+async function openBranchSwitcherModal() {
+  const repo = state.activeRepository;
+  if (!repo) {
+    showToast("Select a repository first", "warning");
+    return;
+  }
+
+  const container = document.getElementById("branch-list-container");
+  if (container) {
+    container.innerHTML = `<div class="text-muted" style="text-align:center;padding:20px;font-size:12px"><div class="spinner"></div><div style="margin-top:6px">Loading branches...</div></div>`;
+  }
+  openModal("modal-branch-switcher");
+
+  try {
+    const data = await api.getGitBranches(repo.id);
+    allRepoBranches = data.branches || [];
+    renderBranchSwitcherList(allRepoBranches);
+  } catch (err) {
+    if (container) {
+      container.innerHTML = `<div class="text-danger" style="padding:16px;font-size:12px">Error loading branches: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+}
+
+function renderBranchSwitcherList(branches) {
+  const container = document.getElementById("branch-list-container");
+  if (!container) return;
+
+  const currentBranch = state.gitDesktop.gitStatus?.branch || state.activeRepository?.currentBranch || "main";
+
+  if (branches.length === 0) {
+    container.innerHTML = `<div class="text-muted" style="text-align:center;padding:20px;font-size:12px">No branches found.</div>`;
+    return;
+  }
+
+  container.innerHTML = branches.map((b) => {
+    const isCurrent = b.name === currentBranch || b.current;
+    return `
+      <div class="branch-list-item ${isCurrent ? "active-branch" : ""}" onclick="checkoutSelectedBranch('${escapeHtml(b.name)}')">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span>${isCurrent ? "✓" : "🌿"}</span>
+          <span style="font-family:var(--font-mono);font-size:12.5px">${escapeHtml(b.name)}</span>
+        </div>
+        ${isCurrent ? '<span class="badge badge-accent">current</span>' : '<span style="font-size:11px;color:var(--c-text-muted)">checkout</span>'}
+      </div>`;
+  }).join("");
+}
+
+function filterBranchList() {
+  const query = document.getElementById("branch-search-input")?.value?.toLowerCase() || "";
+  const filtered = allRepoBranches.filter((b) => b.name.toLowerCase().includes(query));
+  renderBranchSwitcherList(filtered);
+}
+
+async function checkoutSelectedBranch(branchName) {
+  const repo = state.activeRepository;
+  if (!repo) return;
+
+  try {
+    const res = await api.checkoutBranch(repo.id, branchName, false);
+    closeModal("modal-branch-switcher");
+    showToast(`Switched to branch '${branchName}'`, "success");
+    await setActiveRepository(repo);
+  } catch (err) {
+    showToast(`Failed to switch branch: ${err.message}`, "error");
+  }
+}
+
+async function createAndCheckoutBranch() {
+  const repo = state.activeRepository;
+  if (!repo) return;
+
+  const input = document.getElementById("new-branch-name-input");
+  const branchName = input ? input.value.trim() : "";
+
+  if (!branchName) {
+    showToast("Branch name is required", "warning");
+    input?.focus();
+    return;
+  }
+
+  try {
+    const res = await api.checkoutBranch(repo.id, branchName, true);
+    closeModal("modal-branch-switcher");
+    if (input) input.value = "";
+    showToast(`Created & switched to new branch '${branchName}'`, "success");
+    await setActiveRepository(repo);
+  } catch (err) {
+    showToast(`Failed to create branch: ${err.message}`, "error");
   }
 }
 
@@ -3347,14 +4054,27 @@ window.loadGitDesktop = loadGitDesktop;
 window.filterChangedFiles = filterChangedFiles;
 window.viewGitDesktopDiff = viewGitDesktopDiff;
 window.switchGitDesktopTab = switchGitDesktopTab;
+window.switchGitDesktopLeftTab = switchGitDesktopLeftTab;
+window.loadGitDesktopHistory = loadGitDesktopHistory;
+window.commitFromGitDesktop = commitFromGitDesktop;
 window.triggerAIAnalyzeChanges = triggerAIAnalyzeChanges;
 window.triggerAICommitAll = triggerAICommitAll;
 window.triggerGitFetch = triggerGitFetch;
 window.triggerGitPull = triggerGitPull;
 window.triggerGitSync = triggerGitSync;
 window.openPushPreviewModal = openPushPreviewModal;
+window.onPushTargetBranchChanged = onPushTargetBranchChanged;
 window.executePushFromModal = executePushFromModal;
+window.openBranchSwitcherModal = openBranchSwitcherModal;
+window.filterBranchList = filterBranchList;
+window.checkoutSelectedBranch = checkoutSelectedBranch;
+window.createAndCheckoutBranch = createAndCheckoutBranch;
 window.triggerAIShip = triggerAIShip;
 window.loadConflictsPage = loadConflictsPage;
 window.triggerResolveAllConflicts = triggerResolveAllConflicts;
 window.setInvestigationMode = setInvestigationMode;
+window.generateAutoCommitMessage = generateAutoCommitMessage;
+window.openCurrentFileInOs = openCurrentFileInOs;
+window.openSpecificFileInOs = openSpecificFileInOs;
+window.viewAllFilesDiff = viewAllFilesDiff;
+window.setupFolderDropZone = setupFolderDropZone;

@@ -156,11 +156,15 @@ export async function executeSafePush(
 
   const remote = options.remote || "origin";
   const branch = options.branch || preCheck.currentBranch;
+  const refSpec =
+    branch === preCheck.currentBranch
+      ? branch
+      : `${preCheck.currentBranch}:${branch}`;
 
-  let cmd = `git push ${remote} ${branch}`;
+  let cmd = `git push ${remote} ${refSpec}`;
 
   if (options.setUpstream) {
-    cmd = `git push -u ${remote} ${branch}`;
+    cmd = `git push -u ${remote} ${refSpec}`;
   }
 
   if (options.forceWithLease && options.allowForce) {

@@ -1023,7 +1023,10 @@ body {
   display: block;
 }
 
-/* Code & Diff Viewer */
+/* ============================================================
+   EXECUTIVE LIGHT GITHUB DIFF VIEWER
+   Clean, crisp typography with standard GitHub additions & deletions
+   ============================================================ */
 .code-block {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -1033,6 +1036,17 @@ body {
   padding: 14px 16px;
   border-radius: var(--r-md);
   overflow-x: auto;
+}
+
+.github-diff-viewer {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  background: #ffffff;
+  border-radius: var(--r-md);
+  color: var(--c-text);
+  overflow-x: auto;
+  border: 1px solid var(--c-border);
 }
 
 .diff-viewer {
@@ -1047,19 +1061,100 @@ body {
   white-space: pre-wrap;
 }
 
-.diff-line.diff-add {
-  background: rgba(16, 185, 129, 0.15);
-  color: #059669;
+.diff-file-row {
+  display: flex;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 20px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.03);
 }
 
-.diff-line.diff-del {
-  background: rgba(239, 68, 68, 0.15);
-  color: #dc2626;
+.diff-line-add {
+  background-color: #ecfdf5 !important;
+  color: #166534 !important;
+  border-left: 3px solid #22c55e;
 }
 
-.diff-line.diff-header {
-  color: #64748b;
+.diff-line-del {
+  background-color: #fef2f2 !important;
+  color: #991b1b !important;
+  border-left: 3px solid #ef4444;
+}
+
+.diff-line-chunk {
+  background-color: #f8fafc !important;
+  color: #475569 !important;
+  font-weight: 600;
+  border-left: 3px solid #94a3b8;
+  padding: 3px 8px !important;
+  font-size: 11.5px;
+}
+
+.diff-line-context {
+  background-color: #ffffff;
+  color: #1e293b !important;
+  border-left: 3px solid transparent;
+}
+
+.diff-line-number {
+  width: 44px;
+  padding-right: 8px;
+  text-align: right;
+  color: #94a3b8;
+  user-select: none;
+  font-size: 11px;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.015);
+  border-right: 1px solid var(--c-border-subtle);
+}
+
+.diff-line-content {
+  padding: 1px 10px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  flex: 1;
+}
+
+/* Branch switcher items */
+.branch-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--c-border-subtle);
+  cursor: pointer;
+  transition: background 0.12s;
+  font-size: 13px;
+}
+
+.branch-list-item:hover {
+  background: var(--c-surface-hover);
+}
+
+.branch-list-item.active-branch {
+  background: var(--c-accent-light);
   font-weight: 700;
+  color: var(--c-accent);
+}
+
+/* Workspace quickpick cards */
+.workspace-quickpick-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: #ffffff;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 12px;
+}
+
+.workspace-quickpick-card:hover {
+  border-color: var(--c-accent-border);
+  background: var(--c-accent-light);
+  transform: translateY(-1px);
 }
 
 /* Modals */
@@ -1522,6 +1617,11 @@ body {
    ============================================================ */
 
 .git-desktop-header {
+  position: sticky;
+  top: 60px;
+  z-index: 900;
+  background: var(--c-surface);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1826,4 +1926,242 @@ body {
   height: 220px;
   overflow-y: auto;
   white-space: pre-wrap;
+}
+
+/* ============================================================
+   GIT DESKTOP & CLEAN LIGHT DIFF VIEWER STYLES
+   ============================================================ */
+
+.github-diff-viewer {
+  background: #ffffff !important;
+  color: #1e293b !important;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", Menlo, Consolas, monospace !important;
+  font-size: 12px !important;
+  line-height: 1.55 !important;
+}
+
+.diff-viewer {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--r-md);
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  overflow: hidden;
+}
+
+.diff-file-row {
+  display: flex;
+  align-items: stretch;
+  min-height: 22px;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #1e293b;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.4);
+}
+
+.diff-file-row:hover {
+  filter: brightness(0.98);
+}
+
+.diff-line-number {
+  width: 48px;
+  min-width: 48px;
+  max-width: 48px;
+  padding: 1px 8px;
+  text-align: right;
+  user-select: none;
+  font-size: 11px;
+  font-family: inherit;
+  color: #94a3b8;
+  background: #f8fafc;
+  border-right: 1px solid #e2e8f0;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.diff-line-content {
+  padding: 1px 12px;
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #1e293b;
+  font-family: inherit;
+}
+
+/* Additions (Clean Green - No harsh blue) */
+.diff-line-add {
+  background-color: #ecfdf5 !important;
+}
+
+.diff-line-add .diff-line-number {
+  background-color: #dcfce7 !important;
+  color: #15803d !important;
+  border-right: 1px solid #bbf7d0 !important;
+}
+
+.diff-line-add .diff-line-content {
+  color: #166534 !important;
+  font-weight: 500;
+}
+
+/* Deletions (Clean Red) */
+.diff-line-del {
+  background-color: #fef2f2 !important;
+}
+
+.diff-line-del .diff-line-number {
+  background-color: #fee2e2 !important;
+  color: #b91c1c !important;
+  border-right: 1px solid #fecaca !important;
+}
+
+.diff-line-del .diff-line-content {
+  color: #991b1b !important;
+  font-weight: 500;
+}
+
+/* Chunk Headers (Slate Grey - Crisp and readable, NO blue) */
+.diff-line-chunk {
+  background-color: #f1f5f9 !important;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.diff-line-chunk .diff-line-number {
+  background-color: #e2e8f0 !important;
+  color: #64748b !important;
+  border-right: 1px solid #cbd5e1 !important;
+}
+
+.diff-line-chunk .diff-line-content {
+  color: #475569 !important;
+  font-weight: 600;
+  font-size: 11.5px;
+}
+
+/* Context lines */
+.diff-line-context {
+  background-color: #ffffff;
+}
+
+.diff-line-context .diff-line-content {
+  color: #334155;
+}
+
+/* Changed File Rows in Git Desktop Left Panel */
+.git-change-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--c-border-subtle);
+  transition: background 0.15s ease;
+}
+
+.git-change-row:hover {
+  background: var(--c-surface-hover);
+}
+
+.git-change-row.selected {
+  background: #eff6ff;
+  border-left: 3px solid var(--c-accent);
+}
+
+.git-change-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.git-change-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.git-file-name {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-sm);
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.git-status-badge.M {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.git-status-badge.A {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.git-status-badge.D {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.git-status-badge.\? {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+/* Shortcut Pills in Folder Browser */
+.folder-shortcut-pill {
+  border: 1px solid var(--c-border);
+  border-radius: 20px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  transition: all 0.15s ease;
+}
+
+.folder-shortcut-pill:hover {
+  border-color: var(--c-accent);
+  background: var(--c-surface-hover);
+  color: var(--c-accent);
+}
+
+.folder-shortcut-pill.active-shortcut {
+  background: var(--c-accent-light);
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+}
+
+/* Branch Switcher Modal Items */
+.branch-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--c-border-subtle);
+  transition: background 0.15s ease;
+}
+
+.branch-list-item:hover {
+  background: var(--c-surface-hover);
+}
+
+.branch-list-item.active-branch {
+  background: #eff6ff;
+  border-left: 3px solid var(--c-accent);
 }

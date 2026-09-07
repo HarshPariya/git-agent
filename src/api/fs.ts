@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { AppError } from "../errors/app-error.js";
+import { getExecutionPath } from "../git/engine.js";
 
 export interface DirectoryItem {
   readonly name: string;
@@ -48,24 +49,6 @@ export interface PickNativeDialogResult {
   readonly cancelled: boolean;
 }
 
-function getAvailableDrives(): readonly string[] {
-  if (process.platform !== "win32") {
-    return ["/"];
-  }
-  const drives: string[] = [];
-  for (let i = 65; i <= 90; i++) {
-    const letter = String.fromCharCode(i);
-    const drivePath = `${letter}:\\`;
-    try {
-      if (fs.existsSync(drivePath)) {
-        drives.push(drivePath);
-      }
-    } catch {
-      // Ignore inaccessible drives
-    }
-  }
-  return drives;
-}
 
 export async function browseFilesystemHandler(
   request: Request,
@@ -79,7 +62,9 @@ export async function browseFilesystemHandler(
     let targetPath: string;
 
     if (!rawPath) {
-      targetPath = homedir;
+      // Connect directly with PC workspace (e.g. Codage-tasks containing projects)
+      const workspaceParent = path.dirname(process.cwd());
+      targetPath = fs.existsSync(workspaceParent) ? workspaceParent : process.cwd();
     } else if (rawPath === "~" || rawPath.startsWith("~/") || rawPath.startsWith("~\\")) {
       const sub = rawPath.replace(/^~[/\\]?/, "");
       targetPath = path.resolve(homedir, sub);
@@ -96,7 +81,7 @@ export async function browseFilesystemHandler(
         targetPath = path.dirname(targetPath);
       }
     } catch {
-      targetPath = homedir;
+      targetPath = process.cwd();
     }
 
     // Check if current target directory is a git repo
@@ -171,38 +156,17 @@ export async function browseFilesystemHandler(
     });
     files.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
-    // Helpful navigation shortcuts — user-centric and cross-platform (Mac, Windows, Linux)
-    const shortcutCandidates: { name: string; path: string }[] = [
-      { name: "🏠 Home Directory", path: homedir },
-      { name: "🖥️ Desktop", path: path.join(homedir, "Desktop") },
-      { name: "📄 Documents", path: path.join(homedir, "Documents") },
-      { name: "📥 Downloads", path: path.join(homedir, "Downloads") },
-      { name: "💼 Projects", path: path.join(homedir, "Projects") },
-      { name: "💼 Developer", path: path.join(homedir, "Developer") },
-      { name: "💼 Workspace", path: path.join(homedir, "Workspace") },
-      { name: "💼 Repos", path: path.join(homedir, "source", "repos") },
-      { name: "💼 Repos", path: path.join(homedir, "repos") },
-    ];
-
-    if (process.platform === "win32") {
-      const drives = getAvailableDrives();
-      for (const drive of drives) {
-        shortcutCandidates.push({ name: `💾 Drive ${drive}`, path: drive });
-      }
-    } else {
-      shortcutCandidates.push({ name: "🗄️ System Root (/)", path: "/" });
-      if (process.platform === "darwin" && fs.existsSync("/Volumes")) {
-        shortcutCandidates.push({ name: "💾 External Volumes", path: "/Volumes" });
-      }
+    // Clean local project & workspace navigation
+    const shortcutCandidates: { name: string; path: string }[] = [];
+    const cwd = process.cwd();
+    const workspaceParent = path.dirname(cwd);
+    if (fs.existsSync(cwd)) {
+      shortcutCandidates.push({ name: `📁 Current Project (${path.basename(cwd)})`, path: cwd });
     }
-
-    const shortcuts = shortcutCandidates.filter((s) => {
-      try {
-        return fs.existsSync(s.path);
-      } catch {
-        return false;
-      }
-    });
+    if (fs.existsSync(workspaceParent)) {
+      shortcutCandidates.push({ name: `💻 Workspace (${path.basename(workspaceParent)})`, path: workspaceParent });
+    }
+    const shortcuts = shortcutCandidates;
 
     const result: BrowseResult = {
       currentPath: targetPath,
@@ -217,6 +181,25 @@ export async function browseFilesystemHandler(
   } catch (error) {
     next(error);
   }
+}
+
+function getAvailableDrives(): readonly string[] {
+  if (process.platform !== "win32") {
+    return ["/"];
+  }
+  const drives: string[] = [];
+  for (let i = 65; i <= 90; i++) {
+    const letter = String.fromCharCode(i);
+    const drivePath = `${letter}:\\`;
+    try {
+      if (fs.existsSync(drivePath)) {
+        drives.push(drivePath);
+      }
+    } catch {
+      // Ignore inaccessible drives
+    }
+  }
+  return drives;
 }
 
 export async function resolveFolderHandler(
@@ -387,10 +370,13 @@ Add-Type -AssemblyName System.Windows.Forms
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
 $dialog.Description = "Select any repository or project folder"
 $dialog.ShowNewFolderButton = $true
-$res = $dialog.ShowDialog()
+$topForm = New-Object System.Windows.Forms.Form
+$topForm.TopMost = $true
+$res = $dialog.ShowDialog($topForm)
 if ($res -eq [System.Windows.Forms.DialogResult]::OK) {
   Write-Output $dialog.SelectedPath
 }
+$topForm.Dispose()
 `;
       const encoded = Buffer.from(psScript, "utf16le").toString("base64");
       execFile(
@@ -428,4 +414,77 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) {
       );
     }
   });
+}
+
+export async function openInOsHandler(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const body =
+      typeof request.body === "object" && request.body !== null
+        ? (request.body as Record<string, unknown>)
+        : {};
+
+    const filePath = typeof body.filePath === "string" ? body.filePath.trim() : "";
+    const repoId = typeof body.repositoryId === "string" ? body.repositoryId.trim() : "";
+    const mode = typeof body.mode === "string" ? body.mode : "reveal"; // "reveal" | "edit"
+
+    if (!filePath && !repoId) {
+      throw new AppError("filePath or repositoryId is required", "VALIDATION_ERROR", 400);
+    }
+
+    let fullPath = filePath;
+    if (repoId) {
+      const repoPath = getExecutionPath(repoId);
+      if (filePath) {
+        fullPath = path.isAbsolute(filePath) ? filePath : path.resolve(repoPath, filePath);
+      } else {
+        fullPath = repoPath;
+      }
+    } else if (filePath && !path.isAbsolute(filePath)) {
+      fullPath = path.resolve(process.cwd(), filePath);
+    }
+
+    if (!fs.existsSync(fullPath)) {
+      throw new AppError(`Path does not exist: ${fullPath}`, "VALIDATION_ERROR", 404);
+    }
+
+    const stat = await fs.promises.stat(fullPath);
+    const isDir = stat.isDirectory();
+
+    if (process.platform === "win32") {
+      if (mode === "reveal") {
+        if (isDir) {
+          execFile("explorer.exe", [fullPath], () => { });
+        } else {
+          execFile("explorer.exe", [`/select,${fullPath}`], () => { });
+        }
+      } else {
+        // Edit mode: try VS Code first, fallback to default Windows association
+        execFile("code", [fullPath], (err) => {
+          if (err) {
+            execFile("cmd.exe", ["/c", "start", "", fullPath], () => { });
+          }
+        });
+      }
+    } else if (process.platform === "darwin") {
+      if (mode === "reveal") {
+        execFile("open", ["-R", fullPath], () => { });
+      } else {
+        execFile("open", [fullPath], () => { });
+      }
+    } else {
+      execFile("xdg-open", [isDir ? fullPath : path.dirname(fullPath)], () => { });
+    }
+
+    response.status(200).json({
+      success: true,
+      path: fullPath,
+      mode,
+    });
+  } catch (error) {
+    next(error);
+  }
 }

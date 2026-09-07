@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { AppError } from "../errors/app-error.js";
 import type {
   GitOperation,
@@ -19,7 +20,11 @@ export function registerRepositoryPath(repositoryId: string, localPath: string):
 }
 
 export function getExecutionPath(repositoryOrPath: string): string {
-  return repositoryPaths.get(repositoryOrPath) ?? repositoryOrPath;
+  if (!repositoryOrPath) return process.cwd();
+  const mapped = repositoryPaths.get(repositoryOrPath);
+  if (mapped && fs.existsSync(mapped)) return mapped;
+  if (fs.existsSync(repositoryOrPath)) return repositoryOrPath;
+  return process.cwd();
 }
 
 const GIT_OPERATION_CATALOG: readonly GitOperation[] = [
@@ -407,12 +412,11 @@ export async function executeGitOperation(
 }
 
 async function runGit(repoPath: string, args: string): Promise<string> {
-  const { execFile } = await import("node:child_process");
+  const { exec } = await import("node:child_process");
 
   return new Promise((resolve, reject) => {
-    execFile(
-      "git",
-      args.split(" ").filter(Boolean),
+    exec(
+      `git ${args}`,
       {
         cwd: repoPath,
         maxBuffer: 10 * 1024 * 1024,

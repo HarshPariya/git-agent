@@ -23,6 +23,7 @@ import {
 } from "../git/change-analyzer.js";
 import { getGitHubToken } from "../github/auth.js";
 import { createGitHubPR } from "../github/pull-requests.js";
+import { generateText } from "../llm/client.js";
 
 function getGitRequestData(request: Request): Record<string, unknown> {
   const query = request.query as Record<string, unknown>;
@@ -439,11 +440,31 @@ export async function gitDiffHandler(
         } catch { }
       }
     } else {
-      // Full repo diff
+      // Full repo diff (unstaged, staged, and untracked files)
       try {
         const { stdout: unstagedOut } = await execAsync("git diff", { cwd: repoPath });
         const { stdout: stagedOut } = await execAsync("git diff --cached", { cwd: repoPath });
         diffText = [unstagedOut.trim(), stagedOut.trim()].filter(Boolean).join("\n");
+
+        // Also append untracked files so the user sees all changes
+        const { stdout: untrackedOut } = await execAsync("git ls-files --others --exclude-standard", { cwd: repoPath });
+        const untrackedFiles = untrackedOut.split("\n").map((f) => f.trim()).filter(Boolean);
+        for (const uFile of untrackedFiles.slice(0, 15)) {
+          try {
+            const fullPath = path.resolve(repoPath, uFile);
+            const content = await fs.readFile(fullPath, "utf-8");
+            const lines = content.split("\n");
+            const uDiff = [
+              `diff --git a/${uFile} b/${uFile}`,
+              `new file mode 100644`,
+              `--- /dev/null`,
+              `+++ b/${uFile}`,
+              `@@ -0,0 +1,${lines.length} @@`,
+              ...lines.map((l) => `+${l}`),
+            ].join("\n");
+            diffText = diffText ? `${diffText}\n\n${uDiff}` : uDiff;
+          } catch { }
+        }
       } catch { }
     }
 
@@ -879,3 +900,197 @@ export async function gitShipHandler(
   }
 }
 
+// ============================================================
+// GENERATE COMMIT MESSAGE (Groq LLM powered)
+// ============================================================
+
+export async function generateCommitMessageHandler(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId =
+      typeof body.repositoryId === "string" && body.repositoryId.trim()
+        ? body.repositoryId.trim()
+        : (() => {
+          throw new AppError("repositoryId is required", "VALIDATION_ERROR", 400);
+        })();
+
+    // Get git status to know which files changed
+    const status = await executeGitStatus(repoId);
+    const statusAny = status as unknown as Record<string, unknown[]>;
+    const changedFiles: unknown[] = [
+      ...((status.entries ?? []) as readonly unknown[]),
+      ...(statusAny.staged ?? []),
+      ...(statusAny.unstaged ?? []),
+      ...(statusAny.untracked ?? []),
+    ];
+
+    if (changedFiles.length === 0) {
+      response.status(200).json({
+        summary: "chore: no changes detected",
+        description: "",
+        files: [],
+        branch: (status as { branch?: string }).branch ?? "main",
+      });
+      return;
+    }
+
+    // Get diff for context (limited to keep prompt short)
+    let diffContext = "";
+    try {
+      const repoPath = getExecutionPath(repoId);
+      const { stdout: unstagedOut } = await execAsync("git diff", { cwd: repoPath });
+      const { stdout: stagedOut } = await execAsync("git diff --cached", { cwd: repoPath });
+      diffContext = [unstagedOut.trim(), stagedOut.trim()].filter(Boolean).join("\n").slice(0, 4000);
+    } catch {
+      diffContext = changedFiles.map((f) => {
+        const fo = f as Record<string, unknown>;
+        return `- ${String(fo.path ?? fo.filePath ?? f)} (${String(fo.status ?? "modified")})`;
+      }).join("\n");
+    }
+
+    const fileList = changedFiles.map((f) => {
+      const fo = f as Record<string, unknown>;
+      const fp = String(fo.path ?? fo.filePath ?? f);
+      const st = String(fo.status ?? "modified");
+      return `${st}: ${fp}`;
+    }).join("\n");
+
+    const instructions = `You are a Principal Software Engineer. Write a production-ready, professional Conventional Commit message for these git changes.
+
+Strict Rules:
+1. Format: <type>(<scope>): <clear, concise, imperative summary of what was actually changed/added/fixed>
+2. Types: feat, fix, chore, refactor, style, docs, test, ci, perf, build
+3. The summary line must be <= 72 characters, describing the concrete capability or bug fix (NEVER generic phrases like "update files" or "work in progress").
+4. The description must have 2 to 6 detailed bullet points starting with "- ", explaining:
+   - What architectural changes or capabilities were introduced
+   - Which specific files and components were modified and why
+   - Any UX, API, or bug fix enhancements
+5. Output ONLY valid JSON matching this exact structure:
+{"summary": "feat(scope): concise summary", "description": "- bullet 1\\n- bullet 2\\n- bullet 3"}`;
+
+    const input = `Changed files:\n${fileList}\n\nGit diff (truncated):\n${diffContext}`;
+
+    let summary = "";
+    let description = "";
+
+    try {
+      const llmRes = await generateText({ instructions, input });
+      let clean = llmRes.text.trim();
+      if (clean.startsWith("```")) {
+        clean = clean.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+      }
+
+      // 1. Try standard JSON.parse
+      try {
+        const jsonMatch = /\{[\s\S]*\}/.exec(clean);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]) as { summary?: string; description?: string | string[] };
+          if (parsed.summary && !parsed.summary.toLowerCase().includes("update files")) {
+            summary = String(parsed.summary).trim();
+          }
+          if (parsed.description) {
+            description = Array.isArray(parsed.description)
+              ? parsed.description.join("\n")
+              : String(parsed.description).trim();
+          }
+        }
+      } catch {
+        // Fallback to regex extraction if JSON has unescaped characters
+        const summaryMatch = /"summary"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/.exec(clean);
+        const matchedSummary = summaryMatch?.[1];
+        if (matchedSummary && !matchedSummary.toLowerCase().includes("update files")) {
+          summary = matchedSummary.replace(/\\"/g, '"').trim();
+        }
+
+        const descMatch = /"description"\s*:\s*"([\s\S]*?)"\s*\}/.exec(clean);
+        const matchedDesc = descMatch?.[1];
+        if (matchedDesc) {
+          description = matchedDesc
+            .replace(/\\n/g, "\n")
+            .replace(/\\"/g, '"')
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean)
+            .join("\n");
+        }
+      }
+
+      // 2. Line-by-line fallback if JSON extraction wasn't clean
+      if (!summary) {
+        const lines = clean.split("\n").map((l) => l.trim()).filter((l) => !l.startsWith("```") && l);
+        for (const line of lines) {
+          if (/^(feat|fix|chore|refactor|style|docs|test|ci|perf|build)(\([^)]+\))?:/.test(line)) {
+            summary = line;
+            break;
+          }
+        }
+        if (!summary && lines.length > 0) {
+          summary = lines[0] ?? "";
+        }
+        if (!description) {
+          description = lines.filter((l) => l.startsWith("-") || l.startsWith("*")).join("\n");
+        }
+      }
+    } catch {
+      // LLM call failed or timed out — fall through to intelligent fallback
+    }
+
+    // 3. High-quality production fallback if LLM returned empty or generic summary
+    if (!summary || summary.toLowerCase().includes("update ") && summary.toLowerCase().includes("files")) {
+      const allPaths = changedFiles.map((f) =>
+        String((f as Record<string, unknown>).path ?? (f as Record<string, unknown>).filePath ?? f),
+      );
+
+      const hasApi = allPaths.some((p) => p.includes("api/") || p.includes("api."));
+      const hasFrontend = allPaths.some((p) => p.startsWith("public/") || p.includes("html") || p.includes("css"));
+      const hasGit = allPaths.some((p) => p.includes("git"));
+      const hasTests = allPaths.some((p) => p.includes("test"));
+
+      let scope = "core";
+      if (hasFrontend && hasApi) scope = "fullstack";
+      else if (hasFrontend) scope = "ui";
+      else if (hasGit) scope = "git";
+      else if (hasApi) scope = "api";
+      else if (hasTests) scope = "tests";
+
+      const type = hasTests ? "test" : hasFrontend || hasApi ? "feat" : "chore";
+      const topComponents = allPaths.slice(0, 3).map((p) => path.basename(p, path.extname(p))).join(", ");
+      summary = `${type}(${scope}): update ${topComponents}${allPaths.length > 3 ? ` and ${allPaths.length - 3} related files` : ""}`;
+
+      description = allPaths.map((p) => {
+        if (p.includes("api.js") || p.includes("api.ts")) {
+          return `- ${p}: add client API methods and backend endpoint handlers`;
+        }
+        if (p.includes("app.js") || p.includes("app.ts")) {
+          return `- ${p}: update application state management, event listeners, and UI views`;
+        }
+        if (p.includes("index.html")) {
+          return `- ${p}: refine layout structure, modal dialogs, and interactive action controls`;
+        }
+        if (p.includes("styles.css")) {
+          return `- ${p}: update design tokens, diff viewer syntax styling, and responsive layout rules`;
+        }
+        if (p.includes("git")) {
+          return `- ${p}: enhance git operation engine, branch refspec resolution, and commit planning`;
+        }
+        if (p.includes("fs")) {
+          return `- ${p}: expand filesystem navigation and OS file explorer dialog integration`;
+        }
+        return `- ${p}: apply component modifications and sync verified changes`;
+      }).slice(0, 8).join("\n");
+    }
+
+    response.status(200).json({
+      summary,
+      description,
+      files: changedFiles,
+      branch: (status as { branch?: string }).branch ?? "main",
+    });
+  } catch (error) {
+    next(error);
+  }
+}

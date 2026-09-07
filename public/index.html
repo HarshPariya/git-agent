@@ -388,9 +388,13 @@
               <span id="gd-repo-name" class="git-repo-name" style="font-weight:700">Select a repository</span>
               <span style="font-size:10px;color:var(--c-text-muted)">▾</span>
             </div>
-            <div class="git-meta-item">
+            <div class="git-meta-item" onclick="openBranchSwitcherModal()" style="cursor:pointer"
+              title="Click to switch or create branch">
               <span class="git-meta-label">Branch:</span>
-              <span id="gd-branch-name" class="badge badge-accent">main</span>
+              <span id="gd-branch-name" class="badge badge-accent"
+                style="cursor:pointer;display:inline-flex;align-items:center;gap:4px">
+                main <span style="font-size:9px">▾</span>
+              </span>
             </div>
             <div class="git-meta-item">
               <span class="git-meta-label">Remote:</span>
@@ -412,7 +416,7 @@
               ⚡ AI Analyze Changes
             </button>
             <button class="btn btn-secondary btn-sm" id="gd-btn-fetch" onclick="triggerGitFetch()">
-              📥 Fetch
+              📥 Fetch origin
             </button>
             <button class="btn btn-secondary btn-sm" id="gd-btn-pull" onclick="triggerGitPull()">
               ⬇️ Pull
@@ -421,7 +425,7 @@
               🔄 Sync
             </button>
             <button class="btn btn-secondary btn-sm" id="gd-btn-push" onclick="openPushPreviewModal()">
-              ⬆️ Push
+              ⬆️ Push origin
             </button>
             <button class="btn btn-secondary btn-sm" id="gd-btn-ship" onclick="triggerAIShip()">
               🚀 AI Ship
@@ -429,86 +433,188 @@
           </div>
         </div>
 
-        <!-- Git Desktop 2-Column Working Layout -->
-        <div class="git-desktop-grid">
-          <!-- Left Column: Changes Center -->
-          <div class="card" style="padding:0;overflow:hidden">
-            <div class="card-header"
-              style="padding:14px 18px;border-bottom:1px solid var(--c-border);display:flex;justify-content:space-between;align-items:center">
-              <div style="display:flex;align-items:center;gap:10px">
-                <div class="card-title" style="font-size:14px">Working Tree Changes</div>
-                <span class="badge badge-accent" id="gd-changes-count">0 files</span>
+        <!-- Git Desktop 2-Column Working Layout (GitHub Desktop Style) -->
+        <div class="git-desktop-grid" style="display:grid;grid-template-columns:350px 1fr;gap:16px;align-items:start">
+          <!-- Left Column: Changes, Commit Plan & History with Commit Box -->
+          <div class="card" style="padding:0;overflow:hidden;display:flex;flex-direction:column">
+            <!-- Left Tabs: Changes vs Commit Plan vs History -->
+            <div class="tabs"
+              style="padding:0 12px;border-bottom:1px solid var(--c-border);background:var(--c-surface-hover)">
+              <div class="tab-item active" id="gd-tab-changes" onclick="switchGitDesktopLeftTab('changes')">
+                Changes <span class="badge badge-accent" id="gd-changes-count"
+                  style="margin-left:4px;font-size:10px">0</span>
               </div>
-              <div class="git-filter-tabs">
-                <button class="git-filter-tab active" data-filter="all" onclick="filterChangedFiles('all')">All</button>
-                <button class="git-filter-tab" data-filter="staged"
-                  onclick="filterChangedFiles('staged')">Staged</button>
-                <button class="git-filter-tab" data-filter="unstaged"
-                  onclick="filterChangedFiles('unstaged')">Unstaged</button>
-                <button class="git-filter-tab" data-filter="untracked"
-                  onclick="filterChangedFiles('untracked')">Untracked</button>
+              <div class="tab-item" id="gd-tab-commit-plan" onclick="switchGitDesktopLeftTab('commit-plan')">
+                🤖 Commit Plan
+              </div>
+              <div class="tab-item" id="gd-tab-history" onclick="switchGitDesktopLeftTab('history')">
+                History
               </div>
             </div>
 
-            <!-- Changed Files Table Container -->
-            <div id="gd-changes-list" class="git-changes-table-container">
-              <div class="empty-state" style="padding:36px 20px">
-                <div class="empty-icon">✓</div>
-                <div class="empty-title">Working tree is clean</div>
-                <div class="empty-desc">No unstaged or modified files detected in the active repository.</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Right Column: AI Semantic Grouping & Commit Plan -->
-          <div class="card" style="padding:0;overflow:hidden">
-            <div class="card-header"
-              style="padding:14px 18px;border-bottom:1px solid var(--c-border);background:var(--c-surface-hover);display:flex;justify-content:space-between;align-items:center">
-              <div>
-                <div class="card-title" style="font-size:14px">AI Change Analysis & Commit Plan</div>
-                <div class="card-subtitle" id="gd-ai-summary"
-                  style="font-size:12px;color:var(--c-text-secondary);margin-top:2px">
-                  Click "AI Analyze Changes" to inspect diffs and generate logical commits
+            <!-- Panel A: Changes List + Bottom Commit Box -->
+            <div id="gd-panel-changes" style="display:flex;flex-direction:column">
+              <!-- Filter tabs & Select All -->
+              <div
+                style="padding:10px 14px;border-bottom:1px solid var(--c-border-subtle);display:flex;justify-content:space-between;align-items:center;background:#fff">
+                <div style="font-size:12px;font-weight:600;color:var(--c-text-secondary)">Changed Files</div>
+                <div class="git-filter-tabs">
+                  <button class="git-filter-tab active" data-filter="all"
+                    onclick="filterChangedFiles('all')">All</button>
+                  <button class="git-filter-tab" data-filter="staged"
+                    onclick="filterChangedFiles('staged')">Staged</button>
+                  <button class="git-filter-tab" data-filter="unstaged"
+                    onclick="filterChangedFiles('unstaged')">Unstaged</button>
                 </div>
               </div>
-              <button class="btn btn-primary btn-sm" id="gd-btn-commit-all" onclick="triggerAICommitAll()"
-                style="display:none;white-space:nowrap">
-                ⚡ Commit All Groups
-              </button>
+
+              <!-- Changed Files List -->
+              <div id="gd-changes-list" class="git-changes-table-container"
+                style="max-height:360px;min-height:180px;overflow-y:auto">
+                <div class="empty-state" style="padding:32px 16px">
+                  <div class="empty-icon">✓</div>
+                  <div class="empty-title">Working tree is clean</div>
+                  <div class="empty-desc">No unstaged or modified files detected.</div>
+                </div>
+              </div>
+
+              <!-- GitHub Desktop Native Commit Box -->
+              <div class="git-desktop-commit-box"
+                style="padding:14px;border-top:1px solid var(--c-border);background:var(--c-surface)">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                  <div id="gd-author-avatar"
+                    style="width:20px;height:20px;border-radius:50%;background:var(--c-accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">
+                    GI</div>
+                  <span id="gd-author-name" style="font-size:12px;font-weight:600;color:var(--c-text)">Git User</span>
+                  <span style="font-size:10px;color:var(--c-text-muted)">Commit Author</span>
+                </div>
+                <!-- Auto-generate row -->
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+                  <span style="font-size:10.5px;font-weight:600;color:var(--c-text-muted);letter-spacing:.5px">COMMIT
+                    MESSAGE</span>
+                  <button type="button" id="gd-auto-generate-btn" class="btn btn-ghost btn-sm"
+                    onclick="generateAutoCommitMessage(true)"
+                    style="padding:2px 8px;font-size:11px;border:1px solid var(--c-border);border-radius:var(--r-sm)">
+                    ✨ Auto-Generate
+                  </button>
+                </div>
+                <input class="form-input" id="gd-commit-summary" placeholder="Summary (required)"
+                  style="font-size:12px;margin-bottom:6px;width:100%" />
+                <textarea class="form-input form-textarea" id="gd-commit-desc" rows="2"
+                  placeholder="Description (optional)" style="font-size:11px;margin-bottom:8px;width:100%"></textarea>
+                <button class="btn btn-primary btn-sm full-width" id="gd-btn-commit" onclick="commitFromGitDesktop()">
+                  Commit to <span id="gd-commit-branch-label" style="font-weight:700;margin-left:2px">main</span>
+                </button>
+              </div>
             </div>
 
-            <div id="gd-commit-plan-container"
-              style="padding:16px;max-height:480px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
-              <div class="empty-state" style="padding:36px 20px">
-                <div class="empty-icon">🤖</div>
-                <div class="empty-title">No commit plan formulated yet</div>
-                <div class="empty-desc">Click "AI Analyze Changes" to classify files into logical commit groups with
-                  Conventional Commits.</div>
+            <!-- Panel B: Commit History List -->
+            <div id="gd-panel-history" style="display:none;max-height:560px;overflow-y:auto">
+              <div id="gd-history-list" style="display:flex;flex-direction:column;gap:1px;padding:8px">
+                <div class="text-muted" style="text-align:center;padding:24px;font-size:12px">Loading commit history...
+                </div>
+              </div>
+            </div>
+
+            <!-- Panel C: AI Commit Plan Panel -->
+            <div id="gd-panel-commit-plan"
+              style="display:none;max-height:560px;overflow-y:auto;padding:12px;display:none;flex-direction:column;gap:10px">
+              <div
+                style="display:flex;justify-content:space-between;align-items:center;padding-bottom:4px;border-bottom:1px solid var(--c-border-subtle)">
+                <div>
+                  <div style="font-size:12px;font-weight:700;color:var(--c-text)">Atomic Conventional Commits</div>
+                  <div id="gd-ai-summary" style="font-size:11px;color:var(--c-text-secondary);margin-top:1px">
+                    Auto-grouped changes</div>
+                </div>
+                <button class="btn btn-primary btn-sm" id="gd-btn-commit-all" onclick="triggerAICommitAll()"
+                  style="display:none;font-size:11px;padding:3px 8px;white-space:nowrap">
+                  ⚡ Commit All
+                </button>
+              </div>
+              <div id="gd-commit-plan-container" style="display:flex;flex-direction:column;gap:8px">
+                <div class="empty-state" style="padding:24px 16px">
+                  <div class="empty-title" style="font-size:12px">Click "⚡ AI Analyze Changes" above to generate atomic
+                    commit groupings</div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Bottom Panel: Diff & Output Inspector -->
-        <div class="card" style="margin-top:16px;padding:0;overflow:hidden">
-          <div class="tabs" style="padding:0 14px;border-bottom:1px solid var(--c-border)">
-            <div class="tab-item active" data-tab="gd-diff" onclick="switchGitDesktopTab('gd-diff')">Selected File Diff
-            </div>
-            <div class="tab-item" data-tab="gd-output" onclick="switchGitDesktopTab('gd-output')">Git Execution Output
-            </div>
-          </div>
+          <!-- Right Column: Diff Inspector (Full Vertical Height) -->
+          <div style="display:flex;flex-direction:column">
+            <!-- Selected File Diff Card -->
+            <div class="card" style="padding:0;overflow:hidden">
+              <div class="card-header"
+                style="padding:10px 16px;border-bottom:1px solid var(--c-border);background:var(--c-surface-hover);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                <div style="display:flex;align-items:center;gap:10px;min-width:0">
+                  <span style="font-size:14px">📄</span>
+                  <div style="min-width:0">
+                    <div id="gd-diff-filepath"
+                      style="font-weight:700;font-size:13px;font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                      Select a file to inspect diff</div>
+                    <div id="gd-diff-meta" style="font-size:11px;color:var(--c-text-muted)">Changes preview &amp; syntax
+                      highlighting</div>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+                  <!-- OS Direct Open Actions -->
+                  <button class="btn btn-ghost btn-sm" id="gd-btn-reveal-os" onclick="openCurrentFileInOs('reveal')"
+                    title="Reveal file in Windows File Explorer" style="padding:4px 8px;font-size:11px;display:none">
+                    📂 Reveal
+                  </button>
+                  <button class="btn btn-ghost btn-sm" id="gd-btn-open-editor" onclick="openCurrentFileInOs('edit')"
+                    title="Open file directly in VS Code / default editor"
+                    style="padding:4px 8px;font-size:11px;display:none">
+                    📝 Open Editor
+                  </button>
+                  <span id="gd-diff-status-badge" class="badge badge-secondary" style="display:none">STATUS</span>
+                  <div class="tabs" style="padding:0;background:transparent;border:none">
+                    <button class="btn btn-secondary btn-sm" id="gd-tab-btn-diff"
+                      onclick="switchGitDesktopTab('gd-diff')" style="padding:4px 10px;font-size:11px">File
+                      Diff</button>
+                    <button class="btn btn-ghost btn-sm" id="gd-tab-btn-all-diff"
+                      onclick="switchGitDesktopTab('gd-all-diff')" style="padding:4px 10px;font-size:11px">📑 All
+                      Changes (<span id="gd-all-diff-count">0</span>)</button>
+                    <button class="btn btn-ghost btn-sm" id="gd-tab-btn-output"
+                      onclick="switchGitDesktopTab('gd-output')" style="padding:4px 10px;font-size:11px">Console
+                      Output</button>
+                  </div>
+                </div>
+              </div>
 
-          <div id="panel-gd-diff" class="tab-panel active" style="padding:16px">
-            <div id="gd-diff-viewer" class="code-block"
-              style="height:260px;overflow-y:auto;font-family:var(--font-mono);font-size:12px">
-              Select any changed file above to inspect its unified diff.
-            </div>
-          </div>
+              <!-- Diff Viewer Body (Single Selected File) -->
+              <div id="panel-gd-diff" class="tab-panel active" style="padding:0">
+                <div id="gd-diff-viewer" class="github-diff-viewer"
+                  style="min-height:500px;max-height:740px;overflow-y:auto;font-family:var(--font-mono);font-size:12px;background:#ffffff;padding:12px">
+                  <div class="empty-state" style="padding:48px 20px">
+                    <div class="empty-icon">🔍</div>
+                    <div class="empty-title">Select any changed file on the left</div>
+                    <div class="empty-desc">Unified additions, deletions, and AST symbols will render with clean GitHub
+                      diff colors.</div>
+                  </div>
+                </div>
+              </div>
 
-          <div id="panel-gd-output" class="tab-panel" style="display:none;padding:16px">
-            <div id="gd-console-output" class="code-block"
-              style="height:260px;overflow-y:auto;font-family:var(--font-mono);font-size:12px">
-              Git operation logs will appear here...
+              <!-- All Changes Diff Body (Continuous unified diff for ALL modified files) -->
+              <div id="panel-gd-all-diff" class="tab-panel" style="display:none;padding:0">
+                <div id="gd-all-diff-viewer" class="github-diff-viewer"
+                  style="min-height:500px;max-height:740px;overflow-y:auto;font-family:var(--font-mono);font-size:12px;background:#ffffff;padding:12px">
+                  <div class="empty-state" style="padding:48px 20px">
+                    <div class="empty-icon">📑</div>
+                    <div class="empty-title">All Changed Files Diff</div>
+                    <div class="empty-desc">Unified continuous diff across every modified file in the working tree.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Console Output Body -->
+              <div id="panel-gd-output" class="tab-panel" style="display:none;padding:16px">
+                <div id="gd-console-output" class="code-block"
+                  style="height:500px;overflow-y:auto;font-family:var(--font-mono);font-size:12px">
+                  Git operation logs will appear here...
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -995,34 +1101,30 @@
   <div id="modal-folder-browser" class="modal-overlay" style="display:none">
     <div class="modal" style="max-width:780px;width:96vw">
       <div class="modal-close" onclick="closeModal('modal-folder-browser')">×</div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div
+        style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:12px;flex-wrap:wrap">
         <div class="modal-title" style="margin-bottom:0">Select Repository / Project Folder</div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <button type="button" class="btn btn-secondary btn-sm" id="open-os-dialog-btn"
-            onclick="triggerNativeFolderPicker()"
-            style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap">
-            🗔 Open OS File Dialog
-          </button>
-          <input type="file" id="native-folder-input" webkitdirectory directory style="display:none"
-            onchange="handleNativeFolderSelected(event)" />
-        </div>
+        <button class="btn btn-secondary btn-sm" id="btn-open-os-dialog" onclick="triggerNativeFolderPicker()"
+          style="display:flex;align-items:center;gap:6px;font-weight:600">
+          🗔 Open OS File Dialog
+        </button>
       </div>
       <div class="modal-desc" style="margin-bottom:12px">
-        Select any repository from your laptop, Mac, or Windows machine. Browse directories, paste any path, or drag and
-        drop a folder below.
-        Git repositories are highlighted in <span style="color:#065f46;font-weight:600">green</span>.
+        Connect any local workspace or Git repository folder from your computer. Select your current workspace, pick
+        directly from the OS dialog, or browse directories below.
+      </div>
+
+      <!-- Drag & Drop / Native OS Dialog Zone -->
+      <div class="folder-drop-zone" id="folder-drop-zone" onclick="triggerNativeFolderPicker()"
+        style="border:2px dashed var(--c-border);border-radius:var(--r-md);padding:12px;text-align:center;cursor:pointer;background:var(--c-surface-hover);transition:var(--transition-fast);margin-bottom:10px;font-size:12px">
+        <span style="font-size:15px">📁</span> <strong>Drag &amp; drop any folder here</strong> or click to open native
+        OS Folder Dialog
       </div>
 
       <div class="folder-browser-dialog">
-        <!-- Drag & drop dropzone hint -->
-        <div id="folder-dropzone" class="folder-dropzone" onclick="triggerNativeFolderPicker()"
-          title="Drag any project folder here or click to open file dialog">
-          <span>📥 Drag &amp; drop any project folder here, or click to open system dialog</span>
-        </div>
-
-        <!-- Shortcuts bar -->
-        <div class="folder-shortcuts" id="folder-shortcuts">
-          <!-- Injected shortcuts: Home, Desktop, Documents, Drives -->
+        <!-- Quick Workspace Cards -->
+        <div id="folder-workspace-quickpicks" style="display:flex;gap:8px;flex-wrap:wrap">
+          <!-- Injected local workspaces / current workspace -->
         </div>
 
         <!-- Path breadcrumb bar -->
@@ -1147,71 +1249,134 @@
           Request</button>
       </div>
     </div>
-    <!-- Push Preview & Safeguards Modal -->
-    <div id="modal-push-preview" class="modal-overlay" style="display:none">
-      <div class="modal" style="max-width:640px;width:96vw">
-        <div class="modal-close" onclick="closeModal('modal-push-preview')">×</div>
-        <div class="modal-title">⬆️ Push Preview &amp; Pre-Push Safeguards</div>
-        <div class="modal-desc">Review outgoing commits, target remotes, and automated safety verifications before
-          pushing.</div>
+  </div>
 
-        <div style="display:flex;flex-direction:column;gap:14px;margin-top:12px">
-          <!-- Target Branch Card -->
-          <div class="current-target-card" style="display:flex;justify-content:space-between;align-items:center">
-            <div>
-              <div style="font-weight:600;font-size:13px">Target Remote &amp; Branch:</div>
-              <div style="font-family:var(--font-mono);font-size:12px;margin-top:2px">
-                <code>origin</code> / <code id="push-target-branch" style="font-weight:700">main</code>
-              </div>
-            </div>
-            <div>
-              <span id="push-commits-count" class="badge badge-accent">0 outgoing commits</span>
-            </div>
-          </div>
+  <!-- Push Preview & Target Branch Selection Modal -->
+  <div id="modal-push-preview" class="modal-overlay" style="display:none">
+    <div class="modal" style="max-width:620px;width:96vw">
+      <div class="modal-close" onclick="closeModal('modal-push-preview')">×</div>
+      <div class="modal-title">⬆️ Push to Remote Repository</div>
+      <div class="modal-desc">Choose which remote branch you want to push to and verify outgoing commits.</div>
 
-          <!-- Safeguards Checklist -->
-          <div class="card" style="padding:14px;background:var(--c-surface-hover);border:1px solid var(--c-border)">
-            <div style="font-weight:600;font-size:12px;margin-bottom:8px;color:var(--c-text)">AUTOMATED PRE-PUSH SAFETY
-              CHECKS</div>
-            <div style="display:flex;flex-direction:column;gap:8px;font-size:12px">
-              <div style="display:flex;justify-content:space-between;align-items:center">
-                <span>🌿 Branch Protection Rule</span>
-                <span id="push-check-branch" class="badge badge-success">PASSED (Safe Branch)</span>
-              </div>
-              <div style="display:flex;justify-content:space-between;align-items:center">
-                <span>🔐 Secret &amp; Credentials Leak Scanner</span>
-                <span id="push-check-secrets" class="badge badge-success">PASSED (0 Secrets)</span>
-              </div>
-              <div style="display:flex;justify-content:space-between;align-items:center">
-                <span>🧪 Pre-Push Test Suite Verification</span>
-                <span id="push-check-tests" class="badge badge-accent">READY</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Outgoing Commits List -->
+      <div style="display:flex;flex-direction:column;gap:14px;margin-top:12px">
+        <!-- Target Repo & Current Branch Status -->
+        <div class="current-target-card" style="display:flex;justify-content:space-between;align-items:center">
           <div>
-            <div style="font-weight:600;font-size:12px;margin-bottom:6px">OUTGOING COMMITS:</div>
-            <div id="push-commits-list"
-              style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:6px">
-              <div class="text-muted" style="font-size:12px">Loading outgoing commits...</div>
+            <div style="font-weight:600;font-size:13px">Repository:</div>
+            <div style="font-family:var(--font-mono);font-size:12px;margin-top:2px">
+              <code id="push-target-repo" style="font-weight:700">ai-chatbot</code>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:11px;color:var(--c-text-muted)">Current Branch</div>
+            <span id="push-current-branch" class="badge badge-accent">feature/agent-llm</span>
+          </div>
+        </div>
+
+        <!-- Target Branch & Remote Selection -->
+        <div style="display:grid;grid-template-columns:1fr 140px;gap:10px">
+          <div class="form-group">
+            <label class="form-label" for="push-target-branch-select">Target Branch to Push To</label>
+            <select class="form-select" id="push-target-branch-select" onchange="onPushTargetBranchChanged()">
+              <option value="">Loading branches...</option>
+            </select>
+            <input class="form-input" id="push-custom-branch-input"
+              placeholder="Type new or custom remote branch name..."
+              style="display:none;margin-top:6px;font-family:var(--font-mono);font-size:12px" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="push-remote-select">Remote</label>
+            <select class="form-select" id="push-remote-select">
+              <option value="origin">origin</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Push Options -->
+        <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="push-set-upstream" checked />
+            <span>Set upstream tracking (-u)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="push-force-with-lease" />
+            <span style="color:var(--c-danger-text)">Force with lease</span>
+          </label>
+        </div>
+
+        <!-- Safeguards Checklist -->
+        <div class="card" style="padding:12px;background:var(--c-surface-hover);border:1px solid var(--c-border)">
+          <div style="font-weight:600;font-size:11px;margin-bottom:6px;color:var(--c-text)">PRE-PUSH SAFEGUARDS</div>
+          <div style="display:flex;flex-direction:column;gap:6px;font-size:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span>🌿 Target Branch Safety</span>
+              <span id="push-check-branch" class="badge badge-success">PASSED (Safe Branch)</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span>🔐 Outgoing Commits</span>
+              <span id="push-commits-count" class="badge badge-accent">0 commits</span>
             </div>
           </div>
         </div>
 
-        <div class="modal-actions" style="margin-top:16px">
-          <button class="btn btn-secondary" onclick="closeModal('modal-push-preview')">Cancel</button>
-          <button class="btn btn-primary" id="confirm-push-btn" onclick="executePushFromModal()">Confirm &amp; Push to
-            Remote</button>
+        <!-- Outgoing Commits List -->
+        <div>
+          <div style="font-weight:600;font-size:12px;margin-bottom:6px">OUTGOING COMMITS:</div>
+          <div id="push-commits-list"
+            style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;border:1px solid var(--c-border);border-radius:var(--r-md);padding:8px;background:#fff">
+            <div class="text-muted" style="font-size:12px">Loading outgoing commits...</div>
+          </div>
         </div>
       </div>
+
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn btn-secondary" onclick="closeModal('modal-push-preview')">Cancel</button>
+        <button class="btn btn-primary" id="confirm-push-btn" onclick="executePushFromModal()">
+          Confirm &amp; Push to Remote
+        </button>
+      </div>
     </div>
+  </div>
 
-    <!-- Toast container -->
-    <div class="toast-container" id="toast-container"></div>
+  <!-- Branch Switcher Modal (GitHub Desktop Style) -->
+  <div id="modal-branch-switcher" class="modal-overlay" style="display:none">
+    <div class="modal" style="max-width:520px;width:96vw">
+      <div class="modal-close" onclick="closeModal('modal-branch-switcher')">×</div>
+      <div class="modal-title">🔀 Switch Branch</div>
+      <div class="modal-desc">Checkout an existing local/remote branch or create a new branch.</div>
 
-    <script src="/api.js"></script>
-    <script src="/app.js"></script>
+      <div class="form-group" style="margin-bottom:12px">
+        <input class="form-input" id="branch-search-input" placeholder="Search branches..." oninput="filterBranchList()"
+          style="font-size:13px" />
+      </div>
+
+      <!-- Branch list container -->
+      <div id="branch-list-container"
+        style="max-height:260px;overflow-y:auto;border:1px solid var(--c-border);border-radius:var(--r-md);background:#fff;display:flex;flex-direction:column">
+        <div class="text-muted" style="text-align:center;padding:20px;font-size:12px">Loading branches...</div>
+      </div>
+
+      <!-- Create New Branch section -->
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--c-border)">
+        <div style="font-weight:600;font-size:12px;margin-bottom:6px">Create New Branch from Current</div>
+        <div style="display:flex;gap:8px">
+          <input class="form-input" id="new-branch-name-input" placeholder="e.g. feature/my-new-task"
+            style="flex:1;font-size:12px;font-family:var(--font-mono)" />
+          <button class="btn btn-primary btn-sm" onclick="createAndCheckoutBranch()">Create &amp; Switch</button>
+        </div>
+      </div>
+
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn btn-secondary" onclick="closeModal('modal-branch-switcher')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="/api.js"></script>
+  <script src="/app.js"></script>
 </body>
 
 </html>

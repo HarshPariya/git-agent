@@ -24,6 +24,7 @@ import {
   gitExecuteCommitPlanHandler,
   gitSyncHandler,
   gitShipHandler,
+  generateCommitMessageHandler,
 } from "./api/git.js";
 import {
   startDebugSessionHandler,
@@ -97,6 +98,7 @@ import {
   browseFilesystemHandler,
   resolveFolderHandler,
   pickNativeDialogHandler,
+  openInOsHandler,
 } from "./api/fs.js";
 
 export const app = express();
@@ -201,6 +203,7 @@ app.delete("/api/repositories/:id/protected-branches/:branch", securityMiddlewar
 app.get("/api/fs/browse", securityMiddleware, browseFilesystemHandler);
 app.post("/api/fs/resolve-folder", securityMiddleware, resolveFolderHandler);
 app.post("/api/fs/pick-native-dialog", securityMiddleware, pickNativeDialogHandler);
+app.post("/api/fs/open-in-os", securityMiddleware, openInOsHandler);
 
 // Git engine
 app.get("/api/git/catalog", securityMiddleware, gitOperationCatalogHandler);
@@ -227,6 +230,7 @@ app.post("/api/git/commit-plan/execute", securityMiddleware, gitExecuteCommitPla
 app.post("/api/git/commit-all", securityMiddleware, gitExecuteCommitPlanHandler);
 app.post("/api/git/sync", securityMiddleware, gitSyncHandler);
 app.post("/api/git/ship", securityMiddleware, gitShipHandler);
+app.post("/api/git/generate-commit-message", securityMiddleware, generateCommitMessageHandler);
 
 // Debugging agent
 app.get("/api/debug", securityMiddleware, listDebugSessionsHandler);

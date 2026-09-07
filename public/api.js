@@ -210,6 +210,24 @@ class ApiClient {
       body: JSON.stringify({ repositoryId }),
     });
   }
+  async gitCommit(repositoryId, message, stageAll = true) {
+    return this.request("/api/git/commit", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, message, stageAll }),
+    });
+  }
+  async generateCommitMessage(repositoryId) {
+    return this.request("/api/git/generate-commit-message", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId }),
+    });
+  }
+  async checkoutBranch(repositoryId, branch, create = false) {
+    return this.request("/api/git/checkout", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, branch, create }),
+    });
+  }
   async gitFetch(repositoryId, remote = "origin") {
     return this.request("/api/git/fetch", {
       method: "POST",
@@ -222,10 +240,10 @@ class ApiClient {
       body: JSON.stringify({ repositoryId, remote, branch }),
     });
   }
-  async gitPush(repositoryId, remote = "origin", branch = "", setUpstream = true) {
+  async gitPush(repositoryId, remote = "origin", branch = "", setUpstream = true, forceWithLease = false) {
     return this.request("/api/git/push", {
       method: "POST",
-      body: JSON.stringify({ repositoryId, remote, branch, setUpstream }),
+      body: JSON.stringify({ repositoryId, remote, branch, setUpstream, forceWithLease }),
     });
   }
   async gitSync(repositoryId, remote = "origin") {
@@ -347,6 +365,13 @@ class ApiClient {
   async pickNativeFolderDialog() {
     return this.request("/api/fs/pick-native-dialog", {
       method: "POST",
+    });
+  }
+
+  async openInOs(filePath, repositoryId = "", mode = "reveal") {
+    return this.request("/api/fs/open-in-os", {
+      method: "POST",
+      body: JSON.stringify({ filePath, repositoryId, mode }),
     });
   }
 
