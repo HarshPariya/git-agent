@@ -218,7 +218,10 @@ export async function executeGitStatus(
   let detached = false;
 
   if (branchMatch) {
-    const branchName = branchMatch[1] ?? "unknown";
+    let branchName = branchMatch[1] ?? "unknown";
+    if (branchName.startsWith("No commits yet on ")) {
+      branchName = branchName.replace("No commits yet on ", "").trim();
+    }
     branch = branchName;
     detached = branchName === "(no branch)" || branchName.includes("no branch");
     if (detached) branch = "detached";

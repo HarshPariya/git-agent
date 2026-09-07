@@ -12,17 +12,17 @@ const execAsync = promisify(exec);
 
 export interface ConventionalCommit {
   readonly type:
-    | "fix"
-    | "feat"
-    | "refactor"
-    | "test"
-    | "docs"
-    | "style"
-    | "chore"
-    | "perf"
-    | "ci"
-    | "build"
-    | "revert";
+  | "fix"
+  | "feat"
+  | "refactor"
+  | "test"
+  | "docs"
+  | "style"
+  | "chore"
+  | "perf"
+  | "ci"
+  | "build"
+  | "revert";
   readonly scope?: string;
   readonly subject: string;
   readonly body?: string;
@@ -138,8 +138,14 @@ export async function executeSafeCommit(
   const escapedMsg = commitMsg.replace(/"/g, '\\"').replace(/`/g, "\\`");
   try {
     const { stdout } = await safeExec(`git commit -m "${escapedMsg}"`, repoPath);
-    const hashMatch = /\[[\w/]+ ([a-f0-9]+)\]/.exec(stdout);
-    const commitHash = hashMatch?.[1];
+    const hashMatch = /\[(?:.+?\s+)?([a-f0-9]{7,40})\]/.exec(stdout);
+    let commitHash = hashMatch?.[1];
+    if (!commitHash) {
+      try {
+        const { stdout: revOut } = await safeExec("git rev-parse --short HEAD", repoPath);
+        commitHash = revOut.trim();
+      } catch { }
+    }
 
     return {
       success: true,

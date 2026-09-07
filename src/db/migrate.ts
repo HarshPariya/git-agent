@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { query, withTransaction, closeDatabase } from "./postgres.js";
+import { queryWithRetry, withTransaction, closeDatabase } from "./postgres.js";
 
 export interface MigrationRecord {
   version: number;
@@ -14,7 +14,7 @@ export async function runMigrations(
   console.log("📦 Checking PostgreSQL database migrations...");
 
   // 1. Ensure migrations tracking table exists
-  await query(`
+  await queryWithRetry(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version INTEGER PRIMARY KEY,
       name TEXT NOT NULL,
@@ -23,7 +23,7 @@ export async function runMigrations(
   `);
 
   // 2. Fetch applied migrations
-  const appliedResult = await query<MigrationRecord>(
+  const appliedResult = await queryWithRetry<MigrationRecord>(
     `SELECT version, name, applied_at FROM schema_migrations ORDER BY version ASC`,
   );
   const appliedVersions = new Set(appliedResult.rows.map((row) => row.version));

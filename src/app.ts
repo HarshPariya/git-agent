@@ -174,6 +174,7 @@ app.get("/api/info", (_request, response) => {
 // System & Health
 app.get("/health", healthHandler);
 app.get("/ready", readinessHandler);
+app.get("/readiness", readinessHandler);
 app.get("/info", (_req, res) => res.json({ service: "Git Debugging Agent", version: "2.0.0", environment: process.env.NODE_ENV || "development", status: "operational" }));
 app.get("/api/info", (_req, res) => res.json({ service: "Git Debugging Agent", version: "2.0.0", environment: process.env.NODE_ENV || "development", status: "operational" }));
 
@@ -184,6 +185,7 @@ app.get("/api/auth/me", securityMiddleware, meHandler);
 
 // Git repositories
 app.get("/api/repositories", securityMiddleware, listRepositoriesHandler);
+app.get("/api/repositories/list", securityMiddleware, listRepositoriesHandler);
 app.get("/api/repositories/:id", securityMiddleware, getRepositoryHandler);
 app.post("/api/repositories/connect", securityMiddleware, connectRepositoryHandler);
 app.post("/api/repositories/:id/sync", securityMiddleware, syncRepositoryHandler);

@@ -8,7 +8,11 @@
     "dev": "tsx watch src/app.ts",
     "build": "tsc",
     "start": "node dist/src/app.js",
-    "test": "node scratch/test-ui-flow.mjs",
+    "test": "tsx tests/run-all.ts",
+    "test:git": "tsx tests/git-engine.test.ts",
+    "test:agent": "tsx tests/agent-orchestrator.test.ts",
+    "test:api": "tsx tests/api.test.ts",
+    "test:guardrails": "tsx tests/guardrails.test.ts",
     "rag:parse": "tsx src/ingestion/test-parser.ts",
     "rag:graph": "tsx src/retrieval/test-graph-search.ts",
     "rag:vector": "tsx src/retrieval/test-vector-search.ts",
@@ -24,7 +28,9 @@
     "rag:indexer-test": "tsx src/ingestion/test-indexer.ts",
     "rag:limits-test": "tsx src/guardrails/test-limits.ts",
     "rag:integration-test": "tsx src/retrieval/test-integration.ts",
-    "db:backup-test": "tsx src/db/test-backup.ts"
+    "db:backup-test": "tsx src/db/test-backup.ts",
+    "tool:search-code": "tsx src/retrieval/test-graph-search.ts",
+    "tool:impact-analysis": "tsx src/retrieval/test-retriever.ts"
   },
   "repository": {
     "type": "git",

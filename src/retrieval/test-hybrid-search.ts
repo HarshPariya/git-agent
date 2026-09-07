@@ -43,8 +43,12 @@ async function main() {
 
   console.log();
 
-  await testDatabaseConnection();
-  await initializeSchema();
+  const connected = await testDatabaseConnection();
+  if (connected) {
+    await initializeSchema();
+  } else {
+    console.warn("⚠️ PostgreSQL not available. Running hybrid search in standalone AST & graph mode.");
+  }
 
   const parsedFiles =
     await parseRepository(
@@ -85,14 +89,16 @@ async function main() {
     `✓ Graph edges: ${graph.edges.length}`,
   );
 
-  console.log(
-    "Persisting vector index to PostgreSQL...",
-  );
-
-  await upsertChunks(
-    "ai-chatbot",
-    chunks,
-  );
+  let vectorResults: any[] = [];
+  if (connected) {
+    console.log(
+      "Persisting vector index to PostgreSQL...",
+    );
+    await upsertChunks(
+      "ai-chatbot",
+      chunks,
+    );
+  }
 
   const query =
     process.argv
@@ -115,14 +121,16 @@ async function main() {
 
   console.log();
 
-  const vectorResults =
-    await pgVectorSearch(
-      query,
-      {
-        repository: "ai-chatbot",
-        limit: 15,
-      },
-    );
+  if (connected) {
+    vectorResults =
+      await pgVectorSearch(
+        query,
+        {
+          repository: "ai-chatbot",
+          limit: 15,
+        },
+      );
+  }
 
   const results =
     await hybridSearch(

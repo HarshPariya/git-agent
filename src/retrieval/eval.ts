@@ -249,7 +249,7 @@ async function main() {
       sortedLatency.length - 1,
       Math.floor(
         sortedLatency.length *
-          0.95,
+        0.95,
       ),
     );
 
