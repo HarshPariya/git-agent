@@ -1,0 +1,4 @@
+{
+  "vscode-edge-devtools.webhint": false,
+  "css.lint.unknownAtRules": "ignore"
+}

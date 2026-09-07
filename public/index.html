@@ -1035,7 +1035,8 @@
                   autocomplete="off" />
                 <div style="font-size:11px;color:var(--c-text-muted);margin-top:4px">
                   Requires: <code>repo</code>, <code>read:user</code>. <a href="https://github.com/settings/tokens/new"
-                    target="_blank" style="color:var(--c-accent)">Generate token on GitHub →</a>
+                    target="_blank" rel="noopener noreferrer" style="color:var(--c-accent)">Generate token on GitHub
+                    →</a>
                 </div>
               </div>
               <button class="btn btn-github" onclick="connectGitHub()">Connect GitHub Account</button>
@@ -1207,7 +1208,7 @@
           <input class="form-input" type="password" id="modal-github-token" placeholder="ghp_your_token_here" />
           <div style="font-size:11px;color:var(--c-text-muted);margin-top:4px">
             <a href="https://github.com/settings/tokens/new?scopes=repo,read:user" target="_blank"
-              style="color:var(--c-accent)">
+              rel="noopener noreferrer" style="color:var(--c-accent)">
               Generate token with repo and read:user scopes on GitHub →
             </a>
           </div>
