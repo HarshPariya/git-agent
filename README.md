@@ -11,8 +11,22 @@
 
 ---
 
+## 📖 Quick Documentation Links (1-Click Access)
+
+Click any link below to directly open the complete documentation guide:
+
+| Document | 1-Click Link | Description |
+| :--- | :--- | :--- |
+| 🏛️ **System Architecture** | [**`docs/architecture.md`**](docs/architecture.md) | Technical architecture, 9 modular frontend views, Git engine, GraphRAG, and test pyramid |
+| 🔄 **Workflows & Customization** | [**`docs/workflow.md`**](docs/workflow.md) | End-to-end Git Desktop flow, commit plans, PR lifecycle, and 25-row code modification directory |
+| 📡 **API Specification** | [**`docs/api.md`**](docs/api.md) | Complete REST endpoints, request/response schemas, SSE stream events, and error codes |
+| 🤝 **Contributing Guide** | [**`docs/contributing.md`**](docs/contributing.md) | Code standards, branching model, CI/CD pipeline, and modular test runner commands |
+
+---
+
 ## 📑 Table of Contents
 
+- [📖 Quick Documentation Links](#-quick-documentation-links-1-click-access)
 - [Key Capabilities](#-key-capabilities)
 - [System Architecture](#-system-architecture)
 - [End-to-End Workflows](#-end-to-end-workflows)
@@ -188,10 +202,14 @@ npm run build
 
 ## 📚 Documentation Index
 
-- 🏛️ **[System Architecture](docs/architecture.md)**: Deep technical specification, subsystem architecture, and mermaid diagrams.
-- 🔄 **[Workflow & Customization Guide](docs/workflow.md)**: Complete end-to-end user and agent workflows, decision trees, and code modification directory.
-- 📡 **[API Specification](docs/api.md)**: REST endpoints, payloads, response schemas, and SSE streaming event specification.
-- 🤝 **[Contributing Guide](docs/contributing.md)**: Coding standards, pull request instructions, and CI/CD pipelines.
+The complete documentation suite consists of 4 focused guides:
+
+| Document | Direct 1-Click Link | Key Topics Covered |
+| :--- | :--- | :--- |
+| 🏛️ **System Architecture** | [**`docs/architecture.md`**](docs/architecture.md) | High-level system overview, 9 modular frontend views (`state.js`, `components/`, `views/`), agentic multi-agent framework, cross-platform Git engine with `execFile`, Windows PowerShell `FolderBrowserDialog`, GraphRAG retrieval, security guardrails, and 6-suite test pyramid (139 assertions). |
+| 🔄 **Workflow & Customization** | [**`docs/workflow.md`**](docs/workflow.md) | 8 detailed workflows: Workspace connection, Autonomous Bug Debugging loop, 3-Way Conflict Resolution, Git Desktop & AI Commit Planning, Pull Request Lifecycle & Branch Management, GitHub Issue Triage, Controlled Git Operations & Push Safeguards, Automated Git Bisect, and a 25-row code modification directory. |
+| 📡 **API Specification** | [**`docs/api.md`**](docs/api.md) | Endpoints reference: System probes, Authentication, Filesystem & Windows Native Dialog (`/api/fs/*`), Git Desktop operations (`/api/git/*`), Autonomous Debugging & SSE streaming (`/api/debug/*`), Pull Requests & GitHub issues (`/api/pr/*`), and GraphRAG search. |
+| 🤝 **Contributing Guide** | [**`docs/contributing.md`**](docs/contributing.md) | Development environment setup, TypeScript strict guidelines, Conventional Commits standard, testing commands for all 6 modular test suites, GitHub Actions CI matrix, and branching strategy. |
 
 ---
 
