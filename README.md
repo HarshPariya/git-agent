@@ -32,12 +32,23 @@
 ## 🚀 Key Capabilities
 
 - **Dual-Workspace Architecture**:
-  - **Workspace A (AI Debugging)**: 22-state live agent loop with 6 quick modes (`DEBUG BUG`, `DEBUG ISSUE`, `DEBUG PR`, `DEBUG CI`, `DEBUG REGRESSION`, `RESOLVE CONFLICT`), ranked hypotheses, root-cause diagnosis, unified diffs, and 1-click rollback snapshots.
-  - **Workspace B (Git Desktop)**: Comprehensive working tree changes inspector (staged, unstaged, untracked, risk classification), `AI ANALYZE CHANGES` (semantic clustering via Groq LLM + GraphRAG), `AI COMMIT PLAN` (Conventional Commits), one-click `AI COMMIT ALL` (sequential atomic group commits with verified SHAs; never blind `git add .`), `FETCH`, `PULL`, `SYNC`, `PUSH` (with Push Preview Modal & branch safeguards), and end-to-end `AI SHIP`.
+  - **Workspace A (AI Debugging)**: 28-state live agent loop with quick modes (`DEBUG BUG`, `DEBUG ISSUE`, `DEBUG PR`, `DEBUG CI`, `DEBUG REGRESSION`, `RESOLVE CONFLICT`), ranked hypotheses, root-cause diagnosis, unified diffs, and 1-click rollback snapshots.
+  - **Workspace B (Git Desktop)**: Comprehensive working tree changes inspector (staged, unstaged, untracked, risk classification), Continuous Diff Viewer, `AI ANALYZE CHANGES` (semantic clustering via Groq LLM + GraphRAG), `AI COMMIT PLAN` (Conventional Commits), one-click `AI COMMIT ALL` (sequential atomic group commits with verified SHAs; never blind `git add .`), `FETCH`, `PULL`, `SYNC`, `PUSH` (with Push Preview Modal & branch safeguards), and end-to-end `AI SHIP`.
+- **9 Distinct Modular Frontend Views**:
+  - `Dashboard`: System health, active repo metrics, and recent commit activity.
+  - `Repositories`: Workspace manager with Windows Native Dialog (`FolderBrowserDialog`), in-app filesystem browser, and GitHub token connector.
+  - `AI Debugging`: Autonomous 28-state reasoning console with real-time SSE stream.
+  - `Git Desktop`: First-class visual Git operations center with branch switcher modal, continuous diff viewer, commit plan organizer, and post-push executive summary.
+  - `Pull Requests`: PR management hub with branch target selection, diff view, and 3 merge strategies (`merge`, `squash`, `rebase`).
+  - `Issues`: Issue triage dashboard with one-click "Debug Issue" autonomous trigger.
+  - `Conflicts`: 4-Way Conflict Center (`BASE | OURS | THEIRS | AI RESOLUTION`) with automated test validation.
+  - `History`: Visual commit timeline with author badges, commit messages, and diff modals.
+  - `Settings`: LLM selection (Groq LLaMA 3.3 70B), API tokens, theme toggle, and system cache controls.
+- **Windows Native OS Integration**: Built-in PowerShell .NET `[System.Windows.Forms.FolderBrowserDialog]` integration via `POST /api/fs/pick-native-dialog` and host OS File Explorer reveal via `POST /api/fs/open-in-os`.
 - **4-Way Conflict Center**: Real-time side-by-side inspection (`BASE | OURS | THEIRS | AI RESOLUTION`) with syntax-safe semantic merge and automated test execution.
 - **Zero-Setup Local Workspace Mounting**: Connect any folder on your laptop (Windows, macOS, or Linux) directly from the dashboard using the built-in native filesystem browser, or connect remote GitHub repositories via Personal Access Token.
 - **GraphRAG Code Intelligence**: Combines TypeScript Compiler AST extraction with 384-dimensional semantic feature hashing, dependency graph traversal, and Reciprocal Rank Fusion (RRF) reranking.
-- **Strict Git Safety Rails & Push Safeguards**: Classifies 19 Git operations into `safe`, `controlled`, and `dangerous`. Blocks raw `--force` pushes and direct pushes to protected branches (`main`, `master`, `production`, `release`).
+- **Strict Git Safety Rails & Push Safeguards**: Classifies 19 Git operations into `safe`, `controlled`, and `dangerous`. Direct `execFile("git")` execution prevents Windows shell `%h` formatting corruption. Blocks raw `--force` pushes and direct pushes to protected branches (`main`, `master`, `production`, `release`, `develop`, `staging`).
 - **Deterministic 1-Click Rollback**: Automatically creates in-memory and disk snapshot backups before modifying any file, enabling instant reversion if tests fail.
 - **Professional Slate Developer-Tool UI**: Crisp, distraction-free modern interface with live Server-Sent Events (SSE) terminal, interactive change tables, and push safeguard modals.
 
@@ -146,10 +157,10 @@ Open **`http://localhost:3000`** in your browser to launch the Web Dashboard.
 
 ## 🧪 Testing & Quality Assurance
 
-The project includes an enterprise-grade automated test suite:
+The project includes an enterprise-grade automated test suite with **6 test suites and 139 passing assertions**:
 
 ```bash
-# Run complete test suite (all 5 suites: Git Engine, Agent, API, Guardrails, Git Desktop)
+# Run complete test suite (all 6 suites: Git Engine, Agent, API, Guardrails, Git Desktop, E2E Workflow)
 npm test
 
 # Run modular test suites individually
@@ -158,6 +169,7 @@ npm run test:agent         # 18 tests: State machine, Critic, Patch Engine
 npm run test:api           # 21 tests: Express routes, auth, filesystem browser
 npm run test:guardrails    # 22 tests: InputGuard, OutputGuard, resource limits
 npm run test:desktop       # 38 tests: File change detection, semantic clustering, atomic commits
+npm run test:e2e-desktop   # 16 assertions: End-to-end bare origin push, commit plan, branch switching
 
 # Run Ingestion & GraphRAG verification
 npm run rag:security-test  # Path traversal and secret filtering
@@ -187,12 +199,27 @@ npm run build
 
 | Feature Area | Source File | Description |
 | :--- | :--- | :--- |
-| **Frontend UI Styles** | [`public/styles.css`](public/styles.css) | Glassmorphic design tokens, dark theme colors, animations. |
-| **Frontend Dashboard Logic** | [`public/app.js`](public/app.js) | SPA navigation, folder picker modal, SSE log streaming. |
+| **Frontend State Store** | [`public/state.js`](public/state.js) | Central reactive store for repository, branch, commit plan, and debug sessions. |
+| **Unified Diff Viewer** | [`public/components/diff-viewer.js`](public/components/diff-viewer.js) | Syntax-highlighted continuous and modal unified diff renderer. |
+| **Commit Plan Organizer** | [`public/components/commit-plan.js`](public/components/commit-plan.js) | Interactive cards for review, risk tags, and one-click commit execution. |
+| **Dashboard View** | [`public/views/dashboard.js`](public/views/dashboard.js) | System health, active repo metrics, and recent commit activity. |
+| **Repositories View** | [`public/views/repositories.js`](public/views/repositories.js) | Workspace mounting, Windows Native Dialog, in-app file browser, GitHub auth. |
+| **AI Debugging Console** | [`public/views/debugging.js`](public/views/debugging.js) | Autonomous 28-state debugging console, SSE stream, rollback triggers. |
+| **Git Desktop Controller** | [`public/views/git-desktop.js`](public/views/git-desktop.js) | Working tree table, branch modal, continuous diff, push preview, post-push report. |
+| **Pull Requests Hub** | [`public/views/pull-requests.js`](public/views/pull-requests.js) | PR list, Create PR modal, diff viewer, merge strategy selector. |
+| **Issue Triage View** | [`public/views/issues.js`](public/views/issues.js) | Issue listing, triage filters, one-click debug session launcher. |
+| **4-Way Conflict Center** | [`public/views/conflicts.js`](public/views/conflicts.js) | Side-by-side 4-way editor, AI semantic merge, automated test validator. |
+| **Commit History Timeline** | [`public/views/history.js`](public/views/history.js) | Interactive commit log, short SHAs, author cards, commit diff viewer. |
+| **Settings & Configuration** | [`public/views/settings.js`](public/views/settings.js) | Groq LLaMA models, API key configuration, theme toggle, cache flush. |
+| **Master Navigation & Router** | [`public/app.js`](public/app.js) | Keyboard shortcuts, tab switcher, global notification toasts. |
+| **CSS Styles & Design System** | [`public/styles.css`](public/styles.css) | Glassmorphic design tokens, dark theme colors, animations. |
 | **Backend REST & SSE API** | [`src/app.ts`](src/app.ts) | Express server routing, middleware, probe endpoints. |
+| **Native OS Dialogs & FS** | [`src/api/fs.ts`](src/api/fs.ts) | PowerShell `FolderBrowserDialog`, OS file explorer reveal, path normalization. |
+| **Git Engine Process Exec** | [`src/git/engine.ts`](src/git/engine.ts) | Safe direct `execFile("git")` execution, operations catalog, risk tiers. |
+| **Git Push Safeguards** | [`src/git/push.ts`](src/git/push.ts) | Protected branch lists, force-push blocking, divergence checks. |
+| **AI Commit Planner** | [`src/git/change-analyzer.ts`](src/git/change-analyzer.ts) | Groq LLM Conventional Commit grouping, atomic sequential commit execution. |
 | **Agent State Machine** | [`src/agent/state-machine.ts`](src/agent/state-machine.ts) | 28 execution states, transition event dispatchers. |
 | **Critic Safety Gate** | [`src/agent/critic.ts`](src/agent/critic.ts) | Review criteria, risk scoring, dangerous patch rejection. |
-| **Git Push Safeguards** | [`src/git/push.ts`](src/git/push.ts) | Protected branch lists, force-push blocking, divergence checks. |
 | **Merge Conflict Analyzer** | [`src/git/conflicts.ts`](src/git/conflicts.ts) | 3-way conflict parser and semantic resolution strategies. |
 | **Code Graph & AST Indexer** | [`src/ingestion/parser.ts`](src/ingestion/parser.ts) | TypeScript Compiler symbol and entity extraction. |
 

@@ -134,16 +134,20 @@ Add a branch name to the protected list (e.g., `staging`, `production`).
 
 ---
 
-## 5. Filesystem & OS Browser
+## 5. Filesystem & OS Integration Endpoints
 
 ### `GET /api/fs/browse?path=<url_encoded_path>` *(Protected)*
-Browse local OS drives and directories.
+Browse local OS drives and directories with directory shortcuts (drives, workspaces) and git repository indicators.
 - **Response `200 OK`**:
   ```json
   {
     "currentPath": "C:\\Users\\username\\Projects",
     "parentPath": "C:\\Users\\username",
     "isGitRepo": false,
+    "shortcuts": [
+      { "name": "C: Drive", "path": "C:\\" },
+      { "name": "D: Drive", "path": "D:\\" }
+    ],
     "directories": [
       {
         "name": "my-service",
@@ -159,6 +163,57 @@ Browse local OS drives and directories.
         "sizeBytes": 1024
       }
     ]
+  }
+  ```
+
+### `POST /api/fs/pick-native-dialog` *(Protected)*
+Opens the native Windows OS directory dialog (`System.Windows.Forms.FolderBrowserDialog` via PowerShell with `$topForm.TopMost = $true`) in the foreground, allowing the user to select any folder on their computer.
+- **Request Body**: `{}`
+- **Response `200 OK`**:
+  ```json
+  {
+    "success": true,
+    "path": "C:\\Users\\username\\Desktop\\my-project",
+    "folderName": "my-project",
+    "cancelled": false
+  }
+  ```
+
+### `POST /api/fs/open-in-os` *(Protected)*
+Directly reveals a file/directory in the host operating system file manager (Windows File Explorer, macOS Finder, Linux xdg-open) or opens it in the default code editor (`code`).
+- **Request Body**:
+  ```json
+  {
+    "filePath": "src/api/git.ts",
+    "repositoryId": "repo-ai-chatbot",
+    "mode": "reveal | edit"
+  }
+  ```
+- **Response `200 OK`**:
+  ```json
+  {
+    "success": true,
+    "message": "Revealed in File Explorer"
+  }
+  ```
+
+### `POST /api/fs/resolve-folder` *(Protected)*
+Resolves a folder name or dropped folder entry into an absolute disk path by searching the active workspace, home directory, and drive roots.
+- **Request Body**:
+  ```json
+  {
+    "folderName": "ai-chatbot",
+    "sampleFiles": ["package.json", "src/app.ts"],
+    "currentPath": "C:\\Users\\username\\Desktop"
+  }
+  ```
+- **Response `200 OK`**:
+  ```json
+  {
+    "success": true,
+    "resolvedPath": "C:\\Users\\username\\Desktop\\ai-chatbot",
+    "folderName": "ai-chatbot",
+    "exists": true
   }
   ```
 
@@ -248,8 +303,105 @@ Safely commits changes with conventional commit message generation:
   }
   ```
 
+### `POST /api/git/generate-commit-message` *(Protected)*
+Uses the Groq LLM with strict Conventional Commit prompting and domain-aware fallbacks to synthesize a professional commit message with a concrete scope and 2-6 per-file bullet points.
+- **Request Body**:
+  ```json
+  {
+    "repositoryId": "my-service"
+  }
+  ```
+- **Response `200 OK`**:
+  ```json
+  {
+    "summary": "feat(git): add commit, branch switcher, and push preview modal",
+    "description": "- src/api/git.ts: add commit message generator and checkout branch endpoints\n- public/views/git-desktop.js: integrate push preview modal and target branch selector\n- docs/api.md: document new REST endpoints and request schemas",
+    "branch": "feature/git-agent"
+  }
+  ```
+
+### `GET|POST /api/git/branches` *(Protected)*
+Lists all local and remote branches in the repository, flagging the currently active branch.
+- **Response `200 OK`**:
+  ```json
+  {
+    "branches": [
+      { "name": "main", "current": false },
+      { "name": "feature/git-agent", "current": true },
+      { "name": "remotes/origin/main", "current": false }
+    ],
+    "current": "feature/git-agent"
+  }
+  ```
+
+### `POST /api/git/checkout` *(Protected)*
+Checks out an existing branch or creates a new branch and checks it out.
+- **Request Body**:
+  ```json
+  {
+    "repositoryId": "my-service",
+    "branch": "feature/new-task",
+    "create": true
+  }
+  ```
+- **Response `200 OK`**:
+  ```json
+  {
+    "success": true,
+    "branch": "feature/new-task",
+    "message": "Switched to a new branch 'feature/new-task'"
+  }
+  ```
+
 ### `POST /api/git/push` *(Protected)*
-Executes `git push` with pre-push safety validations. Blocks pushes to protected branches.
+Executes `git push` with pre-push safety validations. Validates that the target branch is not protected without approval, verifies divergence, and supports upstream tracking and force-with-lease.
+- **Request Body**:
+  ```json
+  {
+    "repositoryId": "my-service",
+    "remote": "origin",
+    "targetBranch": "feature/git-agent",
+    "setUpstream": true,
+    "forceWithLease": false
+  }
+  ```
+- **Response `200 OK`**:
+  ```json
+  {
+    "success": true,
+    "branch": "feature/git-agent",
+    "output": "To https://github.com/...\n   24dd56e..dd01f1e  feature/git-agent -> feature/git-agent"
+  }
+  ```
+
+### `POST /api/git/pull` *(Protected)*
+Executes `git pull` from remote tracking branch, checking for dirty working tree state and reporting merge conflicts.
+- **Request Body**:
+  ```json
+  {
+    "repositoryId": "my-service"
+  }
+  ```
+
+### `POST /api/git/fetch` *(Protected)*
+Fetches all remote references and branches from origin.
+- **Request Body**:
+  ```json
+  {
+    "repositoryId": "my-service"
+  }
+  ```
+
+### `POST /api/git/commit` *(Protected)*
+Safely commits changes with conventional commit message generation:
+- **Request Body**:
+  ```json
+  {
+    "repositoryId": "my-service",
+    "message": "fix(auth): add null guard to token parser",
+    "stageAll": true
+  }
+  ```
 
 ### `POST /api/git/conflicts` *(Protected)*
 Scans the repository for merge conflicts and returns 3-way conflict hunks.
@@ -334,4 +486,58 @@ One-click autonomous shipping pipeline:
     "message": "Successfully analyzed, committed, pushed, and shipped pull request."
   }
   ```
+
+---
+
+## 8. Pull Requests & Issues Management Endpoints
+
+### `GET /api/pr` *(Protected)*
+Lists pull requests for a repository.
+- **Query Parameters**: `?repositoryId=my-service&state=open|closed|all`
+- **Response `200 OK`**:
+  ```json
+  {
+    "pullRequests": [
+      {
+        "id": "pr-1",
+        "number": 1,
+        "title": "feat(git-agent): production hardening and modular views",
+        "sourceBranch": "feature/git-agent",
+        "targetBranch": "development",
+        "status": "open",
+        "author": "Harsh Pariya",
+        "createdAt": "2026-09-07T08:00:00Z"
+      }
+    ]
+  }
+  ```
+
+### `POST /api/pr` *(Protected)*
+Creates a new pull request in the platform and syncs to GitHub if connected.
+- **Request Body**:
+  ```json
+  {
+    "repositoryId": "my-service",
+    "title": "feat(git-agent): production git debugging agent",
+    "sourceBranch": "feature/git-agent",
+    "targetBranch": "development",
+    "description": "Comprehensive production hardening with modular architecture."
+  }
+  ```
+
+### `POST /api/pr/:id/merge` *(Protected)*
+Merges a pull request using the specified merge strategy (`merge`, `squash`, `rebase`).
+- **Response `200 OK`**:
+  ```json
+  {
+    "success": true,
+    "message": "Pull request #1 merged successfully into development."
+  }
+  ```
+
+### `GET /api/github/repos/:owner/:repo/issues` *(Protected)*
+Retrieves open or closed issues directly from the GitHub REST API for connected cloud repositories.
+
+### `GET /api/github/repos/:owner/:repo/pulls` *(Protected)*
+Retrieves pull requests directly from GitHub with diff and review statuses.
 

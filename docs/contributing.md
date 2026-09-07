@@ -68,10 +68,12 @@ npm run build
 npm test
 
 # Run modular test suites individually
-npm run test:git           # Git Engine & Safety Controls
-npm run test:agent         # Multi-Agent Orchestrator & State Machine
-npm run test:api           # Express Endpoints & JWT Authentication
-npm run test:guardrails    # Input/Output Guards & Security Filters
+npm run test:git           # Git Engine & Safety Controls (24 tests)
+npm run test:agent         # Multi-Agent Orchestrator & State Machine (18 tests)
+npm run test:api           # Express Endpoints & JWT Authentication (21 tests)
+npm run test:guardrails    # Input/Output Guards & Security Filters (22 tests)
+npm run test:desktop       # Git Desktop change analyzer & atomic commits (38 tests)
+npm run test:e2e-desktop   # End-to-end bare origin push & branch switching (16 assertions)
 
 # Run GraphRAG & Ingestion Tests
 npm run rag:security-test  # File sanitization & secret filtering

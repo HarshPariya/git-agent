@@ -159,7 +159,7 @@ flowchart TD
 
 ---
 
-## 5. Workflow 4: Git Desktop (Workspace B) & AI Commit Planner
+## 5. Workflow 4: Git Desktop (Workspace B) & AI Semantic Commit Flow
 
 Git Desktop provides a first-class visual repository controller powered by AI semantic code intelligence:
 
@@ -168,34 +168,131 @@ flowchart TD
     GD_START[Open Git Desktop] --> GD_DETECT[Scan Working Tree Changes]
     GD_DETECT --> GD_TABLE[Render Changed Files Table + Risk Badges]
     
+    GD_TABLE --> GD_DIFF[Continuous Diff Viewer: Inspect All Line Changes]
     GD_TABLE --> GD_ACT{Developer Action}
-    GD_ACT -->|AI Analyze Changes| GD_PLAN[Groq LLM + GraphRAG Clustering]
+    
+    GD_ACT -->|AI Analyze Changes| GD_PLAN[Groq LLM + GraphRAG Semantic Clustering]
     GD_ACT -->|Fetch / Pull / Sync| GD_REMOTE[Execute Remote Operations with Dirty Tree Check]
     GD_ACT -->|Push| GD_PREVIEW[Open Push Preview Modal & Check Safeguards]
     GD_ACT -->|AI Ship| GD_SHIP[Analyze -> Plan -> Commit -> Push -> PR]
     
-    GD_PLAN --> GD_CARDS[Display Logical Commit Plan Cards]
-    GD_CARDS --> GD_COMMIT_ALL[One-Click AI Commit All]
+    GD_PLAN --> GD_CARDS[Display Logical Commit Plan Cards with Risk Badges]
+    GD_CARDS --> GD_EDIT[Edit Summary, Description, or File Assignments]
+    GD_EDIT --> GD_COMMIT_ALL[One-Click AI Commit All]
+    GD_CARDS --> GD_COMMIT_ALL
+    
     GD_COMMIT_ALL --> GD_SEQ[Sequential Atomic Staging: Reset Index -> Stage Group 1 -> Commit & Verify SHA -> Stage Group 2...]
     GD_SEQ --> GD_CLEAN[Working Tree Cleaned & Log Updated]
     
     GD_PREVIEW --> GD_SAFE{Passes Safeguards?}
     GD_SAFE -- No --> GD_BLOCK[Blocked: Force Push / Protected Branch Violation]
     GD_SAFE -- Yes --> GD_PUSH_EXEC[Safe Push Executed]
+    GD_PUSH_EXEC --> GD_SUMMARY[Render Post-Push Executive Summary Card]
+    GD_SUMMARY --> GD_CREATE_PR[One-Click Create Pull Request Trigger]
 ```
 
-### Key Technical Guarantees:
-1. **Never Blind `git add .`**:
-   - `src/git/change-analyzer.ts` groups files into cohesive functional units (e.g. Auth, API, Docs, Tests).
-   - In `executeCommitPlan`, the staging index is cleared (`git reset HEAD`), then each group's files are explicitly staged and committed with verified commit SHAs (`git rev-parse --short HEAD`).
-2. **Push Preview Modal**:
-   - Displays target remote/branch, commits to be pushed, files touched, protected branch check, and secret scanning status before any push packet is sent to GitHub.
-3. **Automated AI Ship**:
-   - Orchestrates the full development pipeline in one click: analyze -> generate commit plan -> atomic commit all -> pre-push safeguard check -> safe push -> open automated Pull Request.
+### Detailed Step-by-Step Flow:
+1. **Working Tree Inspection**:
+   - The UI automatically calls `GET /api/git/status?repositoryId=...` to retrieve working tree changes.
+   - Files are categorized into **Staged**, **Unstaged**, and **Untracked**.
+   - Each file receives an automated risk rating based on path inspection:
+     - `HIGH` (red): Authentication, credentials, secrets, root manifests (`package.json`, `.env`).
+     - `MEDIUM` (yellow): Backend services, API routes, database schemas, controllers.
+     - `LOW` (green): Documentation, CSS styles, static assets, tests.
+2. **Continuous Diff Viewer**:
+   - Clicking "View All Diffs" or clicking any individual file row loads the unified diff via `/api/git/diff`.
+   - Displays additions (`+`), deletions (`-`), chunk headers (`@@ ... @@`), and file paths in a high-performance stacked view.
+3. **AI Change Analysis & Commit Planning**:
+   - Clicking "AI Analyze Changes" sends the changed files and unified diffs to `POST /api/git/analyze-changes`.
+   - The backend prompts the Groq LLM with GraphRAG entity context to cluster related files into 1 to 4 logical commits.
+   - Each group receives an imperative Conventional Commit message (`type(scope): subject <= 72 chars`) and a detailed bulleted markdown description.
+   - If the LLM is unreachable or unconfigured, a deterministic rule-based fallback partitions files by directory and file type.
+4. **Interactive Commit Review & Customization**:
+   - Commit cards are displayed with risk indicators, editable summary inputs, and editable bulleted descriptions.
+   - Developers can review or edit commit messages before committing.
+5. **Sequential Atomic Staging & Commit Execution**:
+   - Clicking "Commit All Groups" or "Commit Group" calls `POST /api/git/commit-plan/execute`.
+   - **Never Blind `git add .`**:
+     1. Clears staging index via `git reset HEAD`.
+     2. For each group, stages only that group's files via `git add "<file>"`.
+     3. Commits with formatted message and extracts verified short SHA via `git rev-parse --short HEAD`.
+     4. Advances to the next group until the working tree is clean.
+6. **Remote Sync & Push Preview Modal**:
+   - Clicking "Sync" fetches and pulls latest changes, verifying dirty-tree state before merging.
+   - Clicking "Push" opens the **Push Preview Modal**:
+     - Pre-push validator verifies the target branch is not protected (`main`, `master`, `production`).
+     - Checks that local is not behind remote (`status.behind === 0`).
+     - Scans commits and diffs for leaked secrets (API keys, private tokens).
+     - Displays the exact list of commits and files that will be transmitted.
+   - Clicking "Confirm & Push" executes `executeSafePush` with lease protection.
+7. **Executive Post-Push Summary Card**:
+   - Upon successful push, renders an executive summary card:
+     - Remote branch link (`origin/feature/git-agent`).
+     - Push timestamp and verified commit range.
+     - One-click button "Create Pull Request" pre-filled with the branch name and commit message.
 
 ---
 
-## 6. Workflow 5: GitHub Issues & Pull Requests
+## 6. Workflow 5: Pull Request Lifecycle & Branch Management
+
+The platform provides complete branch management and Pull Request creation/merging:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Developer
+    participant UI as Web SPA (views/pull-requests.js)
+    participant API as Express API Router
+    participant Git as Git Engine
+    participant GH as GitHub Integration
+
+    Dev->>UI: Open Branch Switcher Modal
+    UI->>API: GET /api/git/branches
+    API->>Git: git branch -a
+    Git-->>API: Branch list (local & remote)
+    API-->>UI: BranchListOutput
+    Dev->>UI: Create new branch "feature/user-auth"
+    UI->>API: POST /api/git/checkout { branch, createNew: true }
+    API->>Git: git checkout -b feature/user-auth
+    Git-->>API: Success
+    API-->>UI: Active branch updated
+
+    Dev->>UI: Commit & Push Changes
+    UI->>API: POST /api/git/push { branch: "feature/user-auth" }
+    API->>Git: executeSafePush
+    Git-->>API: Pushed to origin
+
+    Dev->>UI: Click "Create Pull Request"
+    UI->>API: POST /api/pr { title, sourceBranch, targetBranch, description }
+    API->>GH: Create PR on GitHub (if token configured)
+    API-->>UI: PR Created (#102)
+
+    Dev->>UI: Review PR Diff & Click "Merge PR"
+    UI->>API: POST /api/pr/102/merge { strategy: "squash" }
+    API->>Git: git merge --squash feature/user-auth
+    Git-->>API: Clean Merge
+    API-->>UI: PR Marked Merged & Working Tree Synced
+```
+
+### Supported PR Capabilities:
+1. **Branch Switching & Creation**:
+   - View local and remote tracking branches.
+   - Instant search filtering.
+   - Dirty-tree protection: blocks checkout if uncommitted changes would conflict with the target branch.
+2. **Pull Request Creation**:
+   - Pre-fills PR title and description using AI Commit Plan summary and bulleted body.
+   - Target branch selection (e.g. `development`, `main`).
+   - Automated linkage to GitHub issues (`Closes #12`).
+3. **Pull Request Review & Merge**:
+   - Diff inspection of all commits in the PR.
+   - 3 supported merge strategies:
+     - `merge`: Creates a standard 3-way merge commit.
+     - `squash`: Squashes all branch commits into a single clean commit.
+     - `rebase`: Fast-forward rebase onto target branch.
+
+---
+
+## 7. Workflow 6: GitHub Issues & Autonomous Triage
 
 1. **Issue Triage**:
    - The user connects GitHub on the **Issues** tab.
@@ -213,7 +310,7 @@ flowchart TD
 
 ---
 
-## 7. Workflow 6: Controlled Git Operations & Push Safeguards
+## 8. Workflow 7: Controlled Git Operations & Push Safeguards
 
 The platform acts as a secure Git controller preventing accidental repo corruption.
 
@@ -246,7 +343,7 @@ flowchart TD
 
 ---
 
-## 8. Workflow 7: Automated Git Bisect & Regression Pinpointing
+## 9. Workflow 8: Automated Git Bisect & Regression Pinpointing
 
 When code breaks between two known revisions:
 1. User provides a **Good Commit** (where behavior worked) and a **Bad Commit** (current regression).
@@ -261,21 +358,35 @@ When code breaks between two known revisions:
 
 ---
 
-## 8. Where to Modify Code (Customization Guide)
+## 10. Where to Modify Code (Customization Guide)
 
-If you want to modify or extend the system, use this reference:
+If you want to modify or extend the system, use this comprehensive reference:
 
 | To Change... | Edit This File | What to Do |
 | :--- | :--- | :--- |
-| **Frontend UI Styles & Theme** | [`public/styles.css`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/styles.css) | Modify CSS custom properties (`:root` colors, glassmorphism blur, fonts, responsive breakpoints). |
-| **Frontend Layout & Tabs** | [`public/index.html`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/index.html) | Add new navigation buttons, tab panels, modals, or visualizer elements. |
-| **Frontend Event Handling** | [`public/app.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/app.js) | Change how tabs switch, how SSE events render, or folder picker dialogs interact. |
-| **API Endpoints & Routing** | [`src/app.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/app.ts) | Add or modify Express routes, middleware, or system health handlers. |
-| **Agent Investigation Plan** | [`src/agent/planner.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/agent/planner.ts) | Customize the 5 investigation phases (`isolate`, `reproduce`, `diagnose`, `fix`, `verify`). |
-| **Hypothesis Generation & LLM** | [`src/agent/hypothesis-engine.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/agent/hypothesis-engine.ts) | Adjust prompts, temperature, ranking algorithms, or candidate count. |
-| **Critic Agent Review Rules** | [`src/agent/critic.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/agent/critic.ts) | Customize scoring thresholds (e.g., score >= 80 to approve), add security criteria, or forbid additional commands. |
-| **Patch Application & Rollback** | [`src/agent/patch-engine.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/agent/patch-engine.ts) | Change how file snapshots are stored, unified diff formatting, or rollback behavior. |
-| **Protected Branches & Git Limits** | [`src/git/engine.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/git/engine.ts) | Edit `PROTECTED_BRANCH_PATTERNS` to add/remove protected branch names or reclassify operation risks. |
-| **Merge Conflict Logic** | [`src/git/conflicts.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/git/conflicts.ts) | Tweak conflict marker parsing or the AI semantic resolution strategy. |
-| **GraphRAG Code Retrieval** | [`src/retrieval/retriever.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/retrieval/retriever.ts) | Tune hybrid search weighting between graph edges and vector similarity. |
-| **Prompt Injection & Guardrails** | [`src/guardrails/input-guard.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/guardrails/input-guard.ts) | Add injection regex patterns or adjust input length limits. |
+| **Frontend Global State** | [`public/state.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/state.js) | Add new reactive state variables, subscriptions, or initial defaults. |
+| **Unified Diff Visualizer** | [`public/components/diff-viewer.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/components/diff-viewer.js) | Customize diff hunk rendering, line number gutters, or continuous view mode. |
+| **Commit Plan Cards** | [`public/components/commit-plan.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/components/commit-plan.js) | Adjust group card layouts, risk badge colors, or commit action buttons. |
+| **Dashboard View** | [`public/views/dashboard.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/dashboard.js) | Modify dashboard metrics, active repo card, or system health gauges. |
+| **Repository Management View** | [`public/views/repositories.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/repositories.js) | Customize native folder picker modal, GitHub connector, or repo cards. |
+| **AI Debugging Console (Workspace A)** | [`public/views/debugging.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/debugging.js) | Modify SSE log streaming, hypothesis meters, or Approve/Revert triggers. |
+| **Git Desktop Controller (Workspace B)** | [`public/views/git-desktop.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/git-desktop.js) | Adjust change tables, branch switcher, push preview modal, or post-push summary card. |
+| **Pull Requests Hub** | [`public/views/pull-requests.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/pull-requests.js) | Modify PR lists, create PR modal, or merge strategy options. |
+| **Issue Triage View** | [`public/views/issues.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/issues.js) | Customize issue filters, label tags, or one-click "Debug Issue" action. |
+| **4-Way Conflict Center** | [`public/views/conflicts.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/conflicts.js) | Adjust side-by-side 4-way editor, AI resolution selector, or test runners. |
+| **Commit History Timeline** | [`public/views/history.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/history.js) | Modify commit list rendering, author badges, or diff popups. |
+| **Settings & Diagnostics** | [`public/views/settings.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/settings.js) | Add configuration options, LLM model switches, or cache clear actions. |
+| **Master Navigation & Router** | [`public/app.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/app.js) | Adjust keyboard shortcuts, tab switching, or global notification toasts. |
+| **CSS Theme & Glassmorphic Tokens** | [`public/styles.css`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/styles.css) | Modify HSL color tokens, backdrop filters, typography, or responsive rules. |
+| **HTML Shell & Modal Skeletons** | [`public/index.html`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/index.html) | Add new modals, top navigation buttons, or sidebar menu items. |
+| **Express API Routing & Middleware** | [`src/app.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/app.ts) | Register new API routes, JWT security middleware, or error handlers. |
+| **Native OS Dialogs & File Ops** | [`src/api/fs.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/api/fs.ts) | Tweak PowerShell `FolderBrowserDialog` or OS file manager launchers. |
+| **Git Engine & Windows execFile** | [`src/git/engine.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/git/engine.ts) | Adjust Git command executions, risk classifications, or formatting flags. |
+| **Push Safeguards & Branch Protection** | [`src/git/push.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/git/push.ts) | Add protected branch patterns or modify force-push lease checks. |
+| **AI Commit Clustering & Messages** | [`src/git/change-analyzer.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/git/change-analyzer.ts) | Tune Groq Conventional Commit prompts or regex fallback clustering. |
+| **Agent State Machine & Planner** | [`src/agent/planner.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/agent/planner.ts) | Customize investigation phases, bug classifiers, or step sequences. |
+| **Critic Agent Review Gates** | [`src/agent/critic.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/agent/critic.ts) | Modify scoring thresholds, security criteria, or forbidden commands. |
+| **Patch Engine & Instant Rollback** | [`src/agent/patch-engine.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/agent/patch-engine.ts) | Adjust file snapshot storage or patch application algorithms. |
+| **GraphRAG Code Retrieval** | [`src/retrieval/retriever.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/retrieval/retriever.ts) | Tune hybrid search weights between graph edges and vector embeddings. |
+| **Input & Output Security Guards** | [`src/guardrails/input-guard.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/guardrails/input-guard.ts) | Update prompt injection regex patterns or secret scrubbing filters. |
+
