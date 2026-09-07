@@ -327,7 +327,7 @@ One-click autonomous shipping pipeline:
   ```json
   {
     "success": true,
-    "branch": "feature/agent-llm",
+    "branch": "feature/git-agent",
     "commitsCreated": 2,
     "push": { "success": true, "output": "..." },
     "pullRequest": { "number": 12, "url": "https://github.com/..." },

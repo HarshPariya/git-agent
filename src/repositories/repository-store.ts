@@ -94,17 +94,22 @@ export class RepositoryStore {
 
     if (existing) {
       registerRepositoryPath(existing.id, existing.localPath);
-      let branch = existing.defaultBranch || "main";
+      let current = existing.currentBranch || "feature/git-agent";
       try {
         const status = await executeGitStatus(existing.localPath);
-        branch = status.branch;
+        current = status.branch;
       } catch {
-        branch = existing.defaultBranch || "main";
+        current = existing.currentBranch || "feature/git-agent";
       }
+      const defaultB =
+        existing.defaultBranch && !existing.defaultBranch.startsWith("feature/") && !existing.defaultBranch.startsWith("fix/")
+          ? existing.defaultBranch
+          : "development";
+
       const updated: Repository = {
         ...existing,
-        defaultBranch: branch,
-        currentBranch: branch,
+        defaultBranch: defaultB,
+        currentBranch: current,
         status: "connected",
         lastSyncAt: new Date().toISOString(),
       };
@@ -116,14 +121,18 @@ export class RepositoryStore {
       return updated;
     }
 
-    let branch = "main";
+    let branch = "feature/git-agent";
     try {
       const status = await executeGitStatus(localPath);
       branch = status.branch;
     } catch {
-      // Repo may not be cloned yet; we'll attempt clone via git engine later
-      branch = "main";
+      branch = "feature/git-agent";
     }
+
+    const defaultBranch =
+      branch && !branch.startsWith("feature/") && !branch.startsWith("fix/")
+        ? branch
+        : "development";
 
     const repository: Repository = {
       id: generateId("repo-", params.localPath ? localPath.toLowerCase() : undefined),
@@ -132,7 +141,7 @@ export class RepositoryStore {
       name: params.name,
       url: params.url,
       localPath,
-      defaultBranch: branch,
+      defaultBranch,
       currentBranch: branch,
       status: "connected",
       lastSyncAt: new Date().toISOString(),
