@@ -177,10 +177,10 @@ class ApiClient {
       body: JSON.stringify({ repositoryId, maxCount }),
     });
   }
-  async getGitDiff(repositoryId, ref1, ref2) {
+  async getGitDiff(repositoryId, filePath = "", staged = false) {
     return this.request("/api/git/diff", {
       method: "POST",
-      body: JSON.stringify({ repositoryId, ref1, ref2 }),
+      body: JSON.stringify({ repositoryId, filePath, staged }),
     });
   }
   async getGitBranches(repositoryId) {

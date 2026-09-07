@@ -173,7 +173,7 @@ export async function browseFilesystemHandler(
 
     // Helpful navigation shortcuts — user-centric and cross-platform (Mac, Windows, Linux)
     const shortcutCandidates: { name: string; path: string }[] = [
-      { name: "🏠 User Home", path: homedir },
+      { name: "🏠 Home Directory", path: homedir },
       { name: "🖥️ Desktop", path: path.join(homedir, "Desktop") },
       { name: "📄 Documents", path: path.join(homedir, "Documents") },
       { name: "📥 Downloads", path: path.join(homedir, "Downloads") },

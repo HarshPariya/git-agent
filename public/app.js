@@ -433,20 +433,22 @@ async function loadRepositories() {
     const repos = Array.isArray(data) ? data : data.repositories || [];
     state.repositories = repos;
 
-    // Restore user's explicitly selected repo from localStorage
-    // Do NOT auto-select first repo — user must choose
+    // Restore user's explicitly selected repo from localStorage or auto-activate first
     const savedRepoId = localStorage.getItem('gda_active_repo_id');
     if (savedRepoId) {
       const match = repos.find((r) => r.id === savedRepoId);
-      if (match) setActiveRepository(match);
-      else setActiveRepository(null); // saved repo no longer exists
+      if (match) await setActiveRepository(match);
+      else if (repos.length > 0) await setActiveRepository(repos[0]);
+      else await setActiveRepository(null);
     } else if (state.activeRepository) {
-      // Already set in memory — verify it still exists
       const match = repos.find((r) => r.id === state.activeRepository.id);
-      if (match) setActiveRepository(match);
-      else setActiveRepository(null);
+      if (match) await setActiveRepository(match);
+      else if (repos.length > 0) await setActiveRepository(repos[0]);
+      else await setActiveRepository(null);
+    } else if (repos.length > 0) {
+      await setActiveRepository(repos[0]);
     } else {
-      setActiveRepository(null);
+      await setActiveRepository(null);
     }
 
     renderRepositoriesList();
@@ -480,13 +482,15 @@ function renderRepositoriesList() {
 
   listEl.innerHTML = repos
     .map(
-      (r) => `
-    <div class="card" style="display:flex;flex-direction:column;justify-content:space-between">
+      (r) => {
+        const isActive = state.activeRepository && state.activeRepository.id === r.id;
+        return `
+    <div class="card ${isActive ? 'active-repo-card' : ''}" style="display:flex;flex-direction:column;justify-content:space-between;${isActive ? 'border-color:var(--c-accent);box-shadow:0 0 0 1px var(--c-accent)' : ''}">
       <div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <div style="font-weight:700;font-size:15px;display:flex;align-items:center;gap:6px">
             ${escapeHtml(r.name)}
-            ${state.activeRepository && state.activeRepository.id === r.id ? '<span class="badge badge-accent">active</span>' : ""}
+            ${isActive ? '<span class="badge badge-accent">active</span>' : ""}
           </div>
           <span class="badge badge-success">connected</span>
         </div>
@@ -495,33 +499,39 @@ function renderRepositoriesList() {
         </div>
         <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--c-text-secondary);margin-bottom:14px">
           <span>🌿 branch:</span>
-          <code>${escapeHtml(r.defaultBranch || r.branch || "main")}</code>
+          <code>${escapeHtml(r.currentBranch || r.defaultBranch || r.branch || "main")}</code>
         </div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;border-top:1px solid var(--c-border);padding-top:12px">
+        ${isActive
+            ? `<button class="btn btn-secondary btn-sm" disabled style="opacity:0.85">✓ Active</button>`
+            : `<button class="btn btn-secondary btn-sm" onclick="selectActiveRepo('${escapeHtml(r.id)}')">Set Active</button>`
+          }
+        <button class="btn btn-secondary btn-sm" onclick="openRepoInGitDesktop('${escapeHtml(r.id)}')">🖥️ Git Desktop</button>
         <button class="btn btn-primary btn-sm" onclick="quickDebugRepo('${escapeHtml(r.id)}')">⚡ Debug</button>
         <button class="btn btn-secondary btn-sm" onclick="syncRepo('${escapeHtml(r.id)}')">🔄 Sync</button>
-        <button class="btn btn-secondary btn-sm" onclick="indexRepo('${escapeHtml(r.id)}')">🕸️ Index Graph</button>
         <button class="btn btn-danger btn-sm" onclick="disconnectRepo('${escapeHtml(r.id)}')">Disconnect</button>
       </div>
     </div>
-  `,
+  `;
+      }
     )
     .join("");
 }
 
-function setActiveRepository(repo) {
+async function setActiveRepository(repo) {
   state.activeRepository = repo;
-  // Persist user selection to localStorage
   if (repo) {
     localStorage.setItem('gda_active_repo_id', repo.id);
   } else {
     localStorage.removeItem('gda_active_repo_id');
   }
+
   const label = document.getElementById('header-active-repo-name');
   if (label) {
-    label.textContent = repo ? repo.name : 'Select / Add Repo';
+    label.textContent = repo ? (repo.name || "Local Repo") : 'Select Local Repository';
   }
+
   const badge = document.getElementById('header-active-repo');
   if (badge) {
     const dot = badge.querySelector('.active-repo-dot');
@@ -533,7 +543,77 @@ function setActiveRepository(repo) {
       if (dot) dot.style.background = 'var(--c-text-muted)';
     }
   }
+
   populateRepoDropdowns();
+
+  // Automatically fetch live branch and status across all views
+  if (repo) {
+    try {
+      const status = await api.getGitStatus(repo.id);
+      if (status) {
+        state.gitDesktop.gitStatus = status;
+        const branchName = status.branch || repo.currentBranch || repo.defaultBranch || 'main';
+        if (label) {
+          label.textContent = `${repo.name} · ${branchName}`;
+        }
+        const gdBranch = document.getElementById('gd-branch-name');
+        if (gdBranch) gdBranch.textContent = branchName;
+        const gdRepo = document.getElementById('gd-repo-name');
+        if (gdRepo) gdRepo.textContent = repo.name || repo.path;
+        const statBranch = document.getElementById('stat-branch');
+        if (statBranch) statBranch.textContent = branchName;
+        const statChanges = document.getElementById('stat-changes');
+        if (statChanges) statChanges.textContent = `${status.entries ? status.entries.length : 0} files`;
+
+        // Populate changed files for Git Desktop automatically
+        if (status.entries && Array.isArray(status.entries)) {
+          state.gitDesktop.changedFiles = status.entries.map((entry) => {
+            let code = "M";
+            if (entry.status === "added") code = "A";
+            else if (entry.status === "deleted") code = "D";
+            else if (entry.status === "renamed") code = "R";
+            else if (entry.status === "untracked") code = "?";
+
+            return {
+              filePath: entry.filePath,
+              status: entry.status,
+              code,
+              staged: entry.staged,
+              additions: entry.status === "added" ? 1 : 0,
+              deletions: 0,
+              risk: entry.filePath.includes("auth") || entry.filePath.includes("key") || entry.filePath.includes(".env") ? "high" : "low",
+              logicalGroup: null,
+            };
+          });
+
+          const countEl = document.getElementById("gd-changes-count");
+          if (countEl) countEl.textContent = `${state.gitDesktop.changedFiles.length} files`;
+          renderGitDesktopChanges();
+        }
+      }
+    } catch (e) {
+      console.warn("Could not fetch git status for active repo:", e);
+    }
+  }
+
+  // Refresh active page if Git Desktop is visible
+  if (state.currentPage === "git-desktop") {
+    loadGitDesktop();
+  }
+}
+
+async function selectActiveRepo(repoId) {
+  const match = state.repositories.find((r) => r.id === repoId);
+  if (match) {
+    await setActiveRepository(match);
+    renderRepositoriesList();
+    showToast(`Active repository set to ${match.name}`, "info");
+  }
+}
+
+async function openRepoInGitDesktop(repoId) {
+  await selectActiveRepo(repoId);
+  navigate("git-desktop");
 }
 
 function openActiveRepoPicker() {
@@ -2658,20 +2738,27 @@ async function loadGitDesktop() {
     const status = await api.getGitStatus(repo.id);
     state.gitDesktop.gitStatus = status;
 
-    // Update Header metadata
-    document.getElementById("gd-branch-name").textContent = status.branch || "main";
+    // Update Header metadata & live branch
+    const branchName = status.branch || repo.currentBranch || repo.defaultBranch || "main";
+    document.getElementById("gd-branch-name").textContent = branchName;
     document.getElementById("gd-ahead-behind").textContent = `↑ ${status.ahead || 0} · ↓ ${status.behind || 0}`;
     const workingStatusEl = document.getElementById("gd-working-status");
     if (status.clean) {
       workingStatusEl.textContent = "Clean";
       workingStatusEl.className = "badge badge-success";
     } else {
-      workingStatusEl.textContent = `${status.entries.length} changes`;
+      workingStatusEl.textContent = `${status.entries ? status.entries.length : 0} changes`;
       workingStatusEl.className = "badge badge-warning";
     }
 
+    // Sync navbar active repo badge with live branch
+    const headerLabel = document.getElementById("header-active-repo-name");
+    if (headerLabel) {
+      headerLabel.textContent = `${repo.name} · ${branchName}`;
+    }
+
     // Map status entries to changed files
-    state.gitDesktop.changedFiles = status.entries.map((entry) => {
+    state.gitDesktop.changedFiles = (status.entries || []).map((entry) => {
       let code = "M";
       if (entry.status === "added") code = "A";
       else if (entry.status === "deleted") code = "D";
@@ -2685,7 +2772,7 @@ async function loadGitDesktop() {
         staged: entry.staged,
         additions: entry.status === "added" ? 1 : 0,
         deletions: 0,
-        risk: entry.filePath.includes("auth") || entry.filePath.includes("key") ? "high" : "low",
+        risk: entry.filePath.includes("auth") || entry.filePath.includes("key") || entry.filePath.includes(".env") ? "high" : (entry.filePath.includes("api") || entry.filePath.includes("core") ? "medium" : "low"),
         logicalGroup: null,
       };
     });
@@ -2695,6 +2782,12 @@ async function loadGitDesktop() {
     if (statChanges) statChanges.textContent = `${state.gitDesktop.changedFiles.length} files`;
 
     renderGitDesktopChanges();
+
+    // Auto-preview first changed file diff if available
+    if (state.gitDesktop.changedFiles.length > 0) {
+      const first = state.gitDesktop.changedFiles[0];
+      viewGitDesktopDiff(first.filePath);
+    }
   } catch (err) {
     console.error("Failed to load Git Desktop status:", err);
     showToast(`Git Desktop error: ${err.message}`, "error");
@@ -2758,26 +2851,33 @@ function renderGitDesktopChanges() {
 
 async function viewGitDesktopDiff(filePath) {
   const repo = state.activeRepository;
-  if (!repo) return;
+  if (!repo) {
+    showToast("Select a repository first", "warning");
+    return;
+  }
 
   const viewer = document.getElementById("gd-diff-viewer");
-  viewer.textContent = `Loading diff for ${filePath}...`;
+  viewer.textContent = `Loading unified diff for ${filePath}...`;
   switchGitDesktopTab("gd-diff");
 
   try {
-    const res = await api.getGitDiff(repo.id, undefined, undefined);
+    const res = await api.getGitDiff(repo.id, filePath);
+    if (res && res.diff && res.diff.trim()) {
+      renderFormattedDiff("gd-diff-viewer", res.diff);
+      return;
+    }
+    if (typeof res === "string" && res.trim()) {
+      renderFormattedDiff("gd-diff-viewer", res);
+      return;
+    }
     if (res && res.files && Array.isArray(res.files)) {
       const match = res.files.find((f) => f.filePath === filePath);
-      if (match && match.diff) {
+      if (match && match.diff && match.diff.trim()) {
         renderFormattedDiff("gd-diff-viewer", match.diff);
         return;
       }
     }
-    if (res && res.diff) {
-      renderFormattedDiff("gd-diff-viewer", res.diff);
-    } else {
-      viewer.textContent = `No diff content found for ${filePath}.`;
-    }
+    viewer.textContent = `No active line diff detected for "${filePath}" against HEAD. The file may be in sync with the repository.`;
   } catch (err) {
     viewer.textContent = `Error loading diff: ${err.message}`;
   }
@@ -3241,6 +3341,8 @@ window.submitCreatePR = submitCreatePR;
 window.reopenDebugSession = reopenDebugSession;
 
 // New Git Desktop & Conflict Center registrations
+window.selectActiveRepo = selectActiveRepo;
+window.openRepoInGitDesktop = openRepoInGitDesktop;
 window.loadGitDesktop = loadGitDesktop;
 window.filterChangedFiles = filterChangedFiles;
 window.viewGitDesktopDiff = viewGitDesktopDiff;

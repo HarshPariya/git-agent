@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { NextFunction, Request, Response } from "express";
 import {
   classifyOperation,
@@ -386,12 +388,80 @@ export async function gitDiffHandler(
         ? body.filePath.trim()
         : undefined;
 
-    const diff = await executeGitDiff(repoId, {
+    const repoPath = getExecutionPath(repoId);
+    let diffText = "";
+
+    if (filePath) {
+      // 1. Try unstaged diff
+      try {
+        const { stdout } = await execAsync(`git diff -- "${filePath}"`, { cwd: repoPath });
+        if (stdout.trim()) diffText = stdout.trim();
+      } catch { }
+
+      // 2. If empty, try staged diff
+      if (!diffText) {
+        try {
+          const { stdout } = await execAsync(`git diff --cached -- "${filePath}"`, { cwd: repoPath });
+          if (stdout.trim()) diffText = stdout.trim();
+        } catch { }
+      }
+
+      // 3. If empty, try HEAD diff (both staged & unstaged vs latest commit)
+      if (!diffText) {
+        try {
+          const { stdout } = await execAsync(`git diff HEAD -- "${filePath}"`, { cwd: repoPath });
+          if (stdout.trim()) diffText = stdout.trim();
+        } catch { }
+      }
+
+      // 4. If empty, check last commit diff for this file
+      if (!diffText) {
+        try {
+          const { stdout } = await execAsync(`git diff HEAD^..HEAD -- "${filePath}"`, { cwd: repoPath });
+          if (stdout.trim()) diffText = stdout.trim();
+        } catch { }
+      }
+
+      // 5. If still empty, check if file exists on disk (untracked or new file)
+      if (!diffText) {
+        try {
+          const fullPath = path.resolve(repoPath, filePath);
+          const content = await fs.readFile(fullPath, "utf-8");
+          const lines = content.split("\n");
+          diffText = [
+            `diff --git a/${filePath} b/${filePath}`,
+            `new file mode 100644`,
+            `--- /dev/null`,
+            `+++ b/${filePath}`,
+            `@@ -0,0 +1,${lines.length} @@`,
+            ...lines.map((l) => `+${l}`),
+          ].join("\n");
+        } catch { }
+      }
+    } else {
+      // Full repo diff
+      try {
+        const { stdout: unstagedOut } = await execAsync("git diff", { cwd: repoPath });
+        const { stdout: stagedOut } = await execAsync("git diff --cached", { cwd: repoPath });
+        diffText = [unstagedOut.trim(), stagedOut.trim()].filter(Boolean).join("\n");
+      } catch { }
+    }
+
+    const entries = await executeGitDiff(repoId, {
       ...(staged && { staged }),
       ...(filePath !== undefined && { filePath }),
     });
 
-    response.status(200).json(diff);
+    response.status(200).json({
+      success: true,
+      diff: diffText,
+      filePath,
+      entries,
+      files: entries.map((e) => ({
+        ...e,
+        diff: e.filePath === filePath ? diffText : "",
+      })),
+    });
   } catch (error) {
     next(error);
   }

@@ -122,14 +122,6 @@
           Connect GitHub
         </button>
 
-        <button class="btn btn-secondary btn-sm" onclick="navigate('git-desktop')">
-          🖥️ Git Desktop
-        </button>
-
-        <button class="btn btn-primary btn-sm" onclick="navigate('debug')">
-          ⚡ AI Debug
-        </button>
-
         <button class="btn btn-secondary btn-sm btn-icon" id="user-menu-btn" title="Settings & Account">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -1054,7 +1046,7 @@
         <!-- Manual path input bar -->
         <div style="display:flex;gap:8px">
           <input class="form-input" id="folder-path-input"
-            placeholder="Paste or enter any local path (e.g. ~/projects/my-app, C:\projects\my-app)"
+            placeholder="Paste or enter any local repository path (e.g. ~/projects/repo, C:\projects\workspace)"
             style="flex:1;font-size:12px;font-family:var(--font-mono)" />
           <button class="btn btn-secondary btn-sm" onclick="browseToEnteredPath()">Go</button>
           <button class="btn btn-primary btn-sm" onclick="connectEnteredPath()">Connect</button>
