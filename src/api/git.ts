@@ -971,7 +971,7 @@ Strict Rules:
    - Any UX, API, or bug fix enhancements
 5. Output ONLY valid JSON matching this exact structure:
 {"summary": "feat(scope): concise summary", "description": "- bullet 1\\n- bullet 2\\n- bullet 3"}`;
-
+// hyeyeye
     const input = `Changed files:\n${fileList}\n\nGit diff (truncated):\n${diffContext}`;
 
     let summary = "";
