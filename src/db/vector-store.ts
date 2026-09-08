@@ -160,13 +160,14 @@ export const upsertChunks = async (
   return { inserted, updated, skipped, deletedStale, total: chunks.length };
 };
 
-const buildFilterConditions = (repository: string, options: VectorSearchFilterOptions): { sql: string; params: unknown[] } => {
+const buildFilterConditions = (repository: string, options: VectorSearchFilterOptions, startIdx = 2): { sql: string; params: unknown[] } => {
   const params: unknown[] = [repository];
-  const conditions: string[] = [`repository = $${params.length}`];
+  const conditions: string[] = [`repository = $${startIdx}`];
+  let nextIdx = startIdx + 1;
 
   const addCondition = (clause: string, value: unknown) => {
     params.push(value);
-    conditions.push(`${clause} $${params.length}`);
+    conditions.push(`${clause} $${nextIdx++}`);
   };
 
   if (options.language) addCondition("language =", options.language);
@@ -174,7 +175,7 @@ const buildFilterConditions = (repository: string, options: VectorSearchFilterOp
   if (options.filePathPrefix) addCondition("file_path LIKE", `${options.filePathPrefix}%`);
   if (options.metadata && Object.keys(options.metadata).length > 0) {
     params.push(JSON.stringify(options.metadata));
-    conditions.push(`metadata @> $${params.length}::jsonb`);
+    conditions.push(`metadata @> $${nextIdx++}::jsonb`);
   }
 
   return {
