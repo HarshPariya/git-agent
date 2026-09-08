@@ -13,7 +13,6 @@ export async function runMigrations(
 ): Promise<void> {
   console.log("📦 Checking PostgreSQL database migrations...");
 
-  // 1. Ensure migrations tracking table exists
   await queryWithRetry(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version INTEGER PRIMARY KEY,
@@ -22,18 +21,17 @@ export async function runMigrations(
     );
   `);
 
-  // 2. Fetch applied migrations
   const appliedResult = await queryWithRetry<MigrationRecord>(
     `SELECT version, name, applied_at FROM schema_migrations ORDER BY version ASC`,
   );
   const appliedVersions = new Set(appliedResult.rows.map((row) => row.version));
 
-  // 3. Read migration files
   let files: string[] = [];
   try {
-    const entries = await fs.readdir(migrationsDir);
-    files = entries.filter((f) => f.endsWith(".sql")).sort();
-  } catch (err) {
+    files = (await fs.readdir(migrationsDir))
+      .filter((f) => f.endsWith(".sql"))
+      .sort();
+  } catch {
     console.warn(`⚠️ Migrations directory not found at: ${migrationsDir}`);
     return;
   }
@@ -42,18 +40,13 @@ export async function runMigrations(
 
   for (const file of files) {
     const match = file.match(/^(\d+)_/);
-    if (!match || !match[1]) {
-      continue;
-    }
+    if (!match?.[1]) continue;
 
     const version = Number.parseInt(match[1], 10);
-    if (appliedVersions.has(version)) {
-      continue;
-    }
+    if (appliedVersions.has(version)) continue;
 
     console.log(`🚀 Applying migration ${file}...`);
-    const filePath = path.join(migrationsDir, file);
-    const sql = await fs.readFile(filePath, "utf8");
+    const sql = await fs.readFile(path.join(migrationsDir, file), "utf8");
 
     await withTransaction(async (client) => {
       await client.query(sql);
@@ -67,14 +60,13 @@ export async function runMigrations(
     appliedCount++;
   }
 
-  if (appliedCount === 0) {
-    console.log("✓ Database schema is up to date (no pending migrations).");
-  } else {
-    console.log(`✓ Applied ${appliedCount} new migration(s).`);
-  }
+  console.log(
+    appliedCount === 0
+      ? "✓ Database schema is up to date (no pending migrations)."
+      : `✓ Applied ${appliedCount} new migration(s).`,
+  );
 }
 
-// Standalone runner CLI execution
 if (process.argv[1]?.endsWith("migrate.ts") || process.argv[1]?.endsWith("migrate.js")) {
   runMigrations()
     .then(() => closeDatabase())

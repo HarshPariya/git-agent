@@ -8,50 +8,15 @@ export const SECRET_PATTERNS = [
   /^(id_rsa|id_ed25519|credentials\.json|secrets\.json|service-account.*\.json)$/i,
 ];
 
-export const IGNORED_DIRECTORIES = new Set([
-  "node_modules",
-  ".git",
-  "dist",
-  "build",
-  ".next",
-  "coverage",
-  ".turbo",
-  ".cache",
-  ".claude",
-]);
+export const IGNORED_DIRECTORIES = new Set(["node_modules", ".git", "dist", "build", ".next", "coverage", ".turbo", ".cache", ".claude"]);
+export const IGNORED_FILES = new Set(["package-lock.json", "pnpm-lock.yaml", "yarn.lock"]);
 
-export const IGNORED_FILES = new Set([
-  "package-lock.json",
-  "pnpm-lock.yaml",
-  "yarn.lock",
-]);
-
-export function isPathWithinRoot(
-  filePath: string,
-  rootDirectory: string,
-): boolean {
+export const isPathWithinRoot = (filePath: string, rootDirectory: string): boolean => {
   const resolvedRoot = path.resolve(rootDirectory);
   const resolvedFile = path.resolve(filePath);
+  return resolvedFile.startsWith(resolvedRoot) && resolvedFile !== resolvedRoot;
+};
 
-  return (
-    resolvedFile.startsWith(resolvedRoot) &&
-    resolvedFile !== resolvedRoot
-  );
-}
-
-export function isSecretFile(filename: string): boolean {
-  const basename = path.basename(filename);
-  return SECRET_PATTERNS.some((pattern) => pattern.test(basename));
-}
-
-export function isIgnoredDirectory(dirName: string): boolean {
-  return IGNORED_DIRECTORIES.has(dirName);
-}
-
-export function isIgnoredFile(filename: string): boolean {
-  const basename = path.basename(filename);
-  if (IGNORED_FILES.has(basename)) {
-    return true;
-  }
-  return isSecretFile(basename);
-}
+export const isSecretFile = (filename: string): boolean => SECRET_PATTERNS.some((pattern) => pattern.test(path.basename(filename)));
+export const isIgnoredDirectory = (dirName: string): boolean => IGNORED_DIRECTORIES.has(dirName);
+export const isIgnoredFile = (filename: string): boolean => IGNORED_FILES.has(path.basename(filename)) || isSecretFile(filename);

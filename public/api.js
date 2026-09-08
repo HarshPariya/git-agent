@@ -325,9 +325,6 @@ class ApiClient {
   async revertFix(sessionId, backupId) {
     return this.request(`/api/debug/${sessionId}/fix/revert`, { method: "POST", body: JSON.stringify({ backupId }) });
   }
-  async resolveConflicts(repositoryId) {
-    return this.request("/api/git/conflicts/resolve", { method: "POST", body: JSON.stringify({ repositoryId }) });
-  }
   async commitChanges(repositoryId, message, stageAll = true) {
     return this.request("/api/git/commit", { method: "POST", body: JSON.stringify({ repositoryId, message, stageAll }) });
   }
@@ -340,9 +337,6 @@ class ApiClient {
   async fetchChanges(repositoryId, options = {}) {
     return this.request("/api/git/fetch", { method: "POST", body: JSON.stringify({ repositoryId, ...options }) });
   }
-  async checkoutBranch(repositoryId, branch, create = false) {
-    return this.request("/api/git/checkout", { method: "POST", body: JSON.stringify({ repositoryId, branch, create }) });
-  }
 
   // Async debug run - returns sessionId immediately, pipeline runs in background
   async runDebugAsync(data) {
@@ -350,11 +344,6 @@ class ApiClient {
   }
 
   // Filesystem & Local Folders
-  async browseFilesystem(targetPath = "") {
-    const q = targetPath ? `?path=${encodeURIComponent(targetPath)}` : "";
-    return this.request(`/api/fs/browse${q}`);
-  }
-
   async resolveFolder(folderName, sampleFiles = [], currentBrowsedPath = "") {
     return this.request("/api/fs/resolve-folder", {
       method: "POST",

@@ -1,21 +1,9 @@
-import { listRepositoriesHandler } from "./list.js";
-import { getRepositoryHandler } from "./get.js";
-import { connectRepositoryHandler } from "./connect.js";
-import { syncRepositoryHandler } from "./sync.js";
-import { disconnectRepositoryHandler } from "./disconnect.js";
-import { getRepositoryStatusHandler } from "./status.js";
-import { listProtectedBranchesHandler } from "./protected-branches/list.js";
-import { addProtectedBranchHandler } from "./protected-branches/add.js";
-import { removeProtectedBranchHandler } from "./protected-branches/remove.js";
-
-export {
-  listRepositoriesHandler,
-  getRepositoryHandler,
-  connectRepositoryHandler,
-  syncRepositoryHandler,
-  disconnectRepositoryHandler,
-  getRepositoryStatusHandler,
-  listProtectedBranchesHandler,
-  addProtectedBranchHandler,
-  removeProtectedBranchHandler,
-};
+export { connectRepositoryHandler } from "./connect.js";
+export { disconnectRepositoryHandler } from "./disconnect.js";
+export { getRepositoryHandler } from "./get.js";
+export { listRepositoriesHandler } from "./list.js";
+export { getRepositoryStatusHandler } from "./status.js";
+export { syncRepositoryHandler } from "./sync.js";
+export { listProtectedBranchesHandler } from "./protected-branches/list.js";
+export { addProtectedBranchHandler } from "./protected-branches/add.js";
+export { removeProtectedBranchHandler } from "./protected-branches/remove.js";

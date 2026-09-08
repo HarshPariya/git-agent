@@ -1,33 +1,11 @@
 import type { Request, Response, NextFunction } from "express";
-import { repositoryStore } from "../../../repositories/repository-store.js";
 import { AppError } from "../../../errors/app-error.js";
+import { repositoryStore } from "../../../repositories/repository-store.js";
 
-export async function listProtectedBranchesHandler(
-  request: Request,
-  response: Response,
-  next: NextFunction,
-): Promise<void> {
+export const listProtectedBranchesHandler = async (request: Request, response: Response, next: NextFunction) => {
   try {
-    const context =
-      request.tenantContext ??
-      (() => {
-        throw new AppError(
-          "Tenant context is missing",
-          "AUTHENTICATION_ERROR",
-          401,
-        );
-      })();
-
-    const repositoryId = request.params.id as string;
-    const branches = repositoryStore.listProtectedBranches(
-      repositoryId,
-      context.tenantId,
-    );
-
-    response.status(200).json({
-      branches,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+    const context = request.tenantContext ?? (() => { throw new AppError("Tenant context is missing", "AUTHENTICATION_ERROR", 401); })();
+    const branches = repositoryStore.listProtectedBranches(request.params.id as string, context.tenantId);
+    response.status(200).json({ protectedBranches: branches });
+  } catch (error) { next(error); }
+};

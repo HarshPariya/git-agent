@@ -15,9 +15,8 @@ export interface BudgetedContextResult {
   readonly droppedChunkCount: number;
 }
 
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
+export const estimateTokens = (text: string): number =>
+  Math.ceil(text.length / 4);
 
 export class TokenBudgetManager {
   private readonly config: TokenBudgetConfig;
@@ -37,9 +36,8 @@ export class TokenBudgetManager {
     let droppedChunkCount = 0;
 
     for (const item of evidence.slice(0, this.config.maxRetrievedChunks)) {
-      const header = `[${item.id}][${item.sourceType.toUpperCase()}] ${item.source}${
-        item.page ? `, page ${item.page}` : item.location ? `, ${item.location}` : ""
-      }\n`;
+      const header = `[${item.id}][${item.sourceType.toUpperCase()}] ${item.source}${item.page ? `, page ${item.page}` : item.location ? `, ${item.location}` : ""
+        }\n`;
       const itemText = `${header}${item.content}\n\n`;
       const itemTokens = estimateTokens(itemText);
 
@@ -47,15 +45,10 @@ export class TokenBudgetManager {
         activeEvidence.push(item);
         currentTokens += itemTokens;
       } else {
-        // Attempt safe truncation if first item or space allows
         const availableTokens = this.config.maxRagContextTokens - currentTokens;
         if (availableTokens > 100) {
-          const maxChars = availableTokens * 4;
-          const truncatedContent = item.content.slice(0, maxChars) + "\n...[truncated]";
-          const truncatedItem: CompressedEvidence = {
-            ...item,
-            content: truncatedContent,
-          };
+          const truncatedContent = item.content.slice(0, availableTokens * 4) + "\n...[truncated]";
+          const truncatedItem: CompressedEvidence = { ...item, content: truncatedContent };
           activeEvidence.push(truncatedItem);
           currentTokens += estimateTokens(`${header}${truncatedContent}\n\n`);
         } else {
@@ -69,8 +62,7 @@ export class TokenBudgetManager {
     const formattedEvidence = activeEvidence
       .map(
         (item) =>
-          `[${item.id}][${item.sourceType.toUpperCase()}]\n${item.source}${
-            item.page ? `, page ${item.page}` : item.location ? `, ${item.location}` : ""
+          `[${item.id}][${item.sourceType.toUpperCase()}]\n${item.source}${item.page ? `, page ${item.page}` : item.location ? `, ${item.location}` : ""
           }\n${item.content}`,
       )
       .join("\n\n");
@@ -89,8 +81,7 @@ export class TokenBudgetManager {
       return { formattedMemory: memoryText, memoryTokens };
     }
 
-    const maxChars = this.config.maxMemoryTokens * 4;
-    const truncated = memoryText.slice(-maxChars); // keep recent messages
+    const truncated = memoryText.slice(-this.config.maxMemoryTokens * 4);
     return {
       formattedMemory: truncated,
       memoryTokens: estimateTokens(truncated),

@@ -1,16 +1,9 @@
 import "dotenv/config";
-import {
-  Pool,
-  type PoolClient,
-  type QueryResult,
-  type QueryResultRow,
-} from "pg";
+import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from "pg";
 
 const connectionString = process.env.DATABASE_URL;
 
-if (!connectionString) {
-  console.warn("⚠️ DATABASE_URL is not configured.");
-}
+if (!connectionString) console.warn("⚠️ DATABASE_URL is not configured.");
 
 export const pool = new Pool({
   connectionString,
@@ -20,9 +13,7 @@ export const pool = new Pool({
   statement_timeout: 10000,
 });
 
-pool.on("error", (err) => {
-  console.error("❌ Unexpected PostgreSQL Pool Error:", err);
-});
+pool.on("error", (err) => console.error("❌ Unexpected PostgreSQL Pool Error:", err));
 
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
@@ -45,9 +36,7 @@ export async function queryWithRetry<T extends QueryResultRow = QueryResultRow>(
     } catch (error: any) {
       attempt++;
       const isTransient =
-        error?.code === "ECONNRESET" ||
-        error?.code === "ETIMEDOUT" ||
-        error?.code === "57P01" ||
+        ["ECONNRESET", "ETIMEDOUT", "57P01"].includes(error?.code) ||
         error?.message?.includes("timeout");
 
       if (isTransient && attempt < maxRetries) {
@@ -66,7 +55,6 @@ export async function withTransaction<T>(
   callback: (client: PoolClient) => Promise<T>,
 ): Promise<T> {
   const client = await pool.connect();
-
   try {
     await client.query("BEGIN");
     const result = await callback(client);
@@ -94,17 +82,15 @@ export async function getDatabaseHealth(): Promise<DatabaseHealthStatus> {
 
   try {
     await query("SELECT 1");
-    const latencyMs = Date.now() - startTime;
-
     return {
       status: "healthy",
-      latencyMs,
+      latencyMs: Date.now() - startTime,
       totalConnections: pool.totalCount,
       idleConnections: pool.idleCount,
       waitingCount: pool.waitingCount,
       timestamp: new Date().toISOString(),
     };
-  } catch (error) {
+  } catch {
     return {
       status: "unhealthy",
       latencyMs: Date.now() - startTime,

@@ -10,14 +10,18 @@ export interface DatabaseBackupPayload {
   code_chunks: any[];
 }
 
+const DEFAULT_BACKUP_PATH = path.join(process.cwd(), "scratch", "pg_backup.json");
+
 export async function createDatabaseBackup(
-  backupPath: string = path.join(process.cwd(), "scratch", "pg_backup.json"),
+  backupPath: string = DEFAULT_BACKUP_PATH,
 ): Promise<DatabaseBackupPayload> {
   console.log("💾 Creating PostgreSQL database backup...");
 
-  const migrations = await query(`SELECT * FROM schema_migrations`);
-  const status = await query(`SELECT * FROM repository_status`);
-  const chunks = await query(`SELECT * FROM code_chunks`);
+  const [migrations, status, chunks] = await Promise.all([
+    query(`SELECT * FROM schema_migrations`),
+    query(`SELECT * FROM repository_status`),
+    query(`SELECT * FROM code_chunks`),
+  ]);
 
   const payload: DatabaseBackupPayload = {
     version: 1,
@@ -35,28 +39,25 @@ export async function createDatabaseBackup(
 }
 
 export async function restoreDatabaseBackup(
-  backupPath: string = path.join(process.cwd(), "scratch", "pg_backup.json"),
+  backupPath: string = DEFAULT_BACKUP_PATH,
 ): Promise<number> {
   console.log(`🔄 Restoring PostgreSQL database from ${backupPath}...`);
 
-  const raw = await fs.readFile(backupPath, "utf-8");
-  const payload: DatabaseBackupPayload = JSON.parse(raw);
+  const payload: DatabaseBackupPayload = JSON.parse(
+    await fs.readFile(backupPath, "utf-8")
+  );
 
   let restoredChunks = 0;
 
   await withTransaction(async (client) => {
     for (const row of payload.repository_status) {
       await client.query(
-        `
-        INSERT INTO repository_status (repository, repository_hash, total_files, total_chunks, status, last_indexed_at)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (repository) DO UPDATE SET
-          repository_hash = EXCLUDED.repository_hash,
-          total_files = EXCLUDED.total_files,
-          total_chunks = EXCLUDED.total_chunks,
-          status = EXCLUDED.status,
-          last_indexed_at = EXCLUDED.last_indexed_at
-        `,
+        `INSERT INTO repository_status (repository, repository_hash, total_files, total_chunks, status, last_indexed_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (repository) DO UPDATE SET
+           repository_hash = EXCLUDED.repository_hash, total_files = EXCLUDED.total_files,
+           total_chunks = EXCLUDED.total_chunks, status = EXCLUDED.status,
+           last_indexed_at = EXCLUDED.last_indexed_at`,
         [row.repository, row.repository_hash, row.total_files, row.total_chunks, row.status, row.last_indexed_at],
       );
     }
@@ -64,24 +65,14 @@ export async function restoreDatabaseBackup(
     for (const row of payload.code_chunks) {
       const vectorString = typeof row.embedding === "string" ? row.embedding : `[${row.embedding.join(",")}]`;
       await client.query(
-        `
-        INSERT INTO code_chunks (id, repository, file_path, chunk_type, name, language, start_line, end_line, content, metadata, embedding, content_hash, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::vector, $12, NOW())
-        ON CONFLICT (id) DO NOTHING
-        `,
+        `INSERT INTO code_chunks (id, repository, file_path, chunk_type, name, language, start_line, end_line, content, metadata, embedding, content_hash, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::vector, $12, NOW())
+         ON CONFLICT (id) DO NOTHING`,
         [
-          row.id,
-          row.repository,
-          row.file_path,
-          row.chunk_type,
-          row.name,
-          row.language,
-          row.start_line,
-          row.end_line,
-          row.content,
+          row.id, row.repository, row.file_path, row.chunk_type, row.name,
+          row.language, row.start_line, row.end_line, row.content,
           typeof row.metadata === "string" ? row.metadata : JSON.stringify(row.metadata),
-          vectorString,
-          row.content_hash,
+          vectorString, row.content_hash,
         ],
       );
       restoredChunks++;

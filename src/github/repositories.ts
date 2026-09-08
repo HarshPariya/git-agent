@@ -39,23 +39,12 @@ export interface RepoSummary {
   readonly htmlUrl: string;
 }
 
-function mapRepo(r: GitHubRepository): RepoSummary {
-  return {
-    id: r.id,
-    name: r.name,
-    fullName: r.full_name,
-    description: r.description,
-    private: r.private,
-    defaultBranch: r.default_branch,
-    language: r.language,
-    stars: r.stargazers_count,
-    forks: r.forks_count,
-    openIssues: r.open_issues_count,
-    pushedAt: r.pushed_at,
-    cloneUrl: r.clone_url,
-    htmlUrl: r.html_url,
-  };
-}
+const mapRepo = (r: GitHubRepository): RepoSummary => ({
+  id: r.id, name: r.name, fullName: r.full_name, description: r.description,
+  private: r.private, defaultBranch: r.default_branch, language: r.language,
+  stars: r.stargazers_count, forks: r.forks_count, openIssues: r.open_issues_count,
+  pushedAt: r.pushed_at, cloneUrl: r.clone_url, htmlUrl: r.html_url,
+});
 
 export async function listGitHubRepos(
   userId: string,
@@ -64,37 +53,18 @@ export async function listGitHubRepos(
   const page = options?.page ?? 1;
   const perPage = options?.per_page ?? 30;
   const type = options?.type ?? "all";
-
   const repos = await makeGitHubRequest<GitHubRepository[]>(
-    userId,
-    `/user/repos?per_page=${perPage}&page=${page}&sort=pushed&type=${type}`,
+    userId, `/user/repos?per_page=${perPage}&page=${page}&sort=pushed&type=${type}`,
   );
-
   return repos.map(mapRepo);
 }
 
-export async function getGitHubRepo(
-  userId: string,
-  owner: string,
-  repo: string,
-): Promise<RepoSummary> {
-  const r = await makeGitHubRequest<GitHubRepository>(userId, `/repos/${owner}/${repo}`);
-  return mapRepo(r);
+export async function getGitHubRepo(userId: string, owner: string, repo: string): Promise<RepoSummary> {
+  return mapRepo(await makeGitHubRequest<GitHubRepository>(userId, `/repos/${owner}/${repo}`));
 }
 
-export async function listGitHubBranches(
-  userId: string,
-  owner: string,
-  repo: string,
-): Promise<GitHubBranch[]> {
-  return makeGitHubRequest<GitHubBranch[]>(userId, `/repos/${owner}/${repo}/branches?per_page=100`);
-}
+export const listGitHubBranches = (userId: string, owner: string, repo: string): Promise<GitHubBranch[]> =>
+  makeGitHubRequest<GitHubBranch[]>(userId, `/repos/${owner}/${repo}/branches?per_page=100`);
 
-export async function getGitHubCommit(
-  userId: string,
-  owner: string,
-  repo: string,
-  sha: string,
-): Promise<unknown> {
-  return makeGitHubRequest(userId, `/repos/${owner}/${repo}/commits/${sha}`);
-}
+export const getGitHubCommit = (userId: string, owner: string, repo: string, sha: string): Promise<unknown> =>
+  makeGitHubRequest(userId, `/repos/${owner}/${repo}/commits/${sha}`);

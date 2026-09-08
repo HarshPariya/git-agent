@@ -1,14 +1,8 @@
-import type {
-  InputGuardRequest,
-  InputGuardResult,
-} from "../types/guardrails.js";
+import type { InputGuardRequest, InputGuardResult } from "../types/guardrails.js";
 
 export type { InputGuardRequest, InputGuardResult };
 
-const DEFAULT_MAX_MESSAGE_LENGTH = 64_000;
-const MAX_MESSAGE_LENGTH = Number(
-  process.env.MAX_MESSAGE_LENGTH ?? DEFAULT_MAX_MESSAGE_LENGTH,
-);
+const MAX_MESSAGE_LENGTH = Number(process.env.MAX_MESSAGE_LENGTH ?? 64_000);
 
 const INJECTION_PATTERNS = [
   /ignore\s+(all\s+)?previous\s+instructions/i,
@@ -23,50 +17,25 @@ const isMaliciousInjection = (msg: string): boolean => {
     const match = pattern.exec(msg);
     if (!match) continue;
 
-    const matchIndex = match.index;
-    const precedingSlice = msg
-      .slice(Math.max(0, matchIndex - 80), matchIndex)
-      .toLowerCase();
-
-    const isNegated =
-      /\b(do\s+not|don'?t|never|must\s+not|should\s+not|avoid|prohibit|prevent|without)\b/i.test(
-        precedingSlice,
-      );
-
+    const precedingSlice = msg.slice(Math.max(0, match.index - 80), match.index).toLowerCase();
+    const isNegated = /\b(do\s+not|don'?t|never|must\s+not|should\s+not|avoid|prohibit|prevent|without)\b/i.test(precedingSlice);
     const isSecurityEval =
-      /\b(evaluat\w+|refuses?|blocks?|security\s+test|classify|deny|allow)\b/i.test(
-        precedingSlice,
-      ) ||
+      /\b(evaluat\w+|refuses?|blocks?|security\s+test|classify|deny|allow)\b/i.test(precedingSlice) ||
       (/\b(evaluat\w+|refuses?|blocks?|security\s+test)\b/i.test(msg) &&
-        /^\s*[\d\.\-\*]/m.test(
-          msg.slice(Math.max(0, matchIndex - 20), matchIndex),
-        ));
+        /^\s*[\d\.\-\*]/m.test(msg.slice(Math.max(0, match.index - 20), match.index)));
 
-    if (!isNegated && !isSecurityEval) {
-      return true;
-    }
+    if (!isNegated && !isSecurityEval) return true;
   }
-
   return false;
 };
 
-type InputRule = (msg: string) => string | null;
-
-const INPUT_RULES: readonly InputRule[] = [
+const INPUT_RULES: ReadonlyArray<(msg: string) => string | null> = [
   (msg) => (!msg ? "Message must not be empty." : null),
-  (msg) =>
-    msg.length > MAX_MESSAGE_LENGTH
-      ? "Message exceeds the maximum allowed length."
-      : null,
-  (msg) =>
-    isMaliciousInjection(msg)
-      ? "Message contains a prohibited instruction pattern."
-      : null,
+  (msg) => (msg.length > MAX_MESSAGE_LENGTH ? "Message exceeds the maximum allowed length." : null),
+  (msg) => (isMaliciousInjection(msg) ? "Message contains a prohibited instruction pattern." : null),
 ];
 
-export const validateInput = ({
-  message,
-}: InputGuardRequest): InputGuardResult => {
+export const validateInput = ({ message }: InputGuardRequest): InputGuardResult => {
   const normalized = message.trim();
   const failure = INPUT_RULES.map((rule) => rule(normalized)).find(Boolean);
   return failure ? { allowed: false, reason: failure } : { allowed: true };

@@ -1,9 +1,9 @@
 import { query } from "./postgres.js";
 
 export interface HnswTuningOptions {
-  efSearch?: number; // Query-time search depth (default 100)
-  m?: number;        // Max connections per layer (default 16)
-  efConstruction?: number; // Construction precision (default 64)
+  efSearch?: number;
+  m?: number;
+  efConstruction?: number;
 }
 
 export async function setHnswSearchPrecision(efSearch = 100): Promise<void> {

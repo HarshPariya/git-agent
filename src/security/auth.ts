@@ -27,9 +27,8 @@ if (!JWT_SECRET && process.env.NODE_ENV === "production") {
 const SESSION_SECRET = JWT_SECRET || "development-only-auth-secret";
 const TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-const hashPassword = (password: string, salt: string): string => {
-  return crypto.pbkdf2Sync(password, salt, 1000, 64, "sha512").toString("hex");
-};
+const hashPassword = (password: string, salt: string): string =>
+  crypto.pbkdf2Sync(password, salt, 1000, 64, "sha512").toString("hex");
 
 export class UserStore {
   private readonly usersByEmail = new Map<string, User>();
@@ -113,9 +112,6 @@ export class UserStore {
 
 export const userStore = new UserStore();
 
-/**
- * Generate a cryptographically signed session token
- */
 export const createSessionToken = (user: User): string => {
   const payload: AuthSession = {
     userId: user.id,
@@ -130,9 +126,6 @@ export const createSessionToken = (user: User): string => {
   return `${encodedPayload}.${signature}`;
 };
 
-/**
- * Verify and decode session token
- */
 export const verifySessionToken = (token: string): AuthSession => {
   const parts = token.split(".");
   if (parts.length !== 2) {

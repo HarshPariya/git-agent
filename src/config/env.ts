@@ -2,21 +2,15 @@ import "dotenv/config";
 
 const getRequiredEnv = (name: string): string => {
   const value = process.env[name]?.trim();
-  if (!value) {
-    if (process.env.NODE_ENV === "test" || process.env.NODE_ENV !== "production") {
-      return "mock-key-for-test";
-    }
+  if (!value && process.env.NODE_ENV !== "test" && process.env.NODE_ENV === "production")
     throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value;
+  return value || "mock-key-for-test";
 };
 
 const getPort = (): number => {
   const port = Number(process.env.PORT ?? "3000");
-  (!Number.isInteger(port) || port < 1 || port > 65535) &&
-    (() => {
-      throw new Error("PORT must be an integer between 1 and 65535");
-    })();
+  if (!Number.isInteger(port) || port < 1 || port > 65535)
+    throw new Error("PORT must be an integer between 1 and 65535");
   return port;
 };
 

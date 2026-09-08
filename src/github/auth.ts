@@ -9,40 +9,28 @@ interface GitHubTokenInfo {
   readonly avatarUrl: string;
 }
 
-// In-memory store for demo; in production use DB
 const tokenStore = new Map<string, { githubToken: string; userId: string; connectedAt: string }>();
 
-export function generateConnectionId(): string {
-  return crypto.randomUUID();
-}
+export const generateConnectionId = (): string => crypto.randomUUID();
 
-export function storeGitHubConnection(
-  userId: string,
-  githubToken: string,
-): string {
+export const storeGitHubConnection = (userId: string, githubToken: string): string => {
   const connectionId = generateConnectionId();
-  tokenStore.set(connectionId, {
-    githubToken,
-    userId,
-    connectedAt: new Date().toISOString(),
-  });
+  tokenStore.set(connectionId, { githubToken, userId, connectedAt: new Date().toISOString() });
   return connectionId;
-}
+};
 
-export function getGitHubToken(userId: string): string | undefined {
+export const getGitHubToken = (userId: string): string | undefined => {
   for (const [, conn] of tokenStore.entries()) {
     if (conn.userId === userId) return conn.githubToken;
   }
   return undefined;
-}
+};
 
-export function revokeGitHubConnection(userId: string): void {
+export const revokeGitHubConnection = (userId: string): void => {
   for (const [id, conn] of tokenStore.entries()) {
-    if (conn.userId === userId) {
-      tokenStore.delete(id);
-    }
+    if (conn.userId === userId) tokenStore.delete(id);
   }
-}
+};
 
 export async function validateGitHubToken(token: string): Promise<GitHubTokenInfo> {
   const response = await fetch("https://api.github.com/user", {
@@ -53,21 +41,10 @@ export async function validateGitHubToken(token: string): Promise<GitHubTokenInf
     },
   });
 
-  if (!response.ok) {
-    throw new AppError(
-      "Invalid GitHub token or insufficient permissions",
-      "GITHUB_ERROR",
-      401,
-    );
-  }
+  if (!response.ok)
+    throw new AppError("Invalid GitHub token or insufficient permissions", "GITHUB_ERROR", 401);
 
-  const data = (await response.json()) as {
-    login: string;
-    name: string | null;
-    email: string | null;
-    avatar_url: string;
-  };
-
+  const data = (await response.json()) as { login: string; name: string | null; email: string | null; avatar_url: string };
   return {
     token,
     login: data.login,
@@ -77,18 +54,11 @@ export async function validateGitHubToken(token: string): Promise<GitHubTokenInf
   };
 }
 
-export async function makeGitHubRequest<T>(
-  userId: string,
-  path: string,
-  options?: RequestInit,
-): Promise<T> {
+export async function makeGitHubRequest<T>(userId: string, path: string, options?: RequestInit): Promise<T> {
   const token = getGitHubToken(userId);
-  if (!token) {
-    throw new AppError("GitHub not connected. Please connect your GitHub account.", "GITHUB_ERROR", 401);
-  }
+  if (!token) throw new AppError("GitHub not connected. Please connect your GitHub account.", "GITHUB_ERROR", 401);
 
   const url = path.startsWith("https://") ? path : `https://api.github.com${path}`;
-
   const response = await fetch(url, {
     ...options,
     headers: {

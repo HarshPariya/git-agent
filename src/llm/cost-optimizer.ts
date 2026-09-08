@@ -57,8 +57,7 @@ export class LlmCostOptimizer {
     const combined = `${instructions}|${input}`;
     let hash = 0;
     for (let i = 0; i < combined.length; i++) {
-      const char = combined.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
+      hash = (hash << 5) - hash + combined.charCodeAt(i);
       hash |= 0;
     }
     return `${hash}`;
@@ -150,12 +149,14 @@ export class LlmCostOptimizer {
   }
 
   resetMetrics(): void {
-    this.metrics.totalTokens = 0;
-    this.metrics.totalRequests = 0;
-    this.metrics.totalCostUsd = 0;
-    this.metrics.cacheHits = 0;
-    this.metrics.cacheMisses = 0;
-    this.metrics.avgTokensPerRequest = 0;
+    Object.assign(this.metrics, {
+      totalTokens: 0,
+      totalRequests: 0,
+      totalCostUsd: 0,
+      cacheHits: 0,
+      cacheMisses: 0,
+      avgTokensPerRequest: 0,
+    });
     this.tokenCounts.length = 0;
   }
 }

@@ -9,10 +9,9 @@ export const createTenantContext = (
   const normalizedTenantId = tenantId.trim();
   const normalizedUserId = userId.trim();
 
-  (!normalizedTenantId || !normalizedUserId) &&
-    (() => {
-      throw new Error("Invalid tenant context");
-    })();
+  if (!normalizedTenantId || !normalizedUserId) {
+    throw new Error("Invalid tenant context");
+  }
 
   return Object.freeze({
     tenantId: normalizedTenantId,

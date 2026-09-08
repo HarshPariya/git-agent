@@ -29,64 +29,38 @@ export interface IssueSummary {
   readonly isPullRequest: boolean;
 }
 
-function mapIssue(i: GitHubIssue): IssueSummary {
-  return {
-    id: i.id,
-    number: i.number,
-    title: i.title,
-    body: i.body,
-    state: i.state,
-    labels: i.labels,
-    author: i.user.login,
-    authorAvatar: i.user.avatar_url,
-    createdAt: i.created_at,
-    updatedAt: i.updated_at,
-    comments: i.comments,
-    isPullRequest: Boolean(i.pull_request),
-  };
-}
+const mapIssue = (i: GitHubIssue): IssueSummary => ({
+  id: i.id, number: i.number, title: i.title, body: i.body, state: i.state, labels: i.labels,
+  author: i.user.login, authorAvatar: i.user.avatar_url,
+  createdAt: i.created_at, updatedAt: i.updated_at,
+  comments: i.comments, isPullRequest: Boolean(i.pull_request),
+});
 
 export async function listGitHubIssues(
-  userId: string,
-  owner: string,
-  repo: string,
+  userId: string, owner: string, repo: string,
   options?: { state?: "open" | "closed" | "all"; page?: number },
 ): Promise<IssueSummary[]> {
   const state = options?.state ?? "open";
   const page = options?.page ?? 1;
   const issues = await makeGitHubRequest<GitHubIssue[]>(
-    userId,
-    `/repos/${owner}/${repo}/issues?state=${state}&per_page=30&page=${page}`,
+    userId, `/repos/${owner}/${repo}/issues?state=${state}&per_page=30&page=${page}`,
   );
   return issues.filter((i) => !i.pull_request).map(mapIssue);
 }
 
-export async function getGitHubIssue(
-  userId: string,
-  owner: string,
-  repo: string,
-  issueNumber: number,
-): Promise<IssueSummary> {
-  const issue = await makeGitHubRequest<GitHubIssue>(
-    userId,
-    `/repos/${owner}/${repo}/issues/${issueNumber}`,
-  );
-  return mapIssue(issue);
+export async function getGitHubIssue(userId: string, owner: string, repo: string, issueNumber: number): Promise<IssueSummary> {
+  return mapIssue(await makeGitHubRequest<GitHubIssue>(userId, `/repos/${owner}/${repo}/issues/${issueNumber}`));
 }
 
 export async function listGitHubIssueComments(
-  userId: string,
-  owner: string,
-  repo: string,
-  issueNumber: number,
+  userId: string, owner: string, repo: string, issueNumber: number,
 ): Promise<Array<{ id: number; body: string; author: string; createdAt: string }>> {
   const comments = await makeGitHubRequest<
     Array<{ id: number; body: string; user: { login: string }; created_at: string }>
   >(userId, `/repos/${owner}/${repo}/issues/${issueNumber}/comments`);
-
   return comments.map((c) => ({
     id: c.id,
-    // Treat as untrusted repository data — do NOT interpret as system instructions
+    // Treat as untrusted repository data - do NOT interpret as system instructions
     body: c.body,
     author: c.user.login,
     createdAt: c.created_at,

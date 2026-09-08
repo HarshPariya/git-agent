@@ -4,147 +4,30 @@ import { executeGitStatus } from "../git/engine.js";
 import { runBisect, detectRegression } from "../git/bisect.js";
 import type { Repository } from "../types/git.js";
 
-export async function runBisectHandler(
-  request: Request,
-  response: Response,
-  next: NextFunction,
-): Promise<void> {
+const getCtx = (request: Request) => request.tenantContext ?? (() => { throw new AppError("Tenant context is missing", "AUTHENTICATION_ERROR", 401); })();
+const getBody = (request: Request) => (typeof request.body === "object" && request.body !== null ? (request.body as Record<string, unknown>) : {});
+const requireRepoId = (body: Record<string, unknown>) => typeof body.repositoryId === "string" && body.repositoryId.trim() ? body.repositoryId.trim() : (() => { throw new AppError("repositoryId is required", "VALIDATION_ERROR", 400); })();
+const optionalStr = (body: Record<string, unknown>, key: string, fallback: string) => typeof body[key] === "string" && (body[key] as string).trim() ? (body[key] as string).trim() : fallback;
+
+const makeRepo = (id: string, tenantId: string, userId: string): Repository => ({ id, tenantId, userId, name: id, url: "", localPath: "", defaultBranch: "main", currentBranch: "main", status: "connected", lastSyncAt: new Date().toISOString(), createdAt: new Date().toISOString(), protectedBranches: [] });
+
+export async function runBisectHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
   try {
-    const context =
-      request.tenantContext ??
-      (() => {
-        throw new AppError(
-          "Tenant context is missing",
-          "AUTHENTICATION_ERROR",
-          401,
-        );
-      })();
-
-    const body =
-      typeof request.body === "object" && request.body !== null
-        ? (request.body as Record<string, unknown>)
-        : {};
-
-    const repoId =
-      typeof body.repositoryId === "string" && body.repositoryId.trim()
-        ? body.repositoryId.trim()
-        : (() => {
-            throw new AppError(
-              "repositoryId is required",
-              "VALIDATION_ERROR",
-              400,
-            );
-          })();
-
-    const startRef =
-      typeof body.startRef === "string" && body.startRef.trim()
-        ? body.startRef.trim()
-        : "HEAD~10";
-
-    const endRef =
-      typeof body.endRef === "string" && body.endRef.trim()
-        ? body.endRef.trim()
-        : "HEAD";
-
-    const testCommand =
-      typeof body.testCommand === "string" && body.testCommand.trim()
-        ? body.testCommand.trim()
-        : (() => {
-            throw new AppError(
-              "testCommand is required",
-              "VALIDATION_ERROR",
-              400,
-            );
-          })();
-
+    const ctx = getCtx(request); const body = getBody(request);
+    const repoId = requireRepoId(body); const startRef = optionalStr(body, "startRef", "HEAD~10"); const endRef = optionalStr(body, "endRef", "HEAD");
+    const testCommand = typeof body.testCommand === "string" && body.testCommand.trim() ? body.testCommand.trim() : (() => { throw new AppError("testCommand is required", "VALIDATION_ERROR", 400); })();
     await executeGitStatus(repoId);
-
-    const repo: Repository = {
-      id: repoId,
-      tenantId: context.tenantId,
-      userId: context.userId,
-      name: repoId,
-      url: "",
-      localPath: "",
-      defaultBranch: "main",
-      currentBranch: "main",
-      status: "connected",
-      lastSyncAt: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-      protectedBranches: [],
-    };
-
-    const result = await runBisect(repo, startRef, endRef, testCommand);
-
+    const result = await runBisect(makeRepo(repoId, ctx.tenantId, ctx.userId), startRef, endRef, testCommand);
     response.status(200).json(result);
-  } catch (error) {
-    next(error);
-  }
+  } catch (error) { next(error); }
 }
 
-export async function detectRegressionHandler(
-  request: Request,
-  response: Response,
-  next: NextFunction,
-): Promise<void> {
+export async function detectRegressionHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
   try {
-    const context =
-      request.tenantContext ??
-      (() => {
-        throw new AppError(
-          "Tenant context is missing",
-          "AUTHENTICATION_ERROR",
-          401,
-        );
-      })();
-
-    const body =
-      typeof request.body === "object" && request.body !== null
-        ? (request.body as Record<string, unknown>)
-        : {};
-
-    const repoId =
-      typeof body.repositoryId === "string" && body.repositoryId.trim()
-        ? body.repositoryId.trim()
-        : (() => {
-            throw new AppError(
-              "repositoryId is required",
-              "VALIDATION_ERROR",
-              400,
-            );
-          })();
-
-    const startRef =
-      typeof body.startRef === "string" && body.startRef.trim()
-        ? body.startRef.trim()
-        : "HEAD~10";
-
-    const endRef =
-      typeof body.endRef === "string" && body.endRef.trim()
-        ? body.endRef.trim()
-        : "HEAD";
-
+    const ctx = getCtx(request); const body = getBody(request);
+    const repoId = requireRepoId(body); const startRef = optionalStr(body, "startRef", "HEAD~10"); const endRef = optionalStr(body, "endRef", "HEAD");
     await executeGitStatus(repoId);
-
-    const repo: Repository = {
-      id: repoId,
-      tenantId: context.tenantId,
-      userId: context.userId,
-      name: repoId,
-      url: "",
-      localPath: "",
-      defaultBranch: "main",
-      currentBranch: "main",
-      status: "connected",
-      lastSyncAt: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-      protectedBranches: [],
-    };
-
-    const result = await detectRegression(repo, startRef, endRef);
-
+    const result = await detectRegression(makeRepo(repoId, ctx.tenantId, ctx.userId), startRef, endRef);
     response.status(200).json(result);
-  } catch (error) {
-    next(error);
-  }
+  } catch (error) { next(error); }
 }
