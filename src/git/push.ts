@@ -1,14 +1,9 @@
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
 import { executeGitStatus, isProtectedBranch } from "./engine.js";
-
-const execAsync = promisify(exec);
+import { safeExec, validateBranchName, validateRemoteName, escapeShellArg } from "./utils.js";
 
 export interface PushOptions { readonly remote?: string; readonly branch?: string; readonly setUpstream?: boolean; readonly forceWithLease?: boolean; readonly force?: boolean; readonly allowForce?: boolean; }
 export interface PrePushCheckResult { readonly canPush: boolean; readonly currentBranch: string; readonly ahead: number; readonly behind: number; readonly hasUncommittedChanges: boolean; readonly isProtected: boolean; readonly warnings: readonly string[]; readonly error?: string; }
 export interface PushResult { readonly success: boolean; readonly branch: string; readonly remote: string; readonly output: string; readonly error?: string; }
-
-const safeExec = async (cmd: string, cwd: string): Promise<{ stdout: string; stderr: string }> => execAsync(cmd, { cwd, timeout: 45_000 });
 
 export async function validatePrePush(repoPath: string, options: PushOptions = {}): Promise<PrePushCheckResult> {
   const warnings: string[] = [];
@@ -24,18 +19,40 @@ export async function validatePrePush(repoPath: string, options: PushOptions = {
     if (options.force && !options.allowForce) return { canPush: false, currentBranch, ahead: status.ahead, behind: status.behind, hasUncommittedChanges, isProtected, warnings, error: "Naked force-push is rejected by safety policy. Use --force-with-lease with explicit override if required." };
     if (isProtected && (options.force || options.forceWithLease)) return { canPush: false, currentBranch, ahead: status.ahead, behind: status.behind, hasUncommittedChanges, isProtected, warnings, error: `Force-push to protected branch "${targetBranch}" is strictly prohibited.` };
     return { canPush: true, currentBranch, ahead: status.ahead, behind: status.behind, hasUncommittedChanges, isProtected, warnings };
-  } catch (err: any) { return { canPush: false, currentBranch: "unknown", ahead: 0, behind: 0, hasUncommittedChanges: false, isProtected: false, warnings, error: `Pre-push validation failed: ${err.message}` }; }
+  } catch (err: unknown) {
+    const error = err as { message?: string };
+    return { canPush: false, currentBranch: "unknown", ahead: 0, behind: 0, hasUncommittedChanges: false, isProtected: false, warnings, error: `Pre-push validation failed: ${error.message}` };
+  }
 }
 
 export async function executeSafePush(repoPath: string, options: PushOptions = {}): Promise<PushResult> {
   const preCheck = await validatePrePush(repoPath, options);
-  if (!preCheck.canPush) return { success: false, branch: preCheck.currentBranch, remote: options.remote || "origin", output: "", error: preCheck.error || "Pre-push check failed" };
-  const remote = options.remote || "origin";
-  const branch = options.branch || preCheck.currentBranch;
+  if (!preCheck.canPush) return { success: false, branch: preCheck.currentBranch, remote: options.remote || "origin", output: "", error: preCheck.error ?? "Pre-push check failed" };
+
+  let remote = "origin";
+  if (options.remote && options.remote.trim()) {
+    remote = validateRemoteName(options.remote);
+  }
+
+  let branch = preCheck.currentBranch;
+  if (options.branch && options.branch.trim()) {
+    branch = validateBranchName(options.branch);
+  }
+
   const refSpec = branch === preCheck.currentBranch ? branch : `${preCheck.currentBranch}:${branch}`;
-  let cmd = `git push ${remote} ${refSpec}`;
-  if (options.setUpstream) cmd = `git push -u ${remote} ${refSpec}`;
+  const escapedRemote = escapeShellArg(remote);
+  const escapedRefSpec = escapeShellArg(refSpec);
+
+  let cmd = `git push ${escapedRemote} ${escapedRefSpec}`;
+  if (options.setUpstream) cmd = `git push -u ${escapedRemote} ${escapedRefSpec}`;
   if (options.forceWithLease && options.allowForce) cmd += " --force-with-lease";
-  try { const { stdout, stderr } = await safeExec(cmd, repoPath); return { success: true, branch, remote, output: stdout.trim() || stderr.trim() || "Push completed successfully." }; }
-  catch (err: any) { return { success: false, branch, remote, output: err.stdout || "", error: err.stderr || err.message }; }
+
+  try {
+    const { stdout, stderr } = await safeExec(cmd, repoPath);
+    return { success: true, branch, remote, output: stdout.trim() || stderr.trim() || "Push completed successfully." };
+  } catch (err: unknown) {
+    const error = err as { stdout?: string; stderr?: string; message?: string };
+    const errorMsg = error.stderr || error.message || "Unknown push error";
+    return { success: false, branch, remote, output: error.stdout || "", error: errorMsg };
+  }
 }

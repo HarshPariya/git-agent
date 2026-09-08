@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { AppError } from "../errors/app-error.js";
 import { getExecutionPath } from "../git/engine.js";
+import { logger } from "../logging/logger.js";
 
 export interface DirectoryItem { readonly name: string; readonly path: string; readonly isGitRepo: boolean; }
 export interface FileItem { readonly name: string; readonly path: string; readonly ext: string; readonly sizeBytes: number; }
@@ -53,7 +54,14 @@ export async function browseFilesystemHandler(request: Request, response: Respon
 function getAvailableDrives(): readonly string[] {
   if (process.platform !== "win32") return ["/"];
   const drives: string[] = [];
-  for (let i = 65; i <= 90; i++) { const drivePath = `${String.fromCharCode(i)}:\\`; try { if (fs.existsSync(drivePath)) drives.push(drivePath); } catch { /* skip */ } }
+  for (let i = 65; i <= 90; i++) {
+    const drivePath = `${String.fromCharCode(i)}:\\`;
+    try {
+      if (fs.existsSync(drivePath)) drives.push(drivePath);
+    } catch (err: unknown) {
+      logger.warn("Failed to check drive accessibility", { operation: "get-drives", metadata: { drivePath, error: err instanceof Error ? err.message : String(err) } });
+    }
+  }
   return drives;
 }
 
@@ -73,8 +81,29 @@ export async function resolveFolderHandler(request: Request, response: Response,
     const matchedPaths: string[] = [];
     for (const root of searchRoots) {
       if (!fs.existsSync(root)) continue;
-      for (const variant of variants) { const candidate = path.join(root, variant); if (fs.existsSync(candidate)) { try { if (fs.statSync(candidate).isDirectory()) matchedPaths.push(candidate); } catch { /* skip */ } } }
-      try { const entries = await fs.promises.readdir(root, { withFileTypes: true }); for (const entry of entries) { if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "node_modules" || entry.name === "$RECYCLE.BIN") continue; const entryLower = entry.name.toLowerCase(); if (variants.some((v) => { const vLower = v.toLowerCase(); return entryLower === vLower || entryLower.replace(/[_\s-]+/g, "") === vLower.replace(/[_\s-]+/g, ""); })) matchedPaths.push(path.join(root, entry.name)); } } catch { /* skip */ }
+      for (const variant of variants) {
+        const candidate = path.join(root, variant);
+        if (fs.existsSync(candidate)) {
+          try {
+            if (fs.statSync(candidate).isDirectory()) matchedPaths.push(candidate);
+          } catch (err: unknown) {
+            logger.warn("Failed to stat candidate directory", { operation: "resolve-folder", metadata: { candidate, error: err instanceof Error ? err.message : String(err) } });
+          }
+        }
+      }
+      try {
+        const entries = await fs.promises.readdir(root, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "node_modules" || entry.name === "$RECYCLE.BIN") continue;
+          const entryLower = entry.name.toLowerCase();
+          if (variants.some((v) => {
+            const vLower = v.toLowerCase();
+            return entryLower === vLower || entryLower.replace(/[_\s-]+/g, "") === vLower.replace(/[_\s-]+/g, "");
+          })) matchedPaths.push(path.join(root, entry.name));
+        }
+      } catch (err: unknown) {
+        logger.warn("Failed to read directory entries", { operation: "resolve-folder", metadata: { root, error: err instanceof Error ? err.message : String(err) } });
+      }
     }
     const scoredCandidates = Array.from(new Set(matchedPaths)).map((cand) => { let score = 0; for (const sf of sampleFiles) { if (fs.existsSync(path.join(cand, sf))) score += 2; } if (fs.existsSync(path.join(cand, ".git"))) score += 1; return { path: cand, score }; }).sort((a, b) => b.score - a.score);
     const best = scoredCandidates[0]?.path || null;

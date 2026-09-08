@@ -1,7 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
 import type { NextFunction, Request, Response } from "express";
 import { classifyOperation, executeGitBranches, executeGitDiff, executeGitLog, executeGitOperation, executeGitStatus, getExecutionPath, getRiskLabel, GIT_OPERATION_CATALOG, type GitOperationType } from "../git/engine.js";
 import { AppError } from "../errors/app-error.js";
@@ -12,8 +10,8 @@ import { analyzeAndPlanCommits, executeCommitPlan } from "../git/change-analyzer
 import { getGitHubToken } from "../github/auth.js";
 import { createGitHubPR } from "../github/pull-requests.js";
 import { generateText } from "../llm/client.js";
-
-const execAsync = promisify(exec);
+import { execAsync, validateBranchName, validateRemoteName, escapeShellArg } from "../git/utils.js";
+import { logger } from "../logging/logger.js";
 const getGitRequestData = (request: Request): Record<string, unknown> => ({ ...request.query as Record<string, unknown>, ...(typeof request.body === "object" && request.body !== null ? (request.body as Record<string, unknown>) : {}) });
 const requireRepoId = (body: Record<string, unknown>) => typeof body.repositoryId === "string" && body.repositoryId.trim() ? body.repositoryId.trim() : (() => { throw new AppError("repositoryId is required", "VALIDATION_ERROR", 400); })();
 const optionalRepoId = (body: Record<string, unknown>) => typeof body.repositoryId === "string" && body.repositoryId.trim() ? body.repositoryId.trim() : undefined;
@@ -84,12 +82,31 @@ export async function gitPullHandler(request: Request, response: Response, next:
   try {
     const body = getGitRequestData(request); const repoId = optionalRepoId(body);
     if (!repoId) throw new AppError("repositoryId is required", "VALIDATION_ERROR", 400);
-    const remote = typeof body.remote === "string" ? body.remote : "origin";
-    const branch = typeof body.branch === "string" ? body.branch : "";
+
+    let remote = "origin";
+    if (typeof body.remote === "string" && body.remote.trim()) {
+      remote = validateRemoteName(body.remote);
+    }
+
+    let branch = "";
+    if (typeof body.branch === "string" && body.branch.trim()) {
+      branch = validateBranchName(body.branch);
+    }
+
     const rebase = body.rebase === true ? "--rebase" : "";
-    const cmd = ["git pull", remote, branch, rebase].filter(Boolean).join(" ");
-    try { const { stdout, stderr } = await execAsync(cmd, { cwd: getExecutionPath(repoId), timeout: 60000 }); response.status(200).json({ success: true, output: stdout.trim() || stderr.trim() || "Pull completed.", remote }); }
-    catch (err: any) { response.status(200).json({ success: false, output: err.stdout || "", error: err.stderr || err.message, remote }); }
+    const parts = ["git pull", escapeShellArg(remote)];
+    if (branch) parts.push(escapeShellArg(branch));
+    if (rebase) parts.push(rebase);
+    const cmd = parts.join(" ");
+
+    try {
+      const { stdout, stderr } = await execAsync(cmd, { cwd: getExecutionPath(repoId), timeout: 60000 });
+      response.status(200).json({ success: true, output: stdout.trim() || stderr.trim() || "Pull completed.", remote });
+    } catch (err: unknown) {
+      const error = err as { stdout?: string; stderr?: string; message?: string };
+      logger.warn("git pull failed", { operation: "git-pull", metadata: { error: error.message, remote } });
+      response.status(200).json({ success: false, output: error.stdout || "", error: error.stderr || error.message, remote });
+    }
   } catch (error) { next(error); }
 }
 
@@ -97,10 +114,23 @@ export async function gitFetchHandler(request: Request, response: Response, next
   try {
     const body = getGitRequestData(request); const repoId = optionalRepoId(body);
     if (!repoId) throw new AppError("repositoryId is required", "VALIDATION_ERROR", 400);
-    const remote = typeof body.remote === "string" ? body.remote : "origin";
-    const cmd = ["git fetch", remote, body.prune !== false ? "--prune" : ""].filter(Boolean).join(" ");
-    try { const { stdout, stderr } = await execAsync(cmd, { cwd: getExecutionPath(repoId), timeout: 60000 }); response.status(200).json({ success: true, output: stdout.trim() || stderr.trim() || "Fetch completed.", remote }); }
-    catch (err: any) { response.status(200).json({ success: false, output: err.stdout || "", error: err.stderr || err.message, remote }); }
+
+    let remote = "origin";
+    if (typeof body.remote === "string" && body.remote.trim()) {
+      remote = validateRemoteName(body.remote);
+    }
+
+    const pruneFlag = body.prune !== false ? "--prune" : "";
+    const cmd = ["git fetch", escapeShellArg(remote), pruneFlag].filter(Boolean).join(" ");
+
+    try {
+      const { stdout, stderr } = await execAsync(cmd, { cwd: getExecutionPath(repoId), timeout: 60000 });
+      response.status(200).json({ success: true, output: stdout.trim() || stderr.trim() || "Fetch completed.", remote });
+    } catch (err: unknown) {
+      const error = err as { stdout?: string; stderr?: string; message?: string };
+      logger.warn("git fetch failed", { operation: "git-fetch", metadata: { error: error.message, remote } });
+      response.status(200).json({ success: false, output: error.stdout || "", error: error.stderr || error.message, remote });
+    }
   } catch (error) { next(error); }
 }
 
@@ -108,34 +138,90 @@ export async function gitCheckoutHandler(request: Request, response: Response, n
   try {
     const body = getGitRequestData(request); const repoId = optionalRepoId(body);
     if (!repoId) throw new AppError("repositoryId is required", "VALIDATION_ERROR", 400);
-    const branch = typeof body.branch === "string" && body.branch.trim() ? body.branch.trim() : undefined;
-    if (!branch) throw new AppError("branch is required", "VALIDATION_ERROR", 400);
-    const cmd = body.create === true ? `git checkout -b ${branch}` : `git checkout ${branch}`;
-    try { const { stdout, stderr } = await execAsync(cmd, { cwd: getExecutionPath(repoId), timeout: 30000 }); response.status(200).json({ success: true, branch, output: stdout.trim() || stderr.trim() || `Switched to branch '${branch}'.` }); }
-    catch (err: any) { response.status(200).json({ success: false, branch, output: err.stdout || "", error: err.stderr || err.message }); }
+
+    const rawBranch = typeof body.branch === "string" && body.branch.trim() ? body.branch.trim() : undefined;
+    if (!rawBranch) throw new AppError("branch is required", "VALIDATION_ERROR", 400);
+    const branch = validateBranchName(rawBranch);
+
+    const cmd = body.create === true
+      ? `git checkout -b ${escapeShellArg(branch)}`
+      : `git checkout ${escapeShellArg(branch)}`;
+
+    try {
+      const { stdout, stderr } = await execAsync(cmd, { cwd: getExecutionPath(repoId), timeout: 30000 });
+      response.status(200).json({ success: true, branch, output: stdout.trim() || stderr.trim() || `Switched to branch '${branch}'.` });
+    } catch (err: unknown) {
+      const error = err as { stdout?: string; stderr?: string; message?: string };
+      logger.warn("git checkout failed", { operation: "git-checkout", metadata: { error: error.message, branch } });
+      response.status(200).json({ success: false, branch, output: error.stdout || "", error: error.stderr || error.message });
+    }
   } catch (error) { next(error); }
 }
 
 export async function gitDiffHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
   try {
     const body = getGitRequestData(request); const repoId = requireRepoId(body);
-    try { await executeGitStatus(repoId); } catch { throw new AppError("Repository not accessible", "VALIDATION_ERROR", 400); }
+    try { await executeGitStatus(repoId); } catch {
+      throw new AppError("Repository not accessible", "VALIDATION_ERROR", 400);
+    }
     const staged = body.staged === true;
     const filePath = typeof body.filePath === "string" && body.filePath.trim() ? body.filePath.trim() : undefined;
     const repoPath = getExecutionPath(repoId); let diffText = "";
+
     if (filePath) {
-      const tryCmds = [`git diff -- "${filePath}"`, `git diff --cached -- "${filePath}"`, `git diff HEAD -- "${filePath}"`, `git diff HEAD^..HEAD -- "${filePath}"`];
-      for (const cmd of tryCmds) { if (diffText) break; try { const { stdout } = await execAsync(cmd, { cwd: repoPath }); if (stdout.trim()) diffText = stdout.trim(); } catch { /* skip */ } }
-      if (!diffText) { try { const content = await fs.readFile(path.resolve(repoPath, filePath), "utf-8"); const lines = content.split("\n"); diffText = [`diff --git a/${filePath} b/${filePath}`, "new file mode 100644", "--- /dev/null", `+++ b/${filePath}`, `@@ -0,0 +1,${lines.length} @@`, ...lines.map((l) => `+${l}`)].join("\n"); } catch { /* skip */ } }
+      const tryCmds = [
+        `git diff -- "${filePath}"`,
+        `git diff --cached -- "${filePath}"`,
+        `git diff HEAD -- "${filePath}"`,
+        `git diff HEAD^..HEAD -- "${filePath}"`,
+      ];
+      for (const cmd of tryCmds) {
+        if (diffText) break;
+        try {
+          const { stdout } = await execAsync(cmd, { cwd: repoPath });
+          if (stdout.trim()) diffText = stdout.trim();
+        } catch (err: unknown) {
+          logger.warn("git diff command failed", { operation: "git-diff", metadata: { cmd, error: err instanceof Error ? err.message : String(err) } });
+        }
+      }
+      if (!diffText) {
+        try {
+          const content = await fs.readFile(path.resolve(repoPath, filePath), "utf-8");
+          const lines = content.split("\n");
+          diffText = [`diff --git a/${filePath} b/${filePath}`, "new file mode 100644", "--- /dev/null", `+++ b/${filePath}`, `@@ -0,0 +1,${lines.length} @@`, ...lines.map((l) => `+${l}`)].join("\n");
+        } catch (err: unknown) {
+          logger.warn("Failed to read file for diff fallback", { operation: "git-diff", metadata: { filePath, error: err instanceof Error ? err.message : String(err) } });
+        }
+      }
     } else {
       try {
-        const { stdout: unstagedOut } = await execAsync("git diff", { cwd: repoPath }); const { stdout: stagedOut } = await execAsync("git diff --cached", { cwd: repoPath }); diffText = [unstagedOut.trim(), stagedOut.trim()].filter(Boolean).join("\n");
+        const { stdout: unstagedOut } = await execAsync("git diff", { cwd: repoPath });
+        const { stdout: stagedOut } = await execAsync("git diff --cached", { cwd: repoPath });
+        diffText = [unstagedOut.trim(), stagedOut.trim()].filter(Boolean).join("\n");
         const { stdout: untrackedOut } = await execAsync("git ls-files --others --exclude-standard", { cwd: repoPath });
-        for (const uFile of untrackedOut.split("\n").map((f) => f.trim()).filter(Boolean).slice(0, 15)) { try { const content = await fs.readFile(path.resolve(repoPath, uFile), "utf-8"); const lines = content.split("\n"); const uDiff = [`diff --git a/${uFile} b/${uFile}`, "new file mode 100644", "--- /dev/null", `+++ b/${uFile}`, `@@ -0,0 +1,${lines.length} @@`, ...lines.map((l) => `+${l}`)].join("\n"); diffText = diffText ? `${diffText}\n\n${uDiff}` : uDiff; } catch { /* skip */ } }
-      } catch { /* skip */ }
+        for (const uFile of untrackedOut.split("\n").map((f) => f.trim()).filter(Boolean).slice(0, 15)) {
+          try {
+            const content = await fs.readFile(path.resolve(repoPath, uFile), "utf-8");
+            const lines = content.split("\n");
+            const uDiff = [`diff --git a/${uFile} b/${uFile}`, "new file mode 100644", "--- /dev/null", `+++ b/${uFile}`, `@@ -0,0 +1,${lines.length} @@`, ...lines.map((l) => `+${l}`)].join("\n");
+            diffText = diffText ? `${diffText}\n\n${uDiff}` : uDiff;
+          } catch (err: unknown) {
+            logger.warn("Failed to read untracked file for diff", { operation: "git-diff", metadata: { file: uFile, error: err instanceof Error ? err.message : String(err) } });
+          }
+        }
+      } catch (err: unknown) {
+        logger.warn("git diff commands failed", { operation: "git-diff", metadata: { error: err instanceof Error ? err.message : String(err) } });
+      }
     }
+
     const entries = await executeGitDiff(repoId, { ...(staged && { staged }), ...(filePath !== undefined && { filePath }) });
-    response.status(200).json({ success: true, diff: diffText, filePath, entries, files: entries.map((e) => ({ ...e, diff: e.filePath === filePath ? diffText : "" })) });
+    response.status(200).json({
+      success: true,
+      diff: diffText,
+      filePath,
+      entries,
+      files: entries.map((e) => ({ ...e, diff: e.filePath === filePath ? diffText : "" })),
+    });
   } catch (error) { next(error); }
 }
 
@@ -196,17 +282,54 @@ export async function gitExecuteCommitPlanHandler(request: Request, response: Re
 export async function gitSyncHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
   try {
     const body = getGitRequestData(request); const repoId = requireRepoId(body); const repoPath = getExecutionPath(repoId);
-    const remote = typeof body.remote === "string" ? body.remote : "origin";
-    try { await execAsync(`git fetch ${remote} --prune`, { cwd: repoPath, timeout: 45_000 }); } catch (err: any) { console.warn("[gitSync] Fetch warning:", err.message); }
+
+    let remote = "origin";
+    if (typeof body.remote === "string" && body.remote.trim()) {
+      remote = validateRemoteName(body.remote);
+    }
+
+    try {
+      await execAsync(`git fetch ${escapeShellArg(remote)} --prune`, { cwd: repoPath, timeout: 45_000 });
+    } catch (err: unknown) {
+      const error = err as { message?: string };
+      logger.warn("git sync fetch warning", { operation: "git-sync", metadata: { error: error.message, remote } });
+    }
+
     const status = await executeGitStatus(repoId);
     let actionRequired: "none" | "push" | "pull" | "diverged" | "commit_required" = "none";
     let message = "Repository is in sync with remote.";
-    if (!status.clean) { actionRequired = "commit_required"; message = "Uncommitted local changes present. Commit or stash before syncing."; }
-    else if (status.ahead > 0 && status.behind > 0) { actionRequired = "diverged"; message = `Branches have diverged (${status.ahead} ahead, ${status.behind} behind). Rebase or merge required.`; }
-    else if (status.behind > 0) { actionRequired = "pull"; try { const { stdout } = await execAsync(`git pull ${remote}`, { cwd: repoPath, timeout: 60_000 }); message = `Successfully pulled remote changes. ${stdout.trim()}`; actionRequired = "none"; } catch (pullErr: any) { message = `Pull encountered conflicts or issues: ${pullErr.message}`; } }
-    else if (status.ahead > 0) { actionRequired = "push"; message = `Local branch is ${status.ahead} commit(s) ahead of remote. Ready to push.`; }
+
+    if (!status.clean) {
+      actionRequired = "commit_required";
+      message = "Uncommitted local changes present. Commit or stash before syncing.";
+    } else if (status.ahead > 0 && status.behind > 0) {
+      actionRequired = "diverged";
+      message = `Branches have diverged (${status.ahead} ahead, ${status.behind} behind). Rebase or merge required.`;
+    } else if (status.behind > 0) {
+      actionRequired = "pull";
+      try {
+        const { stdout } = await execAsync(`git pull ${escapeShellArg(remote)}`, { cwd: repoPath, timeout: 60_000 });
+        message = `Successfully pulled remote changes. ${stdout.trim()}`;
+        actionRequired = "none";
+      } catch (pullErr: unknown) {
+        const error = pullErr as { message?: string };
+        message = `Pull encountered conflicts or issues: ${error.message}`;
+      }
+    } else if (status.ahead > 0) {
+      actionRequired = "push";
+      message = `Local branch is ${status.ahead} commit(s) ahead of remote. Ready to push.`;
+    }
+
     const updatedStatus = await executeGitStatus(repoId);
-    response.status(200).json({ success: true, branch: updatedStatus.branch, ahead: updatedStatus.ahead, behind: updatedStatus.behind, clean: updatedStatus.clean, actionRequired, message });
+    response.status(200).json({
+      success: true,
+      branch: updatedStatus.branch,
+      ahead: updatedStatus.ahead,
+      behind: updatedStatus.behind,
+      clean: updatedStatus.clean,
+      actionRequired,
+      message,
+    });
   } catch (error) { next(error); }
 }
 
@@ -216,22 +339,74 @@ export async function gitShipHandler(request: Request, response: Response, next:
     const targetBranch = typeof body.targetBranch === "string" && body.targetBranch ? body.targetBranch : "main";
     const prTitle = typeof body.prTitle === "string" ? body.prTitle : undefined;
     const plan = await analyzeAndPlanCommits(repoPath);
-    if (plan.groups.length === 0) { const status = await executeGitStatus(repoId); if (status.ahead === 0) { response.status(200).json({ success: false, message: "No changes to ship and working tree is in sync." }); return; } }
-    let commitResult = { success: true, commits: [] as any[], totalCreated: 0 };
-    if (plan.groups.length > 0) { const execRes = await executeCommitPlan(repoPath, plan.groups); if (!execRes.success) { response.status(400).json({ success: false, message: `Commit step failed: ${execRes.message}`, error: execRes.error }); return; } commitResult = execRes; }
+
+    if (plan.groups.length === 0) {
+      const status = await executeGitStatus(repoId);
+      if (status.ahead === 0) {
+        response.status(200).json({ success: false, message: "No changes to ship and working tree is in sync." });
+        return;
+      }
+    }
+
+    let commitResult = { success: true, commits: [] as Array<{ commitHash: string; commitMessage: string; files: string[] }>, totalCreated: 0 };
+    if (plan.groups.length > 0) {
+      const execRes = await executeCommitPlan(repoPath, plan.groups);
+      if (!execRes.success) {
+        response.status(400).json({ success: false, message: `Commit step failed: ${execRes.message}`, error: execRes.error });
+        return;
+      }
+      commitResult = execRes;
+    }
+
     const pushResult = await executeSafePush(repoPath, { setUpstream: true });
-    if (!pushResult.success) { response.status(400).json({ success: false, message: `Push step failed: ${pushResult.error || pushResult.output || "Unknown push error"}`, error: pushResult.error, commits: commitResult.commits }); return; }
-    const branchStatus = await executeGitStatus(repoId); const sourceBranch = branchStatus.branch; let prData: any = null;
-    let owner = typeof body.owner === "string" ? body.owner : ""; let repoName = typeof body.repo === "string" ? body.repo : "";
-    if (!owner || !repoName) { try { const { stdout: remoteUrl } = await execAsync("git remote get-url origin", { cwd: repoPath, timeout: 10000 }); const match = /github\.com[/:]([^/]+)\/([^/.]+)/.exec(remoteUrl.trim()); if (match && match[1] && match[2]) { owner = match[1]; repoName = match[2]; } } catch { /* skip */ } }
+    if (!pushResult.success) {
+      response.status(400).json({
+        success: false,
+        message: `Push step failed: ${pushResult.error || pushResult.output || "Unknown push error"}`,
+        error: pushResult.error,
+        commits: commitResult.commits,
+      });
+      return;
+    }
+
+    const branchStatus = await executeGitStatus(repoId); const sourceBranch = branchStatus.branch;
+    let prData: { id: number; number: number; url: string; title: string } | null = null;
+    let owner = typeof body.owner === "string" ? body.owner : "";
+    let repoName = typeof body.repo === "string" ? body.repo : "";
+
+    if (!owner || !repoName) {
+      try {
+        const { stdout: remoteUrl } = await execAsync("git remote get-url origin", { cwd: repoPath, timeout: 10000 });
+        const match = /github\.com[/:]([^/]+)\/([^/.]+)/.exec(remoteUrl.trim());
+        if (match && match[1] && match[2]) {
+          owner = match[1];
+          repoName = match[2];
+        }
+      } catch (err: unknown) {
+        logger.warn("Failed to get remote URL", { operation: "git-ship", metadata: { error: err instanceof Error ? err.message : String(err) } });
+      }
+    }
+
     const userId = (request as unknown as { user?: { id?: string } }).user?.id ?? "anonymous"; const token = getGitHubToken(userId);
     if (token && owner && repoName && sourceBranch !== targetBranch) {
       try {
-        const title = prTitle || commitResult.commits[0]?.commitMessage || `feat: ship updates on ${sourceBranch}`; const prBody = `### AI Ship Automated Pull Request\n\n**Source Branch:** \`${sourceBranch}\`\n**Target Branch:** \`${targetBranch}\`\n\n#### Commits Included (${commitResult.commits.length}):\n${commitResult.commits.map((c: any) => `- \`${c.commitHash}\`: ${c.commitMessage} (${c.files.length} files)`).join("\n")}\n\n*Verified and shipped automatically by AI Git Debugging Agent.*`;
-        const pr = await createGitHubPR(userId, owner, repoName, { title, body: prBody, head: sourceBranch, base: targetBranch }); prData = { id: pr.id, number: pr.number, url: pr.htmlUrl, title: pr.title };
-      } catch (prErr: any) { console.warn("[gitShip] PR creation warning:", prErr.message); }
+        const title = prTitle || commitResult.commits[0]?.commitMessage || `feat: ship updates on ${sourceBranch}`;
+        const prBody = `### AI Ship Automated Pull Request\n\n**Source Branch:** \`${sourceBranch}\`\n**Target Branch:** \`${targetBranch}\`\n\n#### Commits Included (${commitResult.commits.length}):\n${commitResult.commits.map((c) => `- \`${c.commitHash}\`: ${c.commitMessage} (${c.files.length} files)`).join("\n")}\n\n*Verified and shipped automatically by AI Git Debugging Agent.*`;
+        const pr = await createGitHubPR(userId, owner, repoName, { title, body: prBody, head: sourceBranch, base: targetBranch });
+        prData = { id: pr.id, number: pr.number, url: pr.htmlUrl, title: pr.title };
+      } catch (prErr: unknown) {
+        logger.warn("PR creation failed", { operation: "git-ship", metadata: { error: prErr instanceof Error ? prErr.message : String(prErr) } });
+      }
     }
-    response.status(200).json({ success: true, message: `Shipped successfully: ${commitResult.totalCreated} commit(s) pushed on '${sourceBranch}'.${prData ? ` PR #${prData.number} created.` : ""}`, branch: sourceBranch, commits: commitResult.commits, pushed: true, pr: prData });
+
+    response.status(200).json({
+      success: true,
+      message: `Shipped successfully: ${commitResult.totalCreated} commit(s) pushed on '${sourceBranch}'.${prData ? ` PR #${prData.number} created.` : ""}`,
+      branch: sourceBranch,
+      commits: commitResult.commits,
+      pushed: true,
+      pr: prData,
+    });
   } catch (error) { next(error); }
 }
 
@@ -243,8 +418,15 @@ export async function generateCommitMessageHandler(request: Request, response: R
     const changedFiles: unknown[] = [...((status.entries ?? []) as readonly unknown[]), ...(statusAny.staged ?? []), ...(statusAny.unstaged ?? []), ...(statusAny.untracked ?? [])];
     if (changedFiles.length === 0) { response.status(200).json({ summary: "chore: no changes detected", description: "", files: [], branch: (status as { branch?: string }).branch ?? "main" }); return; }
     let diffContext = "";
-    try { const repoPath = getExecutionPath(repoId); const { stdout: unstagedOut } = await execAsync("git diff", { cwd: repoPath }); const { stdout: stagedOut } = await execAsync("git diff --cached", { cwd: repoPath }); diffContext = [unstagedOut.trim(), stagedOut.trim()].filter(Boolean).join("\n").slice(0, 4000); }
-    catch { diffContext = changedFiles.map((f) => `- ${String((f as Record<string, unknown>).path ?? (f as Record<string, unknown>).filePath ?? f)} (${String((f as Record<string, unknown>).status ?? "modified")})`).join("\n"); }
+    try {
+      const repoPath = getExecutionPath(repoId);
+      const { stdout: unstagedOut } = await execAsync("git diff", { cwd: repoPath });
+      const { stdout: stagedOut } = await execAsync("git diff --cached", { cwd: repoPath });
+      diffContext = [unstagedOut.trim(), stagedOut.trim()].filter(Boolean).join("\n").slice(0, 4000);
+    } catch (err: unknown) {
+      logger.warn("Failed to get diff context", { operation: "generate-commit", metadata: { error: err instanceof Error ? err.message : String(err) } });
+      diffContext = changedFiles.map((f) => `- ${String((f as Record<string, unknown>).path ?? (f as Record<string, unknown>).filePath ?? f)} (${String((f as Record<string, unknown>).status ?? "modified")})`).join("\n");
+    }
     const fileList = changedFiles.map((f) => { const fo = f as Record<string, unknown>; return `${String(fo.status ?? "modified")}: ${String(fo.path ?? fo.filePath ?? f)}`; }).join("\n");
     const instructions = `You are a Principal Software Engineer. Write a production-ready, professional Conventional Commit message for these git changes.\n\nStrict Rules:\n1. Format: <type>(<scope>): <clear, concise, imperative summary of what was actually changed/added/fixed>\n2. Types: feat, fix, chore, refactor, style, docs, test, ci, perf, build\n3. The summary line must be <= 72 characters, describing the concrete capability or bug fix (NEVER generic phrases like "update files" or "work in progress").\n4. The description must have 2 to 6 detailed bullet points starting with "- ", explaining:\n   - What architectural changes or capabilities were introduced\n   - Which specific files and components were modified and why\n   - Any UX, API, or bug fix enhancements\n5. Output ONLY valid JSON matching this exact structure:\n{"summary": "feat(scope): concise summary", "description": "- bullet 1\\n- bullet 2\\n- bullet 3"}`;
     const input = `Changed files:\n${fileList}\n\nGit diff (truncated):\n${diffContext}`;
@@ -252,10 +434,31 @@ export async function generateCommitMessageHandler(request: Request, response: R
     try {
       const llmRes = await generateText({ instructions, input });
       let clean = llmRes.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-      try { const jsonMatch = /\{[\s\S]*\}/.exec(clean); if (jsonMatch) { const parsed = JSON.parse(jsonMatch[0]) as { summary?: string; description?: string | string[] }; if (parsed.summary && !parsed.summary.toLowerCase().includes("update files")) summary = String(parsed.summary).trim(); if (parsed.description) description = Array.isArray(parsed.description) ? parsed.description.join("\n") : String(parsed.description).trim(); } }
-      catch { const summaryMatch = /"summary"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/.exec(clean); if (summaryMatch?.[1] && !summaryMatch[1].toLowerCase().includes("update files")) summary = summaryMatch[1].replace(/\\"/g, '"').trim(); const descMatch = /"description"\s*:\s*"([\s\S]*?)"\s*\}/.exec(clean); if (descMatch?.[1]) description = descMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"').split("\n").map((l) => l.trim()).filter(Boolean).join("\n"); }
-      if (!summary) { const lines = clean.split("\n").map((l) => l.trim()).filter((l) => !l.startsWith("```") && l); for (const line of lines) { if (/^(feat|fix|chore|refactor|style|docs|test|ci|perf|build)(\([^)]+\))?:/.test(line)) { summary = line; break; } } if (!summary && lines.length > 0) summary = lines[0] ?? ""; if (!description) description = lines.filter((l) => l.startsWith("-") || l.startsWith("*")).join("\n"); }
-    } catch { /* LLM call failed */ }
+      try {
+        const jsonMatch = /\{[\s\S]*\}/.exec(clean);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]) as { summary?: string; description?: string | string[] };
+          if (parsed.summary && !parsed.summary.toLowerCase().includes("update files")) summary = String(parsed.summary).trim();
+          if (parsed.description) description = Array.isArray(parsed.description) ? parsed.description.join("\n") : String(parsed.description).trim();
+        }
+      } catch (err: unknown) {
+        logger.warn("Failed to parse LLM JSON response", { operation: "generate-commit", metadata: { error: err instanceof Error ? err.message : String(err) } });
+        const summaryMatch = /"summary"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/.exec(clean);
+        if (summaryMatch?.[1] && !summaryMatch[1].toLowerCase().includes("update files")) summary = summaryMatch[1].replace(/\\"/g, '"').trim();
+        const descMatch = /"description"\s*:\s*"([\s\S]*?)"\s*\}/.exec(clean);
+        if (descMatch?.[1]) description = descMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"').split("\n").map((l) => l.trim()).filter(Boolean).join("\n");
+      }
+      if (!summary) {
+        const lines = clean.split("\n").map((l) => l.trim()).filter((l) => !l.startsWith("```") && l);
+        for (const line of lines) {
+          if (/^(feat|fix|chore|refactor|style|docs|test|ci|perf|build)(\([^)]+\))?:/.test(line)) { summary = line; break; }
+        }
+        if (!summary && lines.length > 0) summary = lines[0] ?? "";
+        if (!description) description = lines.filter((l) => l.startsWith("-") || l.startsWith("*")).join("\n");
+      }
+    } catch (err: unknown) {
+      logger.warn("LLM call failed for commit message generation", { operation: "generate-commit", metadata: { error: err instanceof Error ? err.message : String(err) } });
+    }
     if (!summary || summary.toLowerCase().includes("update ") && summary.toLowerCase().includes("files")) {
       const allPaths = changedFiles.map((f) => String((f as Record<string, unknown>).path ?? (f as Record<string, unknown>).filePath ?? f));
       const hasApi = allPaths.some((p) => p.includes("api/") || p.includes("api.")); const hasFrontend = allPaths.some((p) => p.startsWith("public/") || p.includes("html") || p.includes("css")); const hasGit = allPaths.some((p) => p.includes("git")); const hasTests = allPaths.some((p) => p.includes("test"));

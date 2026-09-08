@@ -9,6 +9,8 @@ class ApiClient {
   constructor() {
     this.token = localStorage.getItem("gda_token") || null;
     this.user = JSON.parse(localStorage.getItem("gda_user") || "null");
+    this.activeControllers = new Map();
+    this.DEFAULT_TIMEOUT = 30000; // 30 seconds
   }
 
   setToken(token, user) {
@@ -30,6 +32,23 @@ class ApiClient {
     this.setToken(null, null);
   }
 
+  // Cancel a specific request by endpoint
+  cancelRequest(endpoint) {
+    const controller = this.activeControllers.get(endpoint);
+    if (controller) {
+      controller.abort();
+      this.activeControllers.delete(endpoint);
+    }
+  }
+
+  // Cancel all active requests
+  cancelAllRequests() {
+    for (const [endpoint, controller] of this.activeControllers) {
+      controller.abort();
+    }
+    this.activeControllers.clear();
+  }
+
   getHeaders(extraHeaders = {}) {
     const headers = {
       "Content-Type": "application/json",
@@ -49,10 +68,23 @@ class ApiClient {
   async request(endpoint, options = {}) {
     const url = `${API_BASE}${endpoint}`;
     const headers = this.getHeaders(options.headers);
-    const config = { ...options, headers };
+
+    // Create AbortController for this request
+    const controller = new AbortController();
+    this.activeControllers.set(endpoint, controller);
+
+    const config = { ...options, headers, signal: controller.signal };
+
+    // Set timeout to abort after 30 seconds
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+      this.activeControllers.delete(endpoint);
+    }, this.DEFAULT_TIMEOUT);
 
     try {
       const response = await fetch(url, config);
+      clearTimeout(timeoutId);
+      this.activeControllers.delete(endpoint);
 
       if (response.status === 401 && this.token) {
         this.clearToken();
@@ -79,6 +111,12 @@ class ApiClient {
 
       return data;
     } catch (err) {
+      clearTimeout(timeoutId);
+      this.activeControllers.delete(endpoint);
+      if (err.name === 'AbortError') {
+        console.warn(`Request aborted: ${endpoint}`);
+        return null;
+      }
       console.error(`API Error [${options.method || "GET"} ${endpoint}]:`, err);
       throw err;
     }

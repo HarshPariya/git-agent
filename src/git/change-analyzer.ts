@@ -1,10 +1,7 @@
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
 import { callLlm, isLlmAvailable } from "../llm/client.js";
 import { formatCommitMessage, type ConventionalCommit } from "./commit.js";
 import { getExecutionPath } from "./engine.js";
-
-const execAsync = promisify(exec);
+import { safeExec } from "./utils.js";
 
 export interface ChangedFileDetail {
   filePath: string;
@@ -37,9 +34,6 @@ export interface CommitPlanExecutionResult {
   branch: string; message: string; error?: string;
 }
 
-const safeExec = async (cmd: string, cwd: string): Promise<{ stdout: string; stderr: string }> =>
-  execAsync(cmd, { cwd, timeout: 45_000 });
-
 export async function getDetailedChangedFiles(repoPath: string): Promise<ChangedFileDetail[]> {
   const targetPath = getExecutionPath(repoPath);
   const { stdout: statusOut } = await safeExec("git status --porcelain -uall", targetPath);
@@ -61,7 +55,7 @@ export async function getDetailedChangedFiles(repoPath: string): Promise<Changed
         const [addStr, delStr, file] = line.split(/\s+/);
         if (file) numstatMap.set(file.trim(), { additions: parseInt(addStr ?? "0", 10) || 0, deletions: parseInt(delStr ?? "0", 10) || 0 });
       }
-    } catch {}
+    } catch { }
   }
 
   const results: ChangedFileDetail[] = [];
@@ -170,7 +164,7 @@ export async function analyzeAndPlanCommits(repoPath: string): Promise<CommitPla
           }
         }
       }
-    } catch {}
+    } catch { }
   }
 
   const heuristicGroups = groupFilesHeuristically(changedFiles);
@@ -188,9 +182,9 @@ export async function executeCommitPlan(
   if (!initialStatus.trim()) return { success: false, commits: [], totalCreated: 0, branch: "unknown", message: "Nothing to commit — working tree is clean." };
 
   let currentBranch = "main";
-  try { const { stdout: branchOut } = await safeExec("git rev-parse --abbrev-ref HEAD", targetPath); currentBranch = branchOut.trim() || "main"; } catch {}
+  try { const { stdout: branchOut } = await safeExec("git rev-parse --abbrev-ref HEAD", targetPath); currentBranch = branchOut.trim() || "main"; } catch { }
 
-  try { await safeExec("git reset HEAD", targetPath); } catch {}
+  try { await safeExec("git reset HEAD", targetPath); } catch { }
 
   const executedCommits: ExecutedCommitResult[] = [];
   for (const group of groups) {

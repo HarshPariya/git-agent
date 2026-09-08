@@ -61,7 +61,7 @@ async function loadIssues() {
               Opened by ${escapeHtml(issue.user || "author")} ${issue.createdAt ? "on " + new Date(issue.createdAt).toLocaleDateString() : ""}
             </div>
           </div>
-          <button class="btn btn-primary btn-sm" onclick="debugIssue('${escapeHtml(repoId)}', '${escapeHtml(issue.title)}')">
+          <button class="btn btn-primary btn-sm" data-action="debugIssue" data-value="${escapeHtml(repoId)}" data-extra="${escapeHtml(issue.title)}">
             ⚡ Debug Issue
           </button>
         </div>
@@ -80,6 +80,16 @@ function debugIssue(repoId, issueTitle) {
   if (repoSelect) repoSelect.value = repoId;
   if (descEl) descEl.value = `Investigate and fix issue: ${issueTitle}`;
 }
+
+// Event delegation for data-action attributes
+document.addEventListener('click', (e) => {
+  const target = e.target.closest('[data-action]');
+  if (!target) return;
+  const action = target.dataset.action;
+  const value = target.dataset.value;
+  const extra = target.dataset.extra;
+  if (action === 'debugIssue') debugIssue(value, extra);
+});
 
 // Window exports
 window.loadIssues = loadIssues;

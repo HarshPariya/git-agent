@@ -1,29 +1,27 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
 import { callLlm, isLlmAvailable } from "../llm/client.js";
-
-const execAsync = promisify(exec);
+import { safeExec, validateFilePath } from "./utils.js";
 
 export interface ConflictMarker { readonly filePath: string; readonly ourLines: string[]; readonly theirLines: string[]; readonly baseLines: string[]; readonly startLine: number; readonly endLine: number; }
 export interface ConflictFile { readonly filePath: string; readonly markers: readonly ConflictMarker[]; readonly hasConflicts: boolean; }
 export interface ConflictResolution { readonly filePath: string; readonly resolvedContent: string; readonly strategy: "ours" | "theirs" | "merged" | "ai_semantic"; readonly explanation: string; readonly confidence: number; readonly warnings: string[]; }
 export interface ConflictAnalysis { readonly repositoryPath: string; readonly conflictFiles: readonly ConflictFile[]; readonly mergeBase: string; readonly currentBranch: string; readonly incomingBranch: string; readonly totalConflicts: number; readonly resolutions: readonly ConflictResolution[]; readonly analysisComplete: boolean; }
 
-const safeExec = async (cmd: string, cwd: string): Promise<string> => {
-  try { const { stdout } = await execAsync(cmd, { cwd, timeout: 30_000 }); return stdout.trim(); } catch { return ""; }
+const safeExecTrimmed = async (cmd: string, cwd: string): Promise<string> => {
+  const result = await safeExec(cmd, cwd);
+  return result.stdout.trim();
 };
 
 export class ConflictAnalyzer {
   async analyzeRepository(repositoryPath: string): Promise<ConflictAnalysis> {
     const [statusOutput, mergeBase, currentBranch] = await Promise.all([
-      safeExec("git status --porcelain", repositoryPath),
-      safeExec("git merge-base HEAD MERGE_HEAD 2>/dev/null || echo ''", repositoryPath),
-      safeExec("git branch --show-current", repositoryPath),
+      safeExecTrimmed("git status --porcelain", repositoryPath),
+      safeExecTrimmed("git merge-base HEAD MERGE_HEAD 2>/dev/null || echo ''", repositoryPath),
+      safeExecTrimmed("git branch --show-current", repositoryPath),
     ]);
-    const incomingBranch = await safeExec("cat .git/MERGE_HEAD 2>/dev/null | head -c 8 || echo 'incoming'", repositoryPath);
-    const conflictFilePaths = statusOutput.split("\n").filter((line) => /^(UU|AA|DD|AU|UA|DU|UD)\s/.test(line)).map((line) => line.slice(3).trim());
+    const incomingBranch = await safeExecTrimmed("cat .git/MERGE_HEAD 2>/dev/null | head -c 8 || echo 'incoming'", repositoryPath);
+    const conflictFilePaths = statusOutput.split("\n").filter((line: string) => /^(UU|AA|DD|AU|UA|DU|UD)\s/.test(line)).map((line: string) => line.slice(3).trim());
     const conflictFiles: ConflictFile[] = [];
     for (const fp of conflictFilePaths) { conflictFiles.push(await this.analyzeFile(repositoryPath, fp)); }
     const totalConflicts = conflictFiles.reduce((sum, f) => sum + f.markers.length, 0);
@@ -34,7 +32,13 @@ export class ConflictAnalyzer {
 
   private async analyzeFile(repositoryPath: string, filePath: string): Promise<ConflictFile> {
     let content = "";
-    try { content = await fs.readFile(path.resolve(repositoryPath, filePath), "utf-8"); } catch { content = await safeExec(`git show :1:"${filePath}" 2>/dev/null || echo ''`, repositoryPath); }
+    try {
+      content = await fs.readFile(path.resolve(repositoryPath, filePath), "utf-8");
+    } catch {
+      const validatedPath = validateFilePath(filePath);
+      const { stdout } = await safeExec(`git show :1:"${validatedPath}" 2>/dev/null || echo ''`, repositoryPath);
+      content = stdout;
+    }
     const markers = this.parseConflictMarkers(filePath, content);
     return { filePath, markers, hasConflicts: markers.length > 0 };
   }
@@ -80,8 +84,14 @@ export class ConflictAnalyzer {
   }
 
   async applyResolution(repositoryPath: string, resolution: ConflictResolution): Promise<{ success: boolean; error?: string }> {
-    try { await fs.writeFile(path.resolve(repositoryPath, resolution.filePath), resolution.resolvedContent, "utf-8"); await execAsync(`git add "${resolution.filePath}"`, { cwd: repositoryPath }); return { success: true }; }
-    catch (err: any) { return { success: false, error: err.message }; }
+    try {
+      await fs.writeFile(path.resolve(repositoryPath, resolution.filePath), resolution.resolvedContent, "utf-8");
+      const validatedPath = validateFilePath(resolution.filePath);
+      await safeExec(`git add "${validatedPath}"`, repositoryPath);
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   async resolveAllConflicts(repositoryPath: string): Promise<{ success: boolean; analysis: ConflictAnalysis; appliedCount: number; errors: string[] }> {

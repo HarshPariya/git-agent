@@ -85,7 +85,12 @@ export class DebugOrchestrator {
     const session = await debugAgentPipeline.startSession(ctx.repositoryId, ctx.tenantId, ctx.userId, mode, query);
     setImmediate(async () => {
       try {
-        await executeGitStatus(ctx.repositoryId).catch(() => { }); const ctxWithQuery: OrchestratorContext = { ...ctx, query }; await this.handlers[mode](ctxWithQuery, session);
+        await executeGitStatus(ctx.repositoryId).catch((err: unknown) => {
+          logger.warn("Git status check failed during async debug execution", {
+            operation: "debug-orchestrator-async",
+            metadata: { repositoryId: ctx.repositoryId, error: err instanceof Error ? err.message : String(err) }
+          });
+        }); const ctxWithQuery: OrchestratorContext = { ...ctx, query }; await this.handlers[mode](ctxWithQuery, session);
         const finalSession = debugAgentPipeline.getSession(session.id, ctx.tenantId); const allFindings: readonly DebugFinding[] = finalSession.findings; const completedSteps = finalSession.steps.filter((s) => s.status === "completed"); const failedSteps = finalSession.steps.filter((s) => s.status === "failed");
         const summary = failedSteps.length > 0 ? `Debug session completed with ${failedSteps.length} failed step(s).` : `Debug session completed successfully. ${completedSteps.length} step(s) executed.`;
         debugAgentPipeline.completeSession(session.id); const extended = debugAgentPipeline.getExtendedData(session.id);

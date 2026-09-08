@@ -177,7 +177,7 @@ function renderGitDesktopChanges() {
 
   // Overview row for All Changed Files (Continuous diff)
   html += `
-    <div class="git-change-row all-files-row" style="cursor:pointer;background:var(--c-surface-hover);font-weight:600;border-bottom:1.5px solid var(--c-border)" onclick="switchGitDesktopTab('gd-all-diff')">
+    <div class="git-change-row all-files-row" style="cursor:pointer;background:var(--c-surface-hover);font-weight:600;border-bottom:1.5px solid var(--c-border)" data-action="switchGitDesktopTab" data-value="gd-all-diff">
       <div class="git-change-left">
         <span style="font-size:13px">📑</span>
         <span class="git-file-name" style="font-weight:700;color:var(--c-accent)">All Changed Files (${files.length})</span>
@@ -192,7 +192,7 @@ function renderGitDesktopChanges() {
     const groupBadge = f.logicalGroup ? `<span class="badge badge-accent" style="font-size:10px">${escapeHtml(f.logicalGroup)}</span>` : "";
 
     html += `
-      <div class="git-change-row" style="cursor:pointer" onclick="viewGitDesktopDiff('${escapeHtml(f.filePath)}')">
+      <div class="git-change-row" style="cursor:pointer" data-action="viewGitDesktopDiff" data-value="${escapeHtml(f.filePath)}">
         <div class="git-change-left">
           <span class="git-status-badge ${f.code}">${f.code}</span>
           <span class="git-file-name" title="${escapeHtml(f.filePath)}">${escapeHtml(f.filePath)}</span>
@@ -200,7 +200,7 @@ function renderGitDesktopChanges() {
         </div>
         <div class="git-change-right">
           <span class="badge ${riskBadgeClass}" style="font-size:10px">${f.risk.toUpperCase()}</span>
-          <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" onclick="event.stopPropagation();viewGitDesktopDiff('${escapeHtml(f.filePath)}')">
+          <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" data-action="viewGitDesktopDiff" data-value="${escapeHtml(f.filePath)}" data-stopprop="true">
             Diff
           </button>
         </div>
@@ -482,9 +482,9 @@ function renderMultiFileDiff(containerId, diffText) {
             <span class="badge badge-danger" style="font-size:10.5px">-${deletions}</span>
           </div>
           <div style="display:flex;gap:6px">
-            <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="openSpecificFileInOs('${escapeHtml(filePath)}', 'reveal')">📂 Reveal</button>
-            <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="openSpecificFileInOs('${escapeHtml(filePath)}', 'edit')">📝 Open</button>
-            <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" onclick="viewGitDesktopDiff('${escapeHtml(filePath)}')">🔍 Inspect</button>
+            <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" data-action="openSpecificFileInOs" data-value="${escapeHtml(filePath)}" data-mode="reveal">📂 Reveal</button>
+            <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" data-action="openSpecificFileInOs" data-value="${escapeHtml(filePath)}" data-mode="edit">📝 Open</button>
+            <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" data-action="viewGitDesktopDiff" data-value="${escapeHtml(filePath)}">🔍 Inspect</button>
           </div>
         </div>`;
 
@@ -1072,7 +1072,7 @@ function renderBranchSwitcherList(branches) {
   container.innerHTML = branches.map((b) => {
     const isCurrent = b.name === currentBranch || b.current;
     return `
-      <div class="branch-list-item ${isCurrent ? "active-branch" : ""}" onclick="checkoutSelectedBranch('${escapeHtml(b.name)}')">
+      <div class="branch-list-item ${isCurrent ? "active-branch" : ""}" data-action="checkoutSelectedBranch" data-value="${escapeHtml(b.name)}">
         <div style="display:flex;align-items:center;gap:8px">
           <span>${isCurrent ? "✓" : "🌿"}</span>
           <span style="font-family:var(--font-mono);font-size:12.5px">${escapeHtml(b.name)}</span>
@@ -1151,6 +1151,24 @@ async function triggerAIShip() {
     showToast(`AI Ship error: ${err.message}`, "error");
   }
 }
+
+// Event delegation for data-action attributes
+document.addEventListener('click', (e) => {
+  const target = e.target.closest('[data-action]');
+  if (!target) return;
+  const action = target.dataset.action;
+  const value = target.dataset.value;
+  const extra = target.dataset.extra;
+
+  if (target.dataset.stopprop === 'true') {
+    e.stopPropagation();
+  }
+
+  if (action === 'switchGitDesktopTab') switchGitDesktopTab(value);
+  else if (action === 'viewGitDesktopDiff') viewGitDesktopDiff(value);
+  else if (action === 'openSpecificFileInOs') openSpecificFileInOs(value, target.dataset.mode || 'reveal');
+  else if (action === 'checkoutSelectedBranch') checkoutSelectedBranch(value);
+});
 
 // Window exports
 window.loadGitDesktop = loadGitDesktop;

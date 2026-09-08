@@ -62,11 +62,17 @@ export const createSecurityMiddleware = (requiredPermission?: Permission) =>
         }
       }
 
+      // In production, a valid Bearer token is mandatory. The dev-mode header
+      // fallback (x-tenant-id / x-user-id) below must never be reachable in
+      // production -- this guard enforces that invariant.
       if (!rawToken && process.env.NODE_ENV === "production") {
         response.status(401).json({ error: { code: "AUTHENTICATION_ERROR", message: "Bearer authentication is required." } });
         return;
       }
 
+      // Dev-mode fallback: allow identity to be passed via headers instead of a
+      // signed token.  ONLY active when NODE_ENV is NOT "production" (the guard
+      // above returns 401 before reaching this point in production).
       if (!rawToken) {
         tenantId = getHeaderOrQuery(request, "x-tenant-id") ?? getHeaderOrQuery(request, "tenantId");
         userId = getHeaderOrQuery(request, "x-user-id") ?? getHeaderOrQuery(request, "userId");

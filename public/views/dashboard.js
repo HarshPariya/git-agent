@@ -96,7 +96,7 @@ function renderDashboardRepos(repos) {
           </div>
         </div>
         <div style="display:flex;gap:6px">
-          <button class="btn btn-primary btn-sm" onclick="quickDebugRepo('${escapeHtml(r.id)}')">⚡ Debug</button>
+          <button class="btn btn-primary btn-sm" data-action="quickDebugRepo" data-value="${escapeHtml(r.id)}">⚡ Debug</button>
         </div>
       </div>
     `,
@@ -141,6 +141,15 @@ function renderDashboardSessions(sessions) {
     )
     .join("");
 }
+
+// Event delegation for data-action attributes
+document.addEventListener('click', (e) => {
+  const target = e.target.closest('[data-action]');
+  if (!target) return;
+  const action = target.dataset.action;
+  const value = target.dataset.value;
+  if (action === 'quickDebugRepo') quickDebugRepo(value);
+});
 
 // Window exports
 window.checkHealth = checkHealth;

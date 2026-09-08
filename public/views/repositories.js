@@ -80,12 +80,12 @@ function renderRepositoriesList() {
       <div style="display:flex;gap:6px;flex-wrap:wrap;border-top:1px solid var(--c-border);padding-top:12px">
         ${isActive
             ? `<button class="btn btn-secondary btn-sm" disabled style="opacity:0.85">✓ Active</button>`
-            : `<button class="btn btn-secondary btn-sm" onclick="selectActiveRepo('${escapeHtml(r.id)}')">Set Active</button>`
+            : `<button class="btn btn-secondary btn-sm" data-action="selectActiveRepo" data-value="${escapeHtml(r.id)}">Set Active</button>`
           }
-        <button class="btn btn-secondary btn-sm" onclick="openRepoInGitDesktop('${escapeHtml(r.id)}')">🖥️ Git Desktop</button>
-        <button class="btn btn-primary btn-sm" onclick="quickDebugRepo('${escapeHtml(r.id)}')">⚡ Debug</button>
-        <button class="btn btn-secondary btn-sm" onclick="syncRepo('${escapeHtml(r.id)}')">🔄 Sync</button>
-        <button class="btn btn-danger btn-sm" onclick="disconnectRepo('${escapeHtml(r.id)}')">Disconnect</button>
+        <button class="btn btn-secondary btn-sm" data-action="openRepoInGitDesktop" data-value="${escapeHtml(r.id)}">🖥️ Git Desktop</button>
+        <button class="btn btn-primary btn-sm" data-action="quickDebugRepo" data-value="${escapeHtml(r.id)}">⚡ Debug</button>
+        <button class="btn btn-secondary btn-sm" data-action="syncRepo" data-value="${escapeHtml(r.id)}">🔄 Sync</button>
+        <button class="btn btn-danger btn-sm" data-action="disconnectRepo" data-value="${escapeHtml(r.id)}">Disconnect</button>
       </div>
     </div>
   `;
@@ -559,7 +559,7 @@ async function browseToDirectory(dirPath = "") {
       shortcuts.forEach((s) => {
         const isCurrent = s.path === data.currentPath;
         qHtml += `
-          <div class="folder-shortcut-pill ${isCurrent ? "active-shortcut" : ""}" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600" onclick="browseToDirectory('${escapeHtml(s.path).replace(/\\/g, "\\\\")}')">
+          <div class="folder-shortcut-pill ${isCurrent ? "active-shortcut" : ""}" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600" data-action="browseToDirectory" data-value="${escapeHtml(s.path).replace(/\\/g, "\\\\")}">
             <span>${escapeHtml(s.name)}</span>
           </div>`;
       });
@@ -592,7 +592,7 @@ async function browseToDirectory(dirPath = "") {
     // Parent directory row
     if (data.parentPath) {
       rowsHtml += `
-        <div class="folder-row folder-row-up" onclick="browseToDirectory('${escapeHtml(data.parentPath).replace(/\\/g, "\\\\")}')">
+        <div class="folder-row folder-row-up" data-action="browseToDirectory" data-value="${escapeHtml(data.parentPath).replace(/\\/g, "\\\\")}">
           <div class="folder-row-left">
             <span class="folder-icon">📂</span>
             <span class="folder-name">.. (Go Up to Parent Directory)</span>
@@ -614,15 +614,15 @@ async function browseToDirectory(dirPath = "") {
         const escapedName = escapeHtml(dir.name);
 
         rowsHtml += `
-          <div class="folder-row" onclick="browseToDirectory('${escapedPath}')">
+          <div class="folder-row" data-action="browseToDirectory" data-value="${escapedPath}">
             <div class="folder-row-left">
               <span class="folder-icon">${dir.isGitRepo ? "🌿" : "📁"}</span>
               <span class="folder-name">${escapedName}</span>
               ${dir.isGitRepo ? '<span class="badge badge-success">Git Repo</span>' : '<span class="badge badge-secondary" style="font-size:10px">Folder</span>'}
             </div>
-            <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
-              <button class="btn btn-secondary btn-sm" onclick="browseToDirectory('${escapedPath}')">📂 Open</button>
-              <button class="btn btn-primary btn-sm" onclick="connectSpecificFolder('${escapedName}', '${escapedPath}')">➕ Add Directly</button>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-secondary btn-sm" data-action="browseToDirectory" data-value="${escapedPath}">📂 Open</button>
+              <button class="btn btn-primary btn-sm" data-action="connectSpecificFolder" data-value="${escapedName}" data-extra="${escapedPath}">➕ Add Directly</button>
             </div>
           </div>
         `;
@@ -889,7 +889,7 @@ function renderGitHubReposModalList(repos) {
           <div style="font-weight:600;font-size:14px;color:var(--c-text)">${escapeHtml(r.name)}</div>
           <div style="font-size:12px;color:var(--c-text-muted)">${escapeHtml(r.description || "No description")}</div>
         </div>
-        <button class="btn btn-primary btn-sm" onclick="connectSelectedGitHubRepo('${escapeHtml(r.name)}', '${escapeHtml(r.cloneUrl)}')">
+        <button class="btn btn-primary btn-sm" data-action="connectSelectedGitHubRepo" data-value="${escapeHtml(r.name)}" data-extra="${escapeHtml(r.cloneUrl)}">
           Connect Repo
         </button>
       </div>
@@ -918,6 +918,24 @@ async function connectSelectedGitHubRepo(name, cloneUrl) {
     showToast(`Failed to connect repository: ${err.message}`, "error");
   }
 }
+
+// Event delegation for data-action attributes
+document.addEventListener('click', (e) => {
+  const target = e.target.closest('[data-action]');
+  if (!target) return;
+  const action = target.dataset.action;
+  const value = target.dataset.value;
+  const extra = target.dataset.extra;
+
+  if (action === 'selectActiveRepo') selectActiveRepo(value);
+  else if (action === 'openRepoInGitDesktop') openRepoInGitDesktop(value);
+  else if (action === 'quickDebugRepo') quickDebugRepo(value);
+  else if (action === 'syncRepo') syncRepo(value);
+  else if (action === 'disconnectRepo') disconnectRepo(value);
+  else if (action === 'browseToDirectory') browseToDirectory(value);
+  else if (action === 'connectSpecificFolder') connectSpecificFolder(value, extra);
+  else if (action === 'connectSelectedGitHubRepo') connectSelectedGitHubRepo(value, extra);
+});
 
 // Window exports
 window.loadRepositories = loadRepositories;

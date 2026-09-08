@@ -38,7 +38,7 @@ async function loadHistory() {
             <span class="badge ${s.status === "completed" || s.status === "resolved" ? "badge-success" : s.status === "failed" ? "badge-danger" : "badge-accent"}">
               ${escapeHtml(s.status || "active")}
             </span>
-            <button class="btn btn-secondary btn-sm" onclick="reopenDebugSession('${escapeHtml(s.id)}')">
+            <button class="btn btn-secondary btn-sm" data-action="reopenDebugSession" data-value="${escapeHtml(s.id)}">
               🔍 Reopen
             </button>
           </div>
@@ -203,6 +203,15 @@ async function loadGitDesktopHistory() {
     container.innerHTML = `<div class="text-danger" style="padding:16px;font-size:12px">Error loading commit history: ${escapeHtml(err.message)}</div>`;
   }
 }
+
+// Event delegation for data-action attributes
+document.addEventListener('click', (e) => {
+  const target = e.target.closest('[data-action]');
+  if (!target) return;
+  const action = target.dataset.action;
+  const value = target.dataset.value;
+  if (action === 'reopenDebugSession') reopenDebugSession(value);
+});
 
 // Window exports
 window.loadHistory = loadHistory;

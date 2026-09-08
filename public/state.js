@@ -39,3 +39,9 @@ window.notifyStateChange = function (changeKey, data) {
     try { fn(changeKey, data, window.state); } catch (e) { console.warn("State listener error:", e); }
   }
 };
+
+// setState function that triggers pub/sub notifications
+window.setState = function (key, value) {
+  window.state[key] = value;
+  window.notifyStateChange(key, value);
+};

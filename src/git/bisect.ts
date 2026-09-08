@@ -1,9 +1,6 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import type { Repository } from "../types/git.js";
 import { AppError } from "../errors/app-error.js";
-
-const execFileAsync = promisify(execFile);
+import { execAsync } from "./utils.js";
 
 interface BisectResult {
   readonly commit: string;
@@ -27,7 +24,8 @@ interface RegressionResult {
 
 const runGit = async (repoPath: string, args: string[]): Promise<string> => {
   try {
-    const result = await execFileAsync("git", args, {
+    const cmd = `git ${args.join(" ")}`;
+    const result = await execAsync(cmd, {
       cwd: repoPath, maxBuffer: 10 * 1024 * 1024, timeout: 120_000,
     });
     return result.stdout ?? "";
@@ -42,7 +40,7 @@ export async function runBisect(
 ): Promise<BisectResult> {
   try {
     await runGit(repo.localPath, ["bisect", "reset"]);
-  } catch {}
+  } catch { }
   try {
     await runGit(repo.localPath, ["bisect", "start"]);
     await runGit(repo.localPath, ["bisect", "bad", endRef]);
@@ -72,7 +70,7 @@ export async function runBisect(
       isBad: true, isGood: false,
     };
   } catch (err) {
-    try { await runGit(repo.localPath, ["bisect", "reset"]); } catch {}
+    try { await runGit(repo.localPath, ["bisect", "reset"]); } catch { }
     throw err;
   }
 }

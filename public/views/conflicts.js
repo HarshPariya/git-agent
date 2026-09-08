@@ -47,7 +47,7 @@ async function loadConflictsPage() {
         <div class="card" style="margin-bottom:16px;padding:0;overflow:hidden">
           <div class="card-header" style="background:#fffbeb;padding:10px 16px;display:flex;justify-content:space-between;align-items:center">
             <div style="font-weight:700;font-family:var(--font-mono)">${escapeHtml(c.filePath)}</div>
-            <button class="btn btn-primary btn-sm" onclick="triggerResolveFileConflict('${escapeHtml(c.filePath)}')">
+            <button class="btn btn-primary btn-sm" data-action="triggerResolveFileConflict" data-value="${escapeHtml(c.filePath)}">
               ⚡ Semantic Resolve This File
             </button>
           </div>
@@ -183,6 +183,15 @@ async function resolveConflicts() {
     if (btn) { btn.disabled = false; btn.textContent = "⚡ AI Semantic Resolve All"; }
   }
 }
+
+// Event delegation for data-action attributes
+document.addEventListener('click', (e) => {
+  const target = e.target.closest('[data-action]');
+  if (!target) return;
+  const action = target.dataset.action;
+  const value = target.dataset.value;
+  if (action === 'triggerResolveFileConflict') triggerResolveFileConflict(value);
+});
 
 // Window exports
 window.loadConflictsPage = loadConflictsPage;

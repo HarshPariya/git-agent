@@ -56,7 +56,7 @@ async function loadPRs() {
             Ready to merge <code>${escapeHtml(currentBranch)}</code> into <code>${escapeHtml(defaultBranch)}</code>? Create a verified pull request now or compare on GitHub.
           </div>
           <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-            <button class="btn btn-primary" onclick="openCreatePRModal('${escapeHtml(repoId)}')" style="display:flex;align-items:center;gap:6px">
+            <button class="btn btn-primary" data-action="openCreatePRModal" data-value="${escapeHtml(repoId)}" style="display:flex;align-items:center;gap:6px">
               🚀 Create Pull Request
             </button>
             <a href="${escapeHtml(ghUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="display:inline-flex;align-items:center;gap:6px">
@@ -103,11 +103,11 @@ async function loadPRs() {
               ` : ""}
             </div>
             <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
-              <button class="btn btn-secondary btn-sm" onclick="reviewPR('${escapeHtml(repoId)}', '${escapeHtml(pr.title)}')">
+              <button class="btn btn-secondary btn-sm" data-action="reviewPR" data-value="${escapeHtml(repoId)}" data-extra="${escapeHtml(pr.title)}">
                 🔍 Review with AI
               </button>
               ${!isClosed ? `
-                <button class="btn btn-primary btn-sm" onclick="quickMergePR('${escapeHtml(pr.id)}')">
+                <button class="btn btn-primary btn-sm" data-action="quickMergePR" data-value="${escapeHtml(pr.id)}">
                   ⚡ Merge PR
                 </button>
               ` : ""}
@@ -239,6 +239,19 @@ function reviewPR(repoId, prTitle) {
   if (typeSelect) typeSelect.value = "prs";
   if (descEl) descEl.value = `Perform AI review on PR: ${prTitle}`;
 }
+
+// Event delegation for data-action attributes
+document.addEventListener('click', (e) => {
+  const target = e.target.closest('[data-action]');
+  if (!target) return;
+  const action = target.dataset.action;
+  const value = target.dataset.value;
+  const extra = target.dataset.extra;
+
+  if (action === 'openCreatePRModal') openCreatePRModal(value);
+  else if (action === 'reviewPR') reviewPR(value, extra);
+  else if (action === 'quickMergePR') quickMergePR(value);
+});
 
 // Window exports
 window.loadPRs = loadPRs;
