@@ -25,6 +25,43 @@ async function checkHealth() {
 }
 
 async function loadDashboardStats() {
+  // Show skeleton loading states
+  const statRepos = document.getElementById("stat-repos");
+  const statSessions = document.getElementById("stat-sessions");
+  const statFixes = document.getElementById("stat-fixes");
+  const statRuns = document.getElementById("stat-runs");
+
+  if (statRepos) statRepos.innerHTML = '<div class="skeleton skeleton-text" style="width:40px;height:28px;display:inline-block"></div>';
+  if (statSessions) statSessions.innerHTML = '<div class="skeleton skeleton-text" style="width:40px;height:28px;display:inline-block"></div>';
+  if (statFixes) statFixes.innerHTML = '<div class="skeleton skeleton-text" style="width:40px;height:28px;display:inline-block"></div>';
+  if (statRuns) statRuns.innerHTML = '<div class="skeleton skeleton-text" style="width:40px;height:28px;display:inline-block"></div>';
+
+  // Show skeleton for repos
+  const reposContainer = document.getElementById("dashboard-repos");
+  const sessionsContainer = document.getElementById("dashboard-sessions");
+  if (reposContainer) {
+    reposContainer.innerHTML = [1, 2, 3].map(() => `
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--c-border-subtle)">
+        <div class="skeleton skeleton-circle" style="width:36px;height:36px;flex-shrink:0"></div>
+        <div style="flex:1">
+          <div class="skeleton skeleton-text" style="width:70%;height:14px"></div>
+          <div class="skeleton skeleton-text" style="width:90%;height:10px;margin-top:6px"></div>
+        </div>
+      </div>
+    `).join("");
+  }
+  if (sessionsContainer) {
+    sessionsContainer.innerHTML = [1, 2, 3].map(() => `
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--c-border-subtle)">
+        <div class="skeleton skeleton-circle" style="width:36px;height:36px;flex-shrink:0"></div>
+        <div style="flex:1">
+          <div class="skeleton skeleton-text" style="width:80%;height:14px"></div>
+          <div class="skeleton skeleton-text" style="width:50%;height:10px;margin-top:6px"></div>
+        </div>
+      </div>
+    `).join("");
+  }
+
   try {
     const [reposData, sessionsData, runsData] = await Promise.allSettled([
       api.listRepositories(),
@@ -40,11 +77,6 @@ async function loadDashboardStats() {
     const sessionsCount = Array.isArray(sessions) ? sessions.length : 0;
     const runsCount = Array.isArray(runs) ? runs.length : 0;
 
-    const statRepos = document.getElementById("stat-repos");
-    const statSessions = document.getElementById("stat-sessions");
-    const statFixes = document.getElementById("stat-fixes");
-    const statRuns = document.getElementById("stat-runs");
-
     if (statRepos) statRepos.textContent = reposCount;
     if (statSessions) statSessions.textContent = sessionsCount;
     if (statFixes) {
@@ -59,6 +91,10 @@ async function loadDashboardStats() {
     renderDashboardSessions(Array.isArray(sessions) ? sessions : []);
   } catch (err) {
     console.error("Error loading dashboard stats:", err);
+    if (statRepos) statRepos.textContent = "0";
+    if (statSessions) statSessions.textContent = "0";
+    if (statFixes) statFixes.textContent = "0";
+    if (statRuns) statRuns.textContent = "0";
   }
 }
 
@@ -86,18 +122,20 @@ function renderDashboardRepos(repos) {
     .map(
       (r) => `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--c-border-subtle)">
-        <div style="overflow:hidden;padding-right:12px">
-          <div style="font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px">
-            <span>${escapeHtml(r.name || "Repository")}</span>
-            <span class="badge badge-success">connected</span>
+        <div style="display:flex;align-items:center;gap:10px;overflow:hidden;padding-right:12px;flex:1;min-width:0">
+          <div style="width:36px;height:36px;border-radius:var(--r-md);background:var(--c-accent-light);color:var(--c-accent);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;border:1px solid var(--c-accent-border)">
+            📁
           </div>
-          <div style="font-size:11px;color:var(--c-text-muted);font-family:var(--font-mono);text-overflow:ellipsis;overflow:hidden;white-space:nowrap">
-            ${escapeHtml(r.localPath || r.url || "")}
+          <div style="overflow:hidden;min-width:0">
+            <div style="font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px">
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.name || "Repository")}</span>
+            </div>
+            <div style="font-size:11px;color:var(--c-text-muted);font-family:var(--font-mono);text-overflow:ellipsis;overflow:hidden;white-space:nowrap">
+              ${escapeHtml(r.localPath || r.url || "")}
+            </div>
           </div>
         </div>
-        <div style="display:flex;gap:6px">
-          <button class="btn btn-primary btn-sm" data-action="quickDebugRepo" data-value="${escapeHtml(r.id)}">⚡ Debug</button>
-        </div>
+        <button class="btn btn-primary btn-sm" data-action="quickDebugRepo" data-value="${escapeHtml(r.id)}" style="flex-shrink:0">⚡ Debug</button>
       </div>
     `,
     )
@@ -125,15 +163,22 @@ function renderDashboardSessions(sessions) {
     .map(
       (s) => `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--c-border-subtle)">
-        <div style="flex:1;overflow:hidden;padding-right:12px">
-          <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-            ${escapeHtml(s.query || s.description || "Debug Task")}
+        <div style="display:flex;align-items:center;gap:10px;overflow:hidden;flex:1;min-width:0;padding-right:12px">
+          <div style="width:36px;height:36px;border-radius:var(--r-md);background:var(--c-bg-tertiary);color:var(--c-text-secondary);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">
+            🔍
           </div>
-          <div style="font-size:11px;color:var(--c-text-muted)">
-            ${s.createdAt ? new Date(s.createdAt).toLocaleTimeString() : "Recent"} · ${s.mode || "debug"}
+          <div style="overflow:hidden;min-width:0">
+            <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+              ${escapeHtml(s.query || s.description || "Debug Task")}
+            </div>
+            <div style="font-size:11px;color:var(--c-text-muted);display:flex;align-items:center;gap:4px">
+              <span>${s.createdAt ? new Date(s.createdAt).toLocaleTimeString() : "Recent"}</span>
+              <span style="color:var(--c-border-strong)">·</span>
+              <span>${escapeHtml(s.mode || "debug")}</span>
+            </div>
           </div>
         </div>
-        <span class="badge ${s.status === "completed" || s.status === "resolved" ? "badge-success" : s.status === "failed" ? "badge-danger" : "badge-accent"}">
+        <span class="badge ${s.status === "completed" || s.status === "resolved" ? "badge-success" : s.status === "failed" ? "badge-danger" : "badge-accent"}" style="flex-shrink:0">
           ${escapeHtml(s.status || "active")}
         </span>
       </div>

@@ -51,7 +51,25 @@ async function loadConflictsPage() {
     return;
   }
 
-  container.innerHTML = EMPTY_STATE("⚡", "Analyzing conflicts...", "Scanning repository for merge markers and analyzing common ancestors.");
+  container.innerHTML = `
+    <div style="padding:24px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+        <div class="skeleton" style="width:32px;height:32px;border-radius:var(--r-md)"></div>
+        <div>
+          <div class="skeleton skeleton-text" style="width:200px;height:16px;margin-bottom:4px"></div>
+          <div class="skeleton skeleton-text" style="width:300px;height:12px"></div>
+        </div>
+      </div>
+      ${[1, 2].map(() => `
+        <div class="card" style="margin-bottom:16px;padding:16px">
+          <div class="skeleton skeleton-text" style="width:60%;height:14px;margin-bottom:12px"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="skeleton" style="height:80px;border-radius:var(--r-sm)"></div>
+            <div class="skeleton" style="height:80px;border-radius:var(--r-sm)"></div>
+          </div>
+        </div>
+      `).join("")}
+    </div>`;
 
   try {
     const data = await api.getGitConflicts(repo.id);

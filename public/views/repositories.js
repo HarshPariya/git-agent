@@ -4,6 +4,24 @@
  */
 
 async function loadRepositories() {
+  const listEl = document.getElementById("repos-list");
+  if (listEl) {
+    listEl.innerHTML = [1, 2].map(() => `
+      <div class="card" style="padding:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="skeleton skeleton-text" style="width:120px;height:18px"></div>
+          <div class="skeleton skeleton-text" style="width:60px;height:20px;border-radius:var(--r-full)"></div>
+        </div>
+        <div class="skeleton skeleton-text" style="width:80%;height:12px;margin-bottom:8px"></div>
+        <div class="skeleton skeleton-text" style="width:40%;height:12px;margin-bottom:16px"></div>
+        <div style="display:flex;gap:6px;border-top:1px solid var(--c-border);padding-top:12px">
+          <div class="skeleton" style="width:80px;height:28px;border-radius:var(--r-sm)"></div>
+          <div class="skeleton" style="width:100px;height:28px;border-radius:var(--r-sm)"></div>
+        </div>
+      </div>
+    `).join("");
+  }
+
   try {
     const data = await api.listRepositories();
     const repos = Array.isArray(data) ? data : data.repositories || [];
@@ -51,22 +69,29 @@ function renderRepositoriesList() {
         return `
     <div class="card ${isActive ? 'active-repo-card' : ''}" style="display:flex;flex-direction:column;justify-content:space-between;${isActive ? 'border-color:var(--c-accent);box-shadow:0 0 0 1px var(--c-accent)' : ''}">
       <div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <div style="font-weight:700;font-size:15px;display:flex;align-items:center;gap:6px">
-            ${escapeHtml(r.name)}
-            ${isActive ? '<span class="badge badge-accent">active</span>' : ""}
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1">
+            <div style="width:32px;height:32px;border-radius:var(--r-md);background:var(--c-accent-light);color:var(--c-accent);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;border:1px solid var(--c-accent-border)">
+              📁
+            </div>
+            <div style="min-width:0">
+              <div style="font-weight:700;font-size:14px;display:flex;align-items:center;gap:6px">
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.name)}</span>
+                ${isActive ? '<span class="badge badge-accent">active</span>' : ""}
+              </div>
+              <div style="font-size:11px;color:var(--c-text-muted);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%">
+                ${escapeHtml(r.localPath || r.url || "")}
+              </div>
+            </div>
           </div>
-          <span class="badge badge-success">connected</span>
+          <span class="badge badge-success" style="flex-shrink:0">connected</span>
         </div>
-        <div style="font-size:12px;color:var(--c-text-muted);margin-bottom:8px;word-break:break-all;font-family:var(--font-mono)">
-          ${escapeHtml(r.localPath || r.url || "")}
-        </div>
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--c-text-secondary);margin-bottom:14px">
-          <span>🌿 branch:</span>
-          <code>${escapeHtml(r.currentBranch || r.defaultBranch || r.branch || "main")}</code>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--c-text-secondary);margin-bottom:14px;padding-left:40px">
+          <span>🌿</span>
+          <code style="font-size:11px">${escapeHtml(r.currentBranch || r.defaultBranch || r.branch || "main")}</code>
         </div>
       </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;border-top:1px solid var(--c-border);padding-top:12px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;border-top:1px solid var(--c-border-subtle);padding-top:12px">
         ${isActive
             ? `<button class="btn btn-secondary btn-sm" disabled style="opacity:0.85">✓ Active</button>`
             : `<button class="btn btn-secondary btn-sm" data-action="selectActiveRepo" data-value="${escapeHtml(r.id)}">Set Active</button>`

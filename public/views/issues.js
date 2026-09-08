@@ -24,7 +24,19 @@ async function loadIssues() {
   }
 
   const repo = (window.state.repositories || []).find((r) => r.id === repoId) || window.state.activeRepository;
-  container.innerHTML = `<div class="text-muted" style="text-align:center;padding:24px"><div class="spinner"></div><div style="margin-top:8px">Loading issues...</div></div>`;
+  container.innerHTML = [1, 2, 3].map(() => `
+    <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--c-border-subtle)">
+      <div style="flex:1">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <div class="skeleton skeleton-text" style="width:40px;height:14px"></div>
+          <div class="skeleton skeleton-text" style="width:200px;height:14px"></div>
+          <div class="skeleton" style="width:48px;height:18px;border-radius:var(--r-full)"></div>
+        </div>
+        <div class="skeleton skeleton-text" style="width:140px;height:12px"></div>
+      </div>
+      <div class="skeleton" style="width:100px;height:28px;border-radius:var(--r-sm)"></div>
+    </div>
+  `).join("");
 
   try {
     let issues = [];
@@ -50,19 +62,20 @@ async function loadIssues() {
     container.innerHTML = issues
       .map(
         (issue) => `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--c-border-subtle)">
-          <div style="flex:1;padding-right:12px">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-              <span style="font-weight:700;color:var(--c-text-muted)">#${issue.number}</span>
-              <span style="font-weight:600;font-size:14px">${escapeHtml(issue.title)}</span>
-              <span class="badge ${issue.state === "open" ? "badge-success" : "badge-secondary"}">${escapeHtml(issue.state)}</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--c-border-subtle);gap:16px">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
+              <span style="font-weight:700;font-family:var(--font-mono);font-size:13px;color:var(--c-text-muted)">#${issue.number}</span>
+              <span style="font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(issue.title)}</span>
+              <span class="badge ${issue.state === "open" ? "badge-success" : "badge-secondary"}" style="text-transform:capitalize">${escapeHtml(issue.state)}</span>
             </div>
-            <div style="font-size:12px;color:var(--c-text-muted)">
-              Opened by ${escapeHtml(issue.user || "author")} ${issue.createdAt ? "on " + new Date(issue.createdAt).toLocaleDateString() : ""}
+            <div style="font-size:12px;color:var(--c-text-muted);display:flex;align-items:center;gap:6px">
+              <span>Opened by <strong>${escapeHtml(issue.user || "author")}</strong></span>
+              ${issue.createdAt ? `<span style="color:var(--c-border-strong)">·</span><span>${new Date(issue.createdAt).toLocaleDateString()}</span>` : ""}
             </div>
           </div>
-          <button class="btn btn-primary btn-sm" data-action="debugIssue" data-value="${escapeHtml(repoId)}" data-extra="${escapeHtml(issue.title)}">
-            ⚡ Debug Issue
+          <button class="btn btn-primary btn-sm" data-action="debugIssue" data-value="${escapeHtml(repoId)}" data-extra="${escapeHtml(issue.title)}" style="flex-shrink:0">
+            ⚡ Debug
           </button>
         </div>
       `,

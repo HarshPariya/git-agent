@@ -12,31 +12,50 @@ async function loadHistory() {
   const container = document.getElementById("history-list");
   if (!container) return;
 
+  // Show skeleton loading
+  container.innerHTML = [1, 2, 3].map(() => `
+    <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--c-border-subtle)">
+      <div style="flex:1;min-width:0">
+        <div class="skeleton skeleton-text" style="width:200px;height:14px;margin-bottom:6px"></div>
+        <div class="skeleton skeleton-text" style="width:160px;height:12px"></div>
+      </div>
+      <div class="skeleton" style="width:64px;height:18px;border-radius:var(--r-full)"></div>
+    </div>
+  `).join("");
+
   try {
     const data = await api.listDebugSessions();
     const sessions = Array.isArray(data) ? data : data.sessions || [];
 
     if (!sessions.length) {
       container.innerHTML = `
-        <div class="empty-state">
+        <div class="empty-state" style="padding:48px 24px">
           <div class="empty-icon">📜</div>
           <div class="empty-title">No history yet</div>
           <div class="empty-desc">Completed debug sessions will appear here.</div>
+          <button class="btn btn-primary btn-sm" data-action="navigate" data-value="debug" style="margin-top:12px">Start Debugging</button>
         </div>`;
       return;
     }
 
     container.innerHTML = sessions.map((s) => `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--c-border-subtle)">
-        <div style="flex:1;padding-right:12px">
-          <div style="font-weight:600;font-size:14px;margin-bottom:4px">
-            ${escapeHtml(s.query || s.description || "Debug Session")}
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--c-border-subtle);gap:16px">
+        <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+          <div style="width:36px;height:36px;border-radius:var(--r-md);background:var(--c-bg-tertiary);color:var(--c-text-secondary);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">
+            🔍
           </div>
-          <div style="font-size:12px;color:var(--c-text-muted)">
-            Mode: ${escapeHtml(s.mode || "debug")} · ${s.createdAt ? new Date(s.createdAt).toLocaleString() : "Recently"}
+          <div style="overflow:hidden;min-width:0">
+            <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              ${escapeHtml(s.query || s.description || "Debug Session")}
+            </div>
+            <div style="font-size:11px;color:var(--c-text-muted);display:flex;align-items:center;gap:4px">
+              <span>${escapeHtml(s.mode || "debug")}</span>
+              <span style="color:var(--c-border-strong)">·</span>
+              <span>${s.createdAt ? new Date(s.createdAt).toLocaleString() : "Recently"}</span>
+            </div>
           </div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
+        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
           <span class="${statusBadge(s.status)}">
             ${escapeHtml(s.status || "active")}
           </span>
@@ -174,7 +193,12 @@ async function loadGitDesktopHistory() {
   const container = document.getElementById("gd-history-list");
   if (!container) return;
 
-  container.innerHTML = `<div class="text-muted" style="text-align:center;padding:24px;font-size:12px"><div class="spinner"></div><div style="margin-top:6px">Loading commit history...</div></div>`;
+  container.innerHTML = [1, 2, 3].map(() => `
+    <div style="padding:10px 0;border-bottom:1px solid var(--c-border-subtle)">
+      <div class="skeleton skeleton-text" style="width:80%;height:13px;margin-bottom:6px"></div>
+      <div class="skeleton skeleton-text" style="width:50%;height:11px"></div>
+    </div>
+  `).join("");
 
   try {
     const logData = await api.getGitLog(repo.id, 25);

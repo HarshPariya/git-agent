@@ -24,7 +24,25 @@ async function loadPRs() {
   }
 
   const repo = (window.state.repositories || []).find((r) => r.id === repoId) || window.state.activeRepository;
-  container.innerHTML = `<div class="text-muted" style="text-align:center;padding:24px"><div class="spinner"></div><div style="margin-top:8px">Loading pull requests...</div></div>`;
+  container.innerHTML = [1, 2, 3].map(() => `
+    <div style="display:flex;align-items:center;gap:16px;padding:16px 20px;border-bottom:1px solid var(--c-border-subtle)">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+          <div class="skeleton skeleton-text" style="width:40px;height:14px"></div>
+          <div class="skeleton skeleton-text" style="width:240px;height:14px"></div>
+          <div class="skeleton" style="width:48px;height:18px;border-radius:var(--r-full)"></div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <div class="skeleton skeleton-text" style="width:180px;height:12px"></div>
+          <div class="skeleton skeleton-text" style="width:80px;height:12px"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <div class="skeleton" style="width:110px;height:28px;border-radius:var(--r-sm)"></div>
+        <div class="skeleton" style="width:90px;height:28px;border-radius:var(--r-sm)"></div>
+      </div>
+    </div>
+  `).join("");
 
   try {
     let prs = [];

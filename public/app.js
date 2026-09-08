@@ -42,6 +42,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   initTabs();
   initForms();
   initUserMenu();
+  initMobileMenu();
+  initScrollToTop();
   if (typeof initDragAndDrop === "function") initDragAndDrop();
   if (typeof setupFolderDropZone === "function") setupFolderDropZone();
 
@@ -259,6 +261,65 @@ function initForms() {
 
 function initUserMenu() {
   document.getElementById("user-menu-btn")?.addEventListener("click", () => navigate("settings"));
+}
+
+// ============================================================
+// MOBILE MENU TOGGLE
+// ============================================================
+
+function initMobileMenu() {
+  const toggle = document.getElementById("mobile-nav-toggle");
+  const nav = document.querySelector(".header-nav");
+  if (!toggle || !nav) return;
+
+  toggle.addEventListener("click", () => {
+    nav.classList.toggle("mobile-open");
+    toggle.textContent = nav.classList.contains("mobile-open") ? "✕" : "☰";
+  });
+
+  // Close mobile menu when a nav item is clicked
+  nav.querySelectorAll(".header-nav-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      nav.classList.remove("mobile-open");
+      toggle.textContent = "☰";
+    });
+  });
+
+  // Close mobile menu when clicking outside
+  document.addEventListener("click", (e) => {
+    if (!nav.contains(e.target) && !toggle.contains(e.target)) {
+      nav.classList.remove("mobile-open");
+      toggle.textContent = "☰";
+    }
+  });
+}
+
+// ============================================================
+// SCROLL TO TOP
+// ============================================================
+
+function initScrollToTop() {
+  const btn = document.getElementById("scroll-top-btn");
+  if (!btn) return;
+
+  const mainLayout = document.querySelector(".main-layout");
+  const scrollTarget = mainLayout || window;
+
+  const toggleVisibility = () => {
+    const scrollTop = mainLayout ? mainLayout.scrollTop : window.scrollY;
+    btn.classList.toggle("visible", scrollTop > 300);
+  };
+
+  scrollTarget.addEventListener("scroll", toggleVisibility, { passive: true });
+  toggleVisibility();
+
+  btn.addEventListener("click", () => {
+    if (mainLayout) {
+      mainLayout.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  });
 }
 
 // ============================================================
