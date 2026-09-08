@@ -32,7 +32,6 @@ window.state = window.state || {
   currentFixPlan: null,
   currentCritic: null,
 };
-const state = window.state;
 
 // ============================================================
 // INITIALIZATION & AUTH
@@ -49,8 +48,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Check authentication — try JWT token first, then dev-mode headers
   if (api.token) {
     try {
-      const meData = await api.getMe();
-      showApp(meData.user);
+      const { user } = await api.getMe();
+      showApp(user);
     } catch {
       api.clearToken();
       await tryDevModeAutoLogin();
@@ -62,40 +61,36 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 async function tryDevModeAutoLogin() {
   try {
-    const meData = await api.getMe();
-    showApp(meData.user || { email: "dev@debug.local", name: "Developer" });
+    const { user } = await api.getMe();
+    showApp(user || { email: "dev@debug.local", name: "Developer" });
   } catch {
     showAuth();
   }
 }
 
 function showAuth() {
-  const authEl = document.getElementById("auth-page");
-  const appEl = document.getElementById("app");
-  if (authEl) authEl.style.display = "flex";
-  if (appEl) appEl.style.display = "none";
+  document.getElementById("auth-page").style.display = "flex";
+  document.getElementById("app").style.display = "none";
 }
 
 function showApp(user) {
-  const authEl = document.getElementById("auth-page");
-  const appEl = document.getElementById("app");
-  if (authEl) authEl.style.display = "none";
-  if (appEl) appEl.style.display = "block";
+  document.getElementById("auth-page").style.display = "none";
+  document.getElementById("app").style.display = "block";
 
   const emailEl = document.getElementById("settings-email");
-  if (emailEl) emailEl.textContent = (user && (user.email || user.name)) || "Developer (Dev Mode)";
+  if (emailEl) emailEl.textContent = user?.email || user?.name || "Developer (Dev Mode)";
 
   loadAll();
 }
 
 async function loadAll() {
   await Promise.allSettled([
-    typeof checkHealth === "function" ? checkHealth() : Promise.resolve(),
-    typeof loadRepositories === "function" ? loadRepositories() : Promise.resolve(),
-    typeof loadGitHubStatus === "function" ? loadGitHubStatus() : Promise.resolve(),
-    typeof loadDashboardStats === "function" ? loadDashboardStats() : Promise.resolve(),
-    typeof loadHistory === "function" ? loadHistory() : Promise.resolve(),
-  ]);
+    typeof checkHealth === "function" && checkHealth(),
+    typeof loadRepositories === "function" && loadRepositories(),
+    typeof loadGitHubStatus === "function" && loadGitHubStatus(),
+    typeof loadDashboardStats === "function" && loadDashboardStats(),
+    typeof loadHistory === "function" && loadHistory(),
+  ].filter(Boolean));
 }
 
 function logout() {
@@ -117,51 +112,46 @@ function initNavigation() {
   });
 }
 
+// Page-specific fresh loaders — keyed by page ID
+const PAGE_LOADERS = {
+  dashboard: () => typeof loadDashboardStats === "function" && loadDashboardStats(),
+  repositories: () => typeof loadRepositories === "function" && loadRepositories(),
+  "git-desktop": () => typeof loadGitDesktop === "function" && loadGitDesktop(),
+  debug: () => typeof populateRepoDropdowns === "function" && populateRepoDropdowns(),
+  issues: () => {
+    if (typeof populateRepoDropdowns === "function") populateRepoDropdowns();
+    if (typeof loadIssues === "function") loadIssues();
+  },
+  prs: () => {
+    if (typeof populateRepoDropdowns === "function") populateRepoDropdowns();
+    if (typeof loadPRs === "function") loadPRs();
+  },
+  conflicts: () => {
+    if (typeof populateRepoDropdowns === "function") populateRepoDropdowns();
+    if (typeof loadConflictsPage === "function") loadConflictsPage();
+  },
+  history: () => typeof loadHistory === "function" && loadHistory(),
+  settings: () => {
+    if (typeof loadGitHubStatus === "function") loadGitHubStatus();
+    if (typeof loadApiStatus === "function") loadApiStatus();
+  },
+};
+
 function navigate(pageId) {
-  window.state.currentPage = pageId;
+  window.setState("currentPage", pageId);
 
   // Update nav highlighting
   document.querySelectorAll(".header-nav-item").forEach((item) => {
-    if (item.getAttribute("data-page") === pageId) {
-      item.classList.add("active");
-    } else {
-      item.classList.remove("active");
-    }
+    item.classList.toggle("active", item.getAttribute("data-page") === pageId);
   });
 
   // Switch pages
   document.querySelectorAll(".page").forEach((page) => {
-    if (page.id === `page-${pageId}`) {
-      page.classList.add("active");
-    } else {
-      page.classList.remove("active");
-    }
+    page.classList.toggle("active", page.id === `page-${pageId}`);
   });
 
   // Page-specific fresh loads
-  if (pageId === "dashboard") {
-    if (typeof loadDashboardStats === "function") loadDashboardStats();
-  } else if (pageId === "repositories") {
-    if (typeof loadRepositories === "function") loadRepositories();
-  } else if (pageId === "git-desktop") {
-    if (typeof loadGitDesktop === "function") loadGitDesktop();
-  } else if (pageId === "debug") {
-    if (typeof populateRepoDropdowns === "function") populateRepoDropdowns();
-  } else if (pageId === "issues") {
-    if (typeof populateRepoDropdowns === "function") populateRepoDropdowns();
-    if (typeof loadIssues === "function") loadIssues();
-  } else if (pageId === "prs") {
-    if (typeof populateRepoDropdowns === "function") populateRepoDropdowns();
-    if (typeof loadPRs === "function") loadPRs();
-  } else if (pageId === "conflicts") {
-    if (typeof populateRepoDropdowns === "function") populateRepoDropdowns();
-    if (typeof loadConflictsPage === "function") loadConflictsPage();
-  } else if (pageId === "history") {
-    if (typeof loadHistory === "function") loadHistory();
-  } else if (pageId === "settings") {
-    if (typeof loadGitHubStatus === "function") loadGitHubStatus();
-    if (typeof loadApiStatus === "function") loadApiStatus();
-  }
+  PAGE_LOADERS[pageId]?.();
 }
 
 // ============================================================
@@ -170,29 +160,17 @@ function navigate(pageId) {
 
 function initTabs() {
   document.querySelectorAll(".tab-item").forEach((tab) => {
-    tab.addEventListener("click", () => {
-      const tabName = tab.getAttribute("data-tab");
-      switchTab(tabName);
-    });
+    tab.addEventListener("click", () => switchTab(tab.getAttribute("data-tab")));
   });
 }
 
 function switchTab(tabName) {
-  window.state.activeTab = tabName;
+  window.setState("activeTab", tabName);
   document.querySelectorAll(".tab-item").forEach((tab) => {
-    if (tab.getAttribute("data-tab") === tabName) {
-      tab.classList.add("active");
-    } else {
-      tab.classList.remove("active");
-    }
+    tab.classList.toggle("active", tab.getAttribute("data-tab") === tabName);
   });
-
   document.querySelectorAll(".tab-panel").forEach((panel) => {
-    if (panel.getAttribute("data-tab") === tabName) {
-      panel.classList.add("active");
-    } else {
-      panel.classList.remove("active");
-    }
+    panel.classList.toggle("active", panel.getAttribute("data-tab") === tabName);
   });
 }
 
@@ -208,26 +186,22 @@ function initForms() {
 
   loginForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (loginError) loginError.style.display = "none";
-    if (loginBtn) { loginBtn.disabled = true; loginBtn.textContent = "Signing In..."; }
-
-    const email = document.getElementById("login-email")?.value.trim();
-    const password = document.getElementById("login-password")?.value;
+    loginError.style.display = "none";
+    loginBtn.disabled = true;
+    loginBtn.textContent = "Signing In...";
 
     try {
-      const data = await api.login(email, password);
+      const email = document.getElementById("login-email")?.value.trim();
+      const password = document.getElementById("login-password")?.value;
+      const { user } = await api.login(email, password);
       showToast("Welcome back!", "success");
-      showApp(data.user);
+      showApp(user);
     } catch (err) {
-      if (loginError) {
-        loginError.textContent = err.message || "Failed to sign in";
-        loginError.style.display = "block";
-      }
+      loginError.textContent = err.message || "Failed to sign in";
+      loginError.style.display = "block";
     } finally {
-      if (loginBtn) {
-        loginBtn.disabled = false;
-        loginBtn.textContent = "Sign In";
-      }
+      loginBtn.disabled = false;
+      loginBtn.textContent = "Sign In";
     }
   });
 
@@ -238,65 +212,53 @@ function initForms() {
 
   regForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (regError) regError.style.display = "none";
-    if (regBtn) { regBtn.disabled = true; regBtn.textContent = "Creating Account..."; }
-
-    const email = document.getElementById("reg-email")?.value.trim();
-    const password = document.getElementById("reg-password")?.value;
+    regError.style.display = "none";
+    regBtn.disabled = true;
+    regBtn.textContent = "Creating Account...";
 
     try {
-      const data = await api.register(email, password);
+      const email = document.getElementById("reg-email")?.value.trim();
+      const password = document.getElementById("reg-password")?.value;
+      const { user } = await api.register(email, password);
       showToast("Account created successfully!", "success");
-      showApp(data.user);
+      showApp(user);
     } catch (err) {
-      if (regError) {
-        regError.textContent = err.message || "Failed to register";
-        regError.style.display = "block";
-      }
+      regError.textContent = err.message || "Failed to register";
+      regError.style.display = "block";
     } finally {
-      if (regBtn) {
-        regBtn.disabled = false;
-        regBtn.textContent = "Create Account";
-      }
+      regBtn.disabled = false;
+      regBtn.textContent = "Create Account";
     }
   });
 
   // Toggle Forms
   document.getElementById("show-register-btn")?.addEventListener("click", () => {
-    if (loginForm) loginForm.style.display = "none";
-    if (regForm) regForm.style.display = "flex";
+    loginForm.style.display = "none";
+    regForm.style.display = "flex";
   });
 
   document.getElementById("show-login-btn")?.addEventListener("click", () => {
-    if (regForm) regForm.style.display = "none";
-    if (loginForm) loginForm.style.display = "flex";
+    regForm.style.display = "none";
+    loginForm.style.display = "flex";
   });
 
   // Debug Form
-  const debugForm = document.getElementById("debug-form");
-  debugForm?.addEventListener("submit", async (e) => {
+  document.getElementById("debug-form")?.addEventListener("submit", (e) => {
     e.preventDefault();
-    if (typeof startDebugFromForm === "function") {
-      startDebugFromForm();
-    }
+    startDebugFromForm?.();
   });
 
   // Folder path input Enter key
-  const folderPathInput = document.getElementById("folder-path-input");
-  folderPathInput?.addEventListener("keydown", (e) => {
+  document.getElementById("folder-path-input")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      if (typeof browseToEnteredPath === "function") {
-        browseToEnteredPath();
-      }
+      browseToEnteredPath?.();
     }
   });
 }
 
 function initUserMenu() {
-  document.getElementById("user-menu-btn")?.addEventListener("click", () => {
-    navigate("settings");
-  });
+  document.getElementById("user-menu-btn")?.addEventListener("click", () => navigate("settings"));
 }
 
 // ============================================================
@@ -304,19 +266,117 @@ function initUserMenu() {
 // ============================================================
 
 function openModal(id) {
-  const el = document.getElementById(id);
-  if (el) el.style.display = "flex";
+  document.getElementById(id).style.display = "flex";
 }
 
 function closeModal(id) {
-  const el = document.getElementById(id);
-  if (el) el.style.display = "none";
+  document.getElementById(id).style.display = "none";
 }
 
+// Close modals when clicking overlay background
 window.addEventListener("click", (e) => {
   if (e.target.classList.contains("modal-overlay")) {
     e.target.style.display = "none";
   }
+});
+
+// ── Centralized data-action event delegation ─────────────────────────────────
+document.addEventListener("click", (e) => {
+  const target = e.target.closest("[data-action]");
+  if (!target) return;
+
+  const { action, value } = target.dataset;
+
+  const HANDLERS = {
+    navigate:                    () => navigate(value),
+    closeModal:                  () => closeModal(value),
+    logout:                      () => logout(),
+    openFolderBrowser:           () => typeof openFolderBrowser === "function" && openFolderBrowser(),
+    showGitHubModalFlow:         () => typeof showGitHubModalFlow === "function" && showGitHubModalFlow(),
+    showGitHubConnectModal:      () => typeof showGitHubConnectModal === "function" && showGitHubConnectModal(),
+    filterChangedFiles:          () => typeof filterChangedFiles === "function" && filterChangedFiles(value),
+    switchGitDesktopTab:         () => typeof switchGitDesktopTab === "function" && switchGitDesktopTab(value),
+    switchGitDesktopLeftTab:     () => typeof switchGitDesktopLeftTab === "function" && switchGitDesktopLeftTab(value),
+    openCurrentFileInOs:         () => typeof openCurrentFileInOs === "function" && openCurrentFileInOs(value),
+    loadIssues:                  () => typeof loadIssues === "function" && loadIssues(),
+    filterGitHubRepos:           () => typeof filterGitHubRepos === "function" && filterGitHubRepos(),
+    generateAutoCommitMessage:   () => typeof generateAutoCommitMessage === "function" && generateAutoCommitMessage(value === "true"),
+    commitFromGitDesktop:        () => typeof commitFromGitDesktop === "function" && commitFromGitDesktop(),
+    triggerAIAnalyzeChanges:     () => typeof triggerAIAnalyzeChanges === "function" && triggerAIAnalyzeChanges(),
+    triggerAICommitAll:          () => typeof triggerAICommitAll === "function" && triggerAICommitAll(),
+    openPushPreviewModal:        () => typeof openPushPreviewModal === "function" && openPushPreviewModal(),
+    openBranchSwitcherModal:     () => typeof openBranchSwitcherModal === "function" && openBranchSwitcherModal(),
+    triggerGitFetch:             () => typeof triggerGitFetch === "function" && triggerGitFetch(),
+    triggerGitPull:              () => typeof triggerGitPull === "function" && triggerGitPull(),
+    triggerGitSync:              () => typeof triggerGitSync === "function" && triggerGitSync(),
+    triggerAIShip:               () => typeof triggerAIShip === "function" && triggerAIShip(),
+    setDebugExample:             () => typeof setDebugExample === "function" && setDebugExample(value),
+    connectCurrentBrowsedFolder: () => typeof connectCurrentBrowsedFolder === "function" && connectCurrentBrowsedFolder(),
+    browseToEnteredPath:         () => typeof browseToEnteredPath === "function" && browseToEnteredPath(),
+    connectEnteredPath:          () => typeof connectEnteredPath === "function" && connectEnteredPath(),
+    connectGitHub:               () => typeof connectGitHub === "function" && connectGitHub(),
+    connectGitHubFromModal:      () => typeof connectGitHubFromModal === "function" && connectGitHubFromModal(),
+    disconnectGitHub:            () => typeof disconnectGitHub === "function" && disconnectGitHub(),
+    loadApiStatus:               () => typeof loadApiStatus === "function" && loadApiStatus(),
+    startDebugFromForm:          () => typeof startDebugFromForm === "function" && startDebugFromForm(),
+    exitDebugSession:            () => typeof exitDebugSession === "function" && exitDebugSession(),
+    abortCurrentSession:         () => typeof abortCurrentSession === "function" && abortCurrentSession(),
+    applyFix:                    () => typeof applyFix === "function" && applyFix(),
+    revertFix:                   () => typeof revertFix === "function" && revertFix(),
+    requestDetails:              () => typeof requestDetails === "function" && requestDetails(),
+    rejectFix:                   () => typeof rejectFix === "function" && rejectFix(),
+    triggerNativeFolderPicker:   () => typeof triggerNativeFolderPicker === "function" && triggerNativeFolderPicker(),
+    onPushTargetBranchChanged:   () => typeof onPushTargetBranchChanged === "function" && onPushTargetBranchChanged(),
+    executePushFromModal:        () => typeof executePushFromModal === "function" && executePushFromModal(),
+    createAndCheckoutBranch:     () => typeof createAndCheckoutBranch === "function" && createAndCheckoutBranch(),
+    filterBranchList:            () => typeof filterBranchList === "function" && filterBranchList(),
+    indexRepo:                   () => typeof indexRepo === "function" && indexRepo(value),
+    checkHealth:                 () => typeof checkHealth === "function" && checkHealth(),
+    openActiveRepoPicker:        () => typeof openActiveRepoPicker === "function" && openActiveRepoPicker(),
+    openCreatePRModal:           () => typeof openCreatePRModal === "function" && openCreatePRModal(value),
+    resolveConflicts:            () => typeof resolveConflicts === "function" && resolveConflicts(value),
+    triggerResolveAllConflicts:  () => typeof triggerResolveAllConflicts === "function" && triggerResolveAllConflicts(),
+    loadConflictsPage:           () => typeof loadConflictsPage === "function" && loadConflictsPage(),
+    loadPRs:                     () => typeof loadPRs === "function" && loadPRs(),
+    submitCreatePR:              () => typeof submitCreatePR === "function" && submitCreatePR(),
+    saveAgentConfig:             () => typeof saveAgentConfig === "function" && saveAgentConfig(),
+    commitAndPushFix:            () => typeof commitAndPushFix === "function" && commitAndPushFix(),
+    quickDebugRepo:              () => typeof quickDebugRepo === "function" && quickDebugRepo(value),
+  };
+
+  // Delegate to view-specific handlers first, fall back to centralized handlers
+  HANDLERS[action]?.();
+});
+
+// ── Centralized data-action change delegation (select elements) ──────────────
+document.addEventListener("change", (e) => {
+  const target = e.target.closest("[data-action]");
+  if (!target) return;
+
+  const { action } = target.dataset;
+
+  const CHANGE_HANDLERS = {
+    loadIssues:         () => typeof loadIssues === "function" && loadIssues(),
+    loadPRs:            () => typeof loadPRs === "function" && loadPRs(),
+    loadConflictsPage:  () => typeof loadConflictsPage === "function" && loadConflictsPage(),
+  };
+
+  CHANGE_HANDLERS[action]?.();
+});
+
+// ── Centralized data-action input delegation (search inputs) ─────────────────
+document.addEventListener("input", (e) => {
+  const target = e.target.closest("[data-action]");
+  if (!target) return;
+
+  const { action } = target.dataset;
+
+  const INPUT_HANDLERS = {
+    filterBranchList:  () => typeof filterBranchList === "function" && filterBranchList(),
+    filterGitHubRepos: () => typeof filterGitHubRepos === "function" && filterGitHubRepos(),
+  };
+
+  INPUT_HANDLERS[action]?.();
 });
 
 function showToast(message, type = "info") {
@@ -326,8 +386,8 @@ function showToast(message, type = "info") {
   const toast = document.createElement("div");
   toast.className = `toast toast-${type}`;
 
-  const icon = type === "success" ? "✓" : type === "error" ? "⚠️" : "ℹ️";
-  toast.innerHTML = `<span>${icon}</span><span>${escapeHtml(message)}</span>`;
+  const icons = { success: "✓", error: "⚠️", info: "ℹ️" };
+  toast.textContent = `${icons[type] ?? icons.info} ${message}`;
 
   container.appendChild(toast);
 
@@ -338,12 +398,16 @@ function showToast(message, type = "info") {
   }, 3500);
 }
 
+// ============================================================
+// UTILITIES
+// ============================================================
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function escapeHtml(str) {
-  if (str === null || str === undefined) return "";
+  if (str == null) return "";
   return String(str)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -356,13 +420,17 @@ function formatRelativeTime(date) {
   if (!date) return "";
   const d = typeof date === "string" ? new Date(date) : date;
   const diffSec = Math.floor((Date.now() - d.getTime()) / 1000);
+
   if (diffSec < 60) return "just now";
   if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
   if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
   return `${Math.floor(diffSec / 86400)}d ago`;
 }
 
-// Global window registrations
+// ============================================================
+// GLOBAL WINDOW EXPORTS
+// ============================================================
+
 window.navigate = navigate;
 window.switchTab = switchTab;
 window.showToast = showToast;

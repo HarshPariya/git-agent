@@ -40,42 +40,83 @@ export interface PRSummary {
 }
 
 const mapPR = (pr: GitHubPR): PRSummary => ({
-  id: pr.id, number: pr.number, title: pr.title, body: pr.body,
+  id: pr.id,
+  number: pr.number,
+  title: pr.title,
+  body: pr.body,
   state: pr.merged ? "merged" : pr.state,
-  headBranch: pr.head.ref, headSha: pr.head.sha, baseBranch: pr.base.ref,
-  author: pr.user.login, authorAvatar: pr.user.avatar_url,
-  createdAt: pr.created_at, updatedAt: pr.updated_at,
-  commits: pr.commits, additions: pr.additions, deletions: pr.deletions,
-  changedFiles: pr.changed_files, htmlUrl: pr.html_url,
+  headBranch: pr.head.ref,
+  headSha: pr.head.sha,
+  baseBranch: pr.base.ref,
+  author: pr.user.login,
+  authorAvatar: pr.user.avatar_url,
+  createdAt: pr.created_at,
+  updatedAt: pr.updated_at,
+  commits: pr.commits,
+  additions: pr.additions,
+  deletions: pr.deletions,
+  changedFiles: pr.changed_files,
+  htmlUrl: pr.html_url,
 });
 
-export async function listGitHubPRs(
-  userId: string, owner: string, repo: string,
+export const listGitHubPRs = async (
+  userId: string,
+  owner: string,
+  repo: string,
   options?: { state?: "open" | "closed" | "all"; page?: number },
-): Promise<PRSummary[]> {
-  const state = options?.state ?? "open";
-  const page = options?.page ?? 1;
-  const prs = await makeGitHubRequest<GitHubPR[]>(
-    userId, `/repos/${owner}/${repo}/pulls?state=${state}&per_page=30&page=${page}`,
-  );
-  return prs.map(mapPR);
-}
+): Promise<PRSummary[]> => {
+  const { state = "open", page = 1 } = options ?? {};
 
-export async function getGitHubPR(userId: string, owner: string, repo: string, prNumber: number): Promise<PRSummary> {
-  return mapPR(await makeGitHubRequest<GitHubPR>(userId, `/repos/${owner}/${repo}/pulls/${prNumber}`));
-}
+  try {
+    const prs = await makeGitHubRequest<GitHubPR[]>(
+      userId,
+      `/repos/${owner}/${repo}/pulls?state=${state}&per_page=30&page=${page}`,
+    );
+    return prs.map(mapPR);
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error("Failed to list GitHub pull requests");
+  }
+};
 
-export async function createGitHubPR(
-  userId: string, owner: string, repo: string,
-  data: { title: string; body: string; head: string; base: string; draft?: boolean | undefined },
-): Promise<PRSummary> {
-  return mapPR(await makeGitHubRequest<GitHubPR>(userId, `/repos/${owner}/${repo}/pulls`, {
-    method: "POST", body: JSON.stringify(data),
-  }));
-}
+export const getGitHubPR = async (userId: string, owner: string, repo: string, prNumber: number): Promise<PRSummary> => {
+  try {
+    const pr = await makeGitHubRequest<GitHubPR>(userId, `/repos/${owner}/${repo}/pulls/${prNumber}`);
+    return mapPR(pr);
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error("Failed to get GitHub pull request");
+  }
+};
 
-export async function getPRFiles(
-  userId: string, owner: string, repo: string, prNumber: number,
-): Promise<Array<{ filename: string; status: string; additions: number; deletions: number; patch?: string }>> {
-  return makeGitHubRequest(userId, `/repos/${owner}/${repo}/pulls/${prNumber}/files`);
-}
+export const createGitHubPR = async (
+  userId: string,
+  owner: string,
+  repo: string,
+  data: { title: string; body: string; head: string; base: string; draft?: boolean },
+): Promise<PRSummary> => {
+  try {
+    const pr = await makeGitHubRequest<GitHubPR>(userId, `/repos/${owner}/${repo}/pulls`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return mapPR(pr);
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error("Failed to create GitHub pull request");
+  }
+};
+
+export const getPRFiles = async (
+  userId: string,
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<Array<{ filename: string; status: string; additions: number; deletions: number; patch?: string }>> => {
+  try {
+    return await makeGitHubRequest(userId, `/repos/${owner}/${repo}/pulls/${prNumber}/files`);
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error("Failed to get pull request files");
+  }
+};

@@ -3,6 +3,11 @@
  * Debug session history, session reopening, and Git Desktop commit logs
  */
 
+const statusBadge = (status) => {
+  const map = { completed: 'badge-success', resolved: 'badge-success', failed: 'badge-danger' };
+  return `badge ${map[status] || 'badge-accent'}`;
+};
+
 async function loadHistory() {
   const container = document.getElementById("history-list");
   if (!container) return;
@@ -11,41 +16,36 @@ async function loadHistory() {
     const data = await api.listDebugSessions();
     const sessions = Array.isArray(data) ? data : data.sessions || [];
 
-    if (sessions.length === 0) {
+    if (!sessions.length) {
       container.innerHTML = `
         <div class="empty-state">
           <div class="empty-icon">📜</div>
           <div class="empty-title">No history yet</div>
           <div class="empty-desc">Completed debug sessions will appear here.</div>
-        </div>
-      `;
+        </div>`;
       return;
     }
 
-    container.innerHTML = sessions
-      .map(
-        (s) => `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--c-border-subtle)">
-          <div style="flex:1;padding-right:12px">
-            <div style="font-weight:600;font-size:14px;margin-bottom:4px">
-              ${escapeHtml(s.query || s.description || "Debug Session")}
-            </div>
-            <div style="font-size:12px;color:var(--c-text-muted)">
-              Mode: ${escapeHtml(s.mode || "debug")} · ${s.createdAt ? new Date(s.createdAt).toLocaleString() : "Recently"}
-            </div>
+    container.innerHTML = sessions.map((s) => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--c-border-subtle)">
+        <div style="flex:1;padding-right:12px">
+          <div style="font-weight:600;font-size:14px;margin-bottom:4px">
+            ${escapeHtml(s.query || s.description || "Debug Session")}
           </div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <span class="badge ${s.status === "completed" || s.status === "resolved" ? "badge-success" : s.status === "failed" ? "badge-danger" : "badge-accent"}">
-              ${escapeHtml(s.status || "active")}
-            </span>
-            <button class="btn btn-secondary btn-sm" data-action="reopenDebugSession" data-value="${escapeHtml(s.id)}">
-              🔍 Reopen
-            </button>
+          <div style="font-size:12px;color:var(--c-text-muted)">
+            Mode: ${escapeHtml(s.mode || "debug")} · ${s.createdAt ? new Date(s.createdAt).toLocaleString() : "Recently"}
           </div>
         </div>
-      `,
-      )
-      .join("");
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="${statusBadge(s.status)}">
+            ${escapeHtml(s.status || "active")}
+          </span>
+          <button class="btn btn-secondary btn-sm" data-action="reopenDebugSession" data-value="${escapeHtml(s.id)}">
+            🔍 Reopen
+          </button>
+        </div>
+      </div>
+    `).join("");
   } catch (err) {
     container.innerHTML = `<div class="text-muted" style="text-align:center;padding:20px">Failed to load history: ${escapeHtml(err.message)}</div>`;
   }
@@ -60,7 +60,6 @@ async function reopenDebugSession(sessionId) {
       return;
     }
 
-    // Switch to debug tab
     navigate("debug");
 
     const formView = document.getElementById("debug-form-view");
@@ -68,6 +67,7 @@ async function reopenDebugSession(sessionId) {
     if (formView) formView.style.display = "none";
     if (sessionView) sessionView.style.display = "block";
 
+    // Update labels via textContent (no HTML parsing needed)
     const repoLabel = document.getElementById("session-repo-label");
     const typeLabel = document.getElementById("session-type-label");
     const statePill = document.getElementById("session-agent-state");
@@ -85,22 +85,25 @@ async function reopenDebugSession(sessionId) {
       badge.textContent = session.status === "completed" ? "Solved" : session.status;
     }
 
-    window.state.currentSession = session;
-    window.state.currentFixPlan = session.fixPlan;
-    window.state.currentCritic = session.critic;
+    // Update global state via setState
+    window.setState("currentSession", session);
+    window.setState("currentFixPlan", session.fixPlan);
+    window.setState("currentCritic", session.critic);
 
+    // Render hypotheses
     const hypothesesContainer = document.getElementById("session-hypotheses");
     if (hypothesesContainer) {
-      const hyps = (session.findings && session.findings.length > 0)
-        ? session.findings.map((f, i) => ({
-          title: f.title || `Finding #${i + 1}`,
-          description: f.description || "",
-          confidence: f.confidence || 0.88,
-          status: f.type === "bug" ? "confirmed" : "candidate",
-        }))
+      const findings = session.findings || [];
+      const hyps = findings.length
+        ? findings.map((f, i) => ({
+            title: f.title || `Finding #${i + 1}`,
+            description: f.description || "",
+            confidence: f.confidence || 0.88,
+            status: f.type === "bug" ? "confirmed" : "candidate",
+          }))
         : [
-          { title: "Defect boundary in target code path", description: "Identified anomalous state in caller flow", confidence: 0.94, status: "confirmed" },
-        ];
+            { title: "Defect boundary in target code path", description: "Identified anomalous state in caller flow", confidence: 0.94, status: "confirmed" },
+          ];
 
       hypothesesContainer.innerHTML = hyps.map((h) => `
         <div style="padding:8px 10px;background:#f8fafc;border:1px solid var(--c-border);border-radius:var(--r-sm)">
@@ -113,6 +116,7 @@ async function reopenDebugSession(sessionId) {
       `).join("");
     }
 
+    // Render agent phases
     const phases = [
       { id: "isolate", name: "1. Isolate Failing Path", desc: "Target files and working tree inspected ✓" },
       { id: "reproduce", name: "2. Reproduce Behavior", desc: "Multi-source context aggregated ✓" },
@@ -133,13 +137,14 @@ async function reopenDebugSession(sessionId) {
       `).join("");
     }
 
-    if (typeof window.renderEvidence === "function") window.renderEvidence(session.findings || []);
-    if (typeof window.renderDiff === "function") window.renderDiff(session.fixPlan, session.findings || []);
-    if (typeof window.renderCritic === "function") window.renderCritic(session.critic);
-    if (typeof window.renderTests === "function") window.renderTests(session);
-    if (typeof window.renderRootCauseCard === "function") {
-      window.renderRootCauseCard({ session, fixPlan: session.fixPlan, critic: session.critic, findings: session.findings });
-    }
+    // Dispatch to optional renderers via optional chaining
+    [
+      [window.renderEvidence, [findings]],
+      [window.renderDiff, [session.fixPlan, findings]],
+      [window.renderCritic, [session.critic]],
+      [window.renderTests, [session]],
+      [window.renderRootCauseCard, [{ session, fixPlan: session.fixPlan, critic: session.critic, findings }]],
+    ].forEach(([fn, args]) => fn?.(...args));
 
     const diffApplyBtn = document.getElementById("diff-apply-btn");
     if (diffApplyBtn) {
@@ -148,13 +153,13 @@ async function reopenDebugSession(sessionId) {
     }
 
     const logsView = document.getElementById("logs-view");
-    if (logsView && session.steps && session.steps.length > 0) {
-      logsView.textContent = session.steps.map((s) => `[${s.completedAt || s.startedAt || "STEP"}] ${s.type.toUpperCase()}: ${s.description} -> ${s.status}`).join("\n");
+    if (logsView && session.steps?.length) {
+      logsView.textContent = session.steps.map((s) =>
+        `[${s.completedAt || s.startedAt || "STEP"}] ${s.type.toUpperCase()}: ${s.description} -> ${s.status}`
+      ).join("\n");
     }
 
-    if (session.repositoryId && typeof window.loadGitTab === "function") {
-      window.loadGitTab(session.repositoryId);
-    }
+    if (session.repositoryId) window.loadGitTab?.(session.repositoryId);
     switchTab("diff");
     showToast(`Loaded session: ${escapeHtml((session.query || session.id).slice(0, 30))}`, "success");
   } catch (err) {
@@ -175,7 +180,7 @@ async function loadGitDesktopHistory() {
     const logData = await api.getGitLog(repo.id, 25);
     const commits = logData.commits || logData.entries || [];
 
-    if (commits.length === 0) {
+    if (!commits.length) {
       container.innerHTML = `<div class="empty-state" style="padding:24px"><div class="empty-title">No commits found</div></div>`;
       return;
     }
@@ -204,13 +209,13 @@ async function loadGitDesktopHistory() {
   }
 }
 
-// Event delegation for data-action attributes
+// Event delegation via data-action — object lookup replaces if/else
+const historyActions = { reopenDebugSession };
 document.addEventListener('click', (e) => {
   const target = e.target.closest('[data-action]');
   if (!target) return;
-  const action = target.dataset.action;
-  const value = target.dataset.value;
-  if (action === 'reopenDebugSession') reopenDebugSession(value);
+  const { action, value } = target.dataset;
+  historyActions[action]?.(value);
 });
 
 // Window exports

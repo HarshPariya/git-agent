@@ -82,13 +82,15 @@ function debugIssue(repoId, issueTitle) {
 }
 
 // Event delegation for data-action attributes
+const ISSUE_ACTIONS = {
+  debugIssue: (value, extra) => debugIssue(value, extra),
+};
+
 document.addEventListener('click', (e) => {
   const target = e.target.closest('[data-action]');
   if (!target) return;
-  const action = target.dataset.action;
-  const value = target.dataset.value;
-  const extra = target.dataset.extra;
-  if (action === 'debugIssue') debugIssue(value, extra);
+  const { action, value, extra } = target.dataset;
+  ISSUE_ACTIONS[action]?.(value, extra);
 });
 
 // Window exports

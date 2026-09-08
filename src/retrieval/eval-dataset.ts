@@ -1,6 +1,11 @@
-export interface RetrievalEvalCase { id: string; query: string; expectedNames: string[]; description?: string; }
+export interface RetrievalEvalCase {
+  readonly id: string;
+  readonly query: string;
+  readonly expectedNames: string[];
+  readonly description?: string;
+}
 
-export const retrievalEvalDataset: RetrievalEvalCase[] = [
+export const retrievalEvalDataset: readonly RetrievalEvalCase[] = [
   { id: "normalize-id", query: "Where is normalizeId used?", expectedNames: ["normalizeId"] },
   { id: "graph-traversal", query: "How does graph traversal work?", expectedNames: ["traverseGraph", "getNeighbors"] },
   { id: "graph-construction", query: "Where is the code graph built?", expectedNames: ["buildGraph"] },

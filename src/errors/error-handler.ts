@@ -8,6 +8,9 @@ const getLogContext = (request: Request, metadata: Record<string, unknown>) => (
   metadata,
 });
 
+const extractErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : "Unknown error";
+
 export const errorHandler = (
   error: unknown,
   request: Request,
@@ -18,9 +21,10 @@ export const errorHandler = (
   const status = isAppError ? error.statusCode : 500;
   const code = isAppError ? error.code : "INTERNAL_ERROR";
   const message = isAppError ? error.message : "An unexpected error occurred.";
+
   const logDetails = isAppError
     ? { code, statusCode: status }
-    : { error: error instanceof Error ? error.message : "Unknown error" };
+    : { error: extractErrorMessage(error) };
 
   (isAppError ? logger.warn : logger.error)(
     isAppError ? "Application error" : "Unhandled application error",

@@ -4,15 +4,7 @@
  * and executive post-push summary state.
  */
 
-function escapeHtml(str) {
-  if (str === null || str === undefined) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
+// Uses window.escapeHtml from app.js
 
 function renderDiffLine(line, oldLineNum, newLineNum) {
   let cls = "normal";
@@ -20,23 +12,30 @@ function renderDiffLine(line, oldLineNum, newLineNum) {
   let oldNum = oldLineNum !== null ? oldLineNum : "";
   let newNum = newLineNum !== null ? newLineNum : "";
 
-  if (line.startsWith("+") && !line.startsWith("+++")) {
-    cls = "added";
-    prefix = "+";
-    line = line.substring(1);
-    oldNum = "";
-  } else if (line.startsWith("-") && !line.startsWith("---")) {
-    cls = "deleted";
-    prefix = "-";
-    line = line.substring(1);
-    newNum = "";
-  } else if (line.startsWith("@@")) {
-    cls = "hunk-header";
-    prefix = "@";
-    oldNum = "...";
-    newNum = "...";
-  } else if (line.startsWith(" ")) {
-    line = line.substring(1);
+  switch (true) {
+    case line.startsWith("+") && !line.startsWith("+++"):
+      cls = "added";
+      prefix = "+";
+      line = line.substring(1);
+      oldNum = "";
+      break;
+    case line.startsWith("-") && !line.startsWith("---"):
+      cls = "deleted";
+      prefix = "-";
+      line = line.substring(1);
+      newNum = "";
+      break;
+    case line.startsWith("@@"):
+      cls = "hunk-header";
+      prefix = "@";
+      oldNum = "...";
+      newNum = "...";
+      break;
+    case line.startsWith(" "):
+      line = line.substring(1);
+      break;
+    default:
+      break;
   }
 
   return `
@@ -44,13 +43,13 @@ function renderDiffLine(line, oldLineNum, newLineNum) {
       <span class="diff-line-num diff-line-num-old">${oldNum}</span>
       <span class="diff-line-num diff-line-num-new">${newNum}</span>
       <span class="diff-line-prefix">${prefix}</span>
-      <span class="diff-line-content">${escapeHtml(line)}</span>
+      <span class="diff-line-content">${window.escapeHtml(line)}</span>
     </div>
   `;
 }
 
 function parseAndRenderDiff(rawDiff) {
-  if (!rawDiff || !rawDiff.trim()) {
+  if (!rawDiff?.trim()) {
     return `<div class="empty-state"><div class="empty-icon">✓</div><div class="empty-title">No changes in this file</div><div class="empty-desc">The file is clean and identical to HEAD.</div></div>`;
   }
 
@@ -72,12 +71,16 @@ function parseAndRenderDiff(rawDiff) {
       continue;
     }
 
-    if (line.startsWith("+")) {
-      output += renderDiffLine(line, null, newLine++);
-    } else if (line.startsWith("-")) {
-      output += renderDiffLine(line, oldLine++, null);
-    } else {
-      output += renderDiffLine(line, oldLine++, newLine++);
+    switch (line[0]) {
+      case "+":
+        output += renderDiffLine(line, null, newLine++);
+        break;
+      case "-":
+        output += renderDiffLine(line, oldLine++, null);
+        break;
+      default:
+        output += renderDiffLine(line, oldLine++, newLine++);
+        break;
     }
   }
 
@@ -85,7 +88,7 @@ function parseAndRenderDiff(rawDiff) {
 }
 
 function renderAllChangesContinuousDiff(files) {
-  if (!files || files.length === 0) {
+  if (!files?.length) {
     return `<div class="empty-state" style="padding:48px 24px"><div class="empty-icon">✓</div><div class="empty-title">Working tree is clean</div><div class="empty-desc">No uncommitted changes across all workspace files.</div></div>`;
   }
 
@@ -96,20 +99,21 @@ function renderAllChangesContinuousDiff(files) {
     const statusLabel = isUntracked ? "Untracked" : file.status.toUpperCase();
     const statusCls = isUntracked ? "badge-secondary" : file.status === "added" ? "badge-success" : file.status === "deleted" ? "badge-danger" : "badge-accent";
     const diffBody = file.diff ? parseAndRenderDiff(file.diff) : `<div class="text-muted" style="padding:16px;font-size:12px">Diff content not loaded or binary file.</div>`;
+    const filePath = window.escapeHtml(file.filePath);
 
     return `
       <div class="gd-all-file-card" style="margin-bottom:20px;border:1px solid var(--c-border);border-radius:var(--radius-md);overflow:hidden;background:var(--c-surface-card)">
         <div class="gd-all-file-header" style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--c-surface-subtle);border-bottom:1px solid var(--c-border)">
           <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-weight:700;font-size:13px;font-family:var(--font-mono)">${escapeHtml(file.filePath)}</span>
+            <span style="font-weight:700;font-size:13px;font-family:var(--font-mono)">${filePath}</span>
             <span class="badge ${statusCls}" style="font-size:10px;padding:2px 6px">${statusLabel}</span>
             <span style="font-size:11px;font-weight:600;color:var(--c-success)">+${adds}</span>
             <span style="font-size:11px;font-weight:600;color:var(--c-danger)">-${dels}</span>
           </div>
           <div style="display:flex;gap:6px">
-            <button class="btn btn-secondary btn-sm" onclick="openInHostOs('${escapeHtml(file.filePath)}', 'reveal')" title="Reveal in File Explorer">📂 Reveal</button>
-            <button class="btn btn-secondary btn-sm" onclick="openInHostOs('${escapeHtml(file.filePath)}', 'edit')" title="Open in VS Code">📝 Open</button>
-            <button class="btn btn-secondary btn-sm" onclick="selectDiffFile('${escapeHtml(file.filePath)}')" title="Focus Single File Diff">🔍 Inspect</button>
+            <button class="btn btn-secondary btn-sm" data-action="openInHostOs" data-value="${filePath}" data-type="reveal" title="Reveal in File Explorer">📂 Reveal</button>
+            <button class="btn btn-secondary btn-sm" data-action="openInHostOs" data-value="${filePath}" data-type="edit" title="Open in VS Code">📝 Open</button>
+            <button class="btn btn-secondary btn-sm" data-action="selectDiffFile" data-value="${filePath}" title="Focus Single File Diff">🔍 Inspect</button>
           </div>
         </div>
         <div class="gd-diff-code-container" style="max-height:360px;overflow-y:auto;background:var(--c-surface-card)">
@@ -153,19 +157,19 @@ async function renderPushSummaryView(remote, targetBranch, rawOutput = "") {
         <div style="background:var(--c-success-light);border:1px solid var(--c-success-border);border-radius:var(--radius-lg);padding:18px 22px;margin-bottom:24px;display:flex;align-items:center;gap:14px">
           <div style="width:38px;height:38px;border-radius:50%;background:var(--c-success);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700">✓</div>
           <div style="flex:1">
-            <div style="font-weight:700;font-size:15px;color:var(--c-success-text)">Successfully Pushed to ${escapeHtml(remote)}/${escapeHtml(targetBranch)}</div>
+            <div style="font-weight:700;font-size:15px;color:var(--c-success-text)">Successfully Pushed to ${window.escapeHtml(remote)}/${window.escapeHtml(targetBranch)}</div>
             <div style="font-size:12px;color:var(--c-text-muted);margin-top:2px">All local commits have been published to the remote repository. Working tree is synchronized and clean.</div>
           </div>
           <div style="display:flex;gap:8px">
-            <button class="btn btn-primary btn-sm" onclick="openCreatePRModal()" style="display:flex;align-items:center;gap:6px">🚀 Create Pull Request</button>
-            <a href="${escapeHtml(ghUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="display:inline-flex;align-items:center;gap:6px">Compare on GitHub ↗</a>
+            <button class="btn btn-primary btn-sm" data-action="openCreatePRModal" style="display:flex;align-items:center;gap:6px">🚀 Create Pull Request</button>
+            <a href="${window.escapeHtml(ghUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="display:inline-flex;align-items:center;gap:6px">Compare on GitHub ↗</a>
           </div>
         </div>
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:14px;margin-bottom:24px">
           <div class="card" style="padding:14px;border:1px solid var(--c-border);background:var(--c-surface-card)">
             <div style="font-size:11px;font-weight:600;color:var(--c-text-muted);text-transform:uppercase">Target Branch</div>
-            <div style="font-size:16px;font-weight:700;margin-top:4px;color:var(--c-primary);font-family:var(--font-mono)">${escapeHtml(targetBranch)}</div>
+            <div style="font-size:16px;font-weight:700;margin-top:4px;color:var(--c-primary);font-family:var(--font-mono)">${window.escapeHtml(targetBranch)}</div>
           </div>
           <div class="card" style="padding:14px;border:1px solid var(--c-border);background:var(--c-surface-card)">
             <div style="font-size:11px;font-weight:600;color:var(--c-text-muted);text-transform:uppercase">Sync Status</div>
@@ -186,8 +190,8 @@ async function renderPushSummaryView(remote, targetBranch, rawOutput = "") {
             ${commits.map(c => `
               <div style="padding:12px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--c-border-subtle)">
                 <div style="flex:1;padding-right:12px">
-                  <div style="font-weight:600;font-size:13px;color:var(--c-text)">${escapeHtml(c.subject || c.message || "")}</div>
-                  <div style="font-size:11px;color:var(--c-text-muted);margin-top:2px">${escapeHtml(c.author || "Git User")} • ${escapeHtml(c.date || "recently")}</div>
+                  <div style="font-weight:600;font-size:13px;color:var(--c-text)">${window.escapeHtml(c.subject || c.message || "")}</div>
+                  <div style="font-size:11px;color:var(--c-text-muted);margin-top:2px">${window.escapeHtml(c.author || "Git User")} • ${window.escapeHtml(c.date || "recently")}</div>
                 </div>
                 <span class="badge badge-secondary" style="font-family:var(--font-mono);font-size:11px">${(c.hash || c.sha || "").slice(0, 7)}</span>
               </div>

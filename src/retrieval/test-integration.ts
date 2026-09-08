@@ -4,36 +4,50 @@ import { loadGraphCache, saveGraphCache } from "../graph/graph-cache.js";
 import { metricsCollector } from "../monitoring/observability.js";
 import { closeDatabase } from "../db/postgres.js";
 
-async function runIntegrationTests() {
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nFULL INTEGRATION & HARDENING TEST SUITE\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+const runIntegrationTests = async (): Promise<void> => {
+  console.log(
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nFULL INTEGRATION & HARDENING TEST SUITE\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+  );
 
-  let passed = 0, failed = 0;
-  const assert = (condition: boolean, name: string) => { console.log(condition ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`); condition ? passed++ : failed++; };
+  let passed = 0;
+  let failed = 0;
 
-  // 1. Input Guardrail
-  try { validateQueryLength("a".repeat(2500)); assert(false, "Failed to reject oversized query"); }
-  catch (err) { assert(err instanceof ResourceLimitError, "Input limits correctly rejected 2,500 character query"); }
+  const assert = (condition: boolean, name: string): void => {
+    console.log(condition ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`);
+    condition ? ++passed : ++failed;
+  };
 
-  // 2. Cache Version
+  try {
+    validateQueryLength("a".repeat(2500));
+    assert(false, "Failed to reject oversized query");
+  } catch (err) {
+    assert(err instanceof ResourceLimitError, "Input limits correctly rejected 2,500 character query");
+  }
+
   const testCachePath = "scratch/test_invalid_cache.json";
   await saveGraphCache({ repositoryHash: "test-hash", entities: [], relationships: [] }, testCachePath);
   const loadedCache = await loadGraphCache(testCachePath);
   assert(loadedCache !== null, "Successfully loaded valid graph cache v2.0.0");
 
-  // 3. Retriever Initialization & Metrics
   const retriever = new CodeRetriever(process.cwd(), "ai-chatbot");
   await retriever.initialize();
   const results = await retriever.retrieve("Where is normalizeId used?");
   assert(results.length > 0, "Retriever returned ranked results");
 
-  // 4. Observability Metrics
   const systemMetrics = metricsCollector.getMetrics();
   assert(systemMetrics.retrieval.totalRequests > 0, "Observability metrics tracked retrieval request count");
   assert(systemMetrics.retrieval.avgLatencyMs >= 0, "Observability metrics tracked average retrieval latency");
 
   await closeDatabase();
-  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nINTEGRATION TEST RESULTS: ${passed} Passed, ${failed} Failed.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-  if (failed > 0) process.exitCode = 1;
-}
 
-runIntegrationTests().catch((err) => { console.error("Integration test failed:", err); process.exitCode = 1; });
+  console.log(
+    `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nINTEGRATION TEST RESULTS: ${passed} Passed, ${failed} Failed.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+  );
+
+  if (failed > 0) process.exitCode = 1;
+};
+
+runIntegrationTests().catch((err: unknown) => {
+  console.error("Integration test failed:", err);
+  process.exitCode = 1;
+});

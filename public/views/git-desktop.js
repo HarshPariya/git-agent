@@ -12,6 +12,60 @@
 
 let allRepoBranches = [];
 
+// ── Lookups / Maps ────────────────────────────────────────────────────────────
+
+const STATUS_CODE_MAP = { added: "A", deleted: "D", renamed: "R", untracked: "?" };
+const RISK_BADGE_MAP = { high: "badge-danger", medium: "badge-warning" };
+const STATUS_BADGE_MAP = { ADDED: "badge-success", DELETED: "badge-danger" };
+const TAB_PANEL_MAP = {
+  "gd-diff": { btn: "gd-tab-btn-diff", panel: "panel-gd-diff" },
+  "gd-all-diff": { btn: "gd-tab-btn-all-diff", panel: "panel-gd-all-diff" },
+  "gd-output": { btn: "gd-tab-btn-output", panel: "panel-gd-output" },
+};
+const LEFT_TAB_MAP = {
+  changes: { tab: "gd-tab-changes", panel: "gd-panel-changes", style: "flex" },
+  "commit-plan": { tab: "gd-tab-commit-plan", panel: "gd-panel-commit-plan", style: "flex" },
+  history: { tab: "gd-tab-history", panel: "gd-panel-history", style: "block" },
+};
+const SCOPE_PRIORITY = [
+  { has: (hasFrontend, hasApi) => hasFrontend && hasApi, value: "fullstack" },
+  { has: (hasFrontend) => hasFrontend, value: "ui" },
+  { has: (_, __, hasGit) => hasGit, value: "git" },
+  { has: (_, hasApi) => hasApi, value: "api" },
+  { has: (_, __, ___, hasTests) => hasTests, value: "tests" },
+];
+const DESCRIPTION_RULES = [
+  { match: (p) => /api\.[jt]s$/.test(p), text: (p) => `- ${p}: add client API methods and backend endpoint handlers` },
+  { match: (p) => /app\.[jt]s$/.test(p), text: (p) => `- ${p}: update application state management, event listeners, and UI views` },
+  { match: (p) => p.includes("index.html"), text: (p) => `- ${p}: refine layout structure, modal dialogs, and interactive action controls` },
+  { match: (p) => p.includes("styles.css"), text: (p) => `- ${p}: update design tokens, diff viewer syntax styling, and responsive layout rules` },
+  { match: (p) => p.includes("git"), text: (p) => `- ${p}: enhance git operation engine, branch refspec resolution, and commit planning` },
+  { match: (p) => p.includes("fs"), text: (p) => `- ${p}: expand filesystem navigation and OS file explorer dialog integration` },
+];
+const DESCRIPTION_DEFAULT = (p) => `- ${p}: apply component modifications and sync verified changes`;
+const ACTION_DISPATCH = {
+  viewGitDesktopDiff: (value) => viewGitDesktopDiff(value),
+  openSpecificFileInOs: (value, target) => openSpecificFileInOs(value, target.dataset.mode || "reveal"),
+  checkoutSelectedBranch: (value) => checkoutSelectedBranch(value),
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const setGitDesktopState = (updates) =>
+  window.setState("gitDesktop", { ...window.state.gitDesktop, ...updates });
+
+const resolveStatusBadgeClass = (status) => STATUS_BADGE_MAP[status] ?? "badge-warning";
+
+const resolveRiskBadgeClass = (risk) => RISK_BADGE_MAP[risk] ?? "badge-accent";
+
+const resolveScope = ({ hasFrontend, hasApi, hasGit, hasTests }) =>
+  SCOPE_PRIORITY.find((rule) => rule.has(hasFrontend, hasApi, hasGit, hasTests))?.value ?? "core";
+
+const describeFile = (p) =>
+  (DESCRIPTION_RULES.find((r) => r.match(p))?.text ?? DESCRIPTION_DEFAULT)(p);
+
+// ── Core ──────────────────────────────────────────────────────────────────────
+
 async function loadGitDesktop() {
   const repo = window.state.activeRepository || window.state.repositories[0];
   if (!repo) {
@@ -24,19 +78,19 @@ async function loadGitDesktop() {
           <div class="empty-icon">📁</div>
           <div class="empty-title">No repository selected</div>
           <div class="empty-desc">Connect or select a repository to use Git Desktop.</div>
-          <button class="btn btn-primary btn-sm" onclick="openFolderBrowser()" style="margin-top:10px">Connect Repository</button>
+          <button class="btn btn-primary btn-sm" data-action="openFolderBrowser" style="margin-top:10px">Connect Repository</button>
         </div>`;
     }
     return;
   }
 
-  window.state.activeRepository = repo;
+  window.setState("activeRepository", repo);
   const repoNameEl = document.getElementById("gd-repo-name");
   if (repoNameEl) repoNameEl.textContent = repo.name || repo.path || "Repository";
 
   try {
     const status = await api.getGitStatus(repo.id);
-    window.state.gitDesktop.gitStatus = status;
+    setGitDesktopState({ gitStatus: status });
 
     // Update Header metadata & live branch
     const branchName = status.branch || repo.currentBranch || repo.defaultBranch || "main";
@@ -51,13 +105,8 @@ async function loadGitDesktop() {
 
     const workingStatusEl = document.getElementById("gd-working-status");
     if (workingStatusEl) {
-      if (status.clean) {
-        workingStatusEl.textContent = "Clean";
-        workingStatusEl.className = "badge badge-success";
-      } else {
-        workingStatusEl.textContent = `${status.entries ? status.entries.length : 0} changes`;
-        workingStatusEl.className = "badge badge-warning";
-      }
+      workingStatusEl.textContent = status.clean ? "Clean" : `${status.entries ? status.entries.length : 0} changes`;
+      workingStatusEl.className = status.clean ? "badge badge-success" : "badge badge-warning";
     }
 
     // Sync navbar active repo badge with live branch
@@ -67,12 +116,11 @@ async function loadGitDesktop() {
     }
 
     // Map status entries to changed files
-    window.state.gitDesktop.changedFiles = (status.entries || []).map((entry) => {
-      let code = "M";
-      if (entry.status === "added") code = "A";
-      else if (entry.status === "deleted") code = "D";
-      else if (entry.status === "renamed") code = "R";
-      else if (entry.status === "untracked") code = "?";
+    const changedFiles = (status.entries || []).map((entry) => {
+      const code = STATUS_CODE_MAP[entry.status] ?? "M";
+      const isSensitive = (p) => /auth|key|\.env/.test(p);
+      const isCore = (p) => /api|core/.test(p);
+      const risk = isSensitive(entry.filePath) ? "high" : isCore(entry.filePath) ? "medium" : "low";
 
       return {
         filePath: entry.filePath,
@@ -81,12 +129,14 @@ async function loadGitDesktop() {
         staged: entry.staged,
         additions: entry.status === "added" ? 1 : 0,
         deletions: 0,
-        risk: entry.filePath.includes("auth") || entry.filePath.includes("key") || entry.filePath.includes(".env") ? "high" : (entry.filePath.includes("api") || entry.filePath.includes("core") ? "medium" : "low"),
+        risk,
         logicalGroup: null,
       };
     });
 
-    const countLabel = `${window.state.gitDesktop.changedFiles.length}`;
+    setGitDesktopState({ changedFiles });
+
+    const countLabel = `${changedFiles.length}`;
     const changesCountEl = document.getElementById("gd-changes-count");
     if (changesCountEl) changesCountEl.textContent = countLabel;
 
@@ -96,9 +146,8 @@ async function loadGitDesktop() {
     renderGitDesktopChanges();
 
     // Auto-preview first changed file diff if available
-    if (window.state.gitDesktop.changedFiles.length > 0) {
-      const first = window.state.gitDesktop.changedFiles[0];
-      viewGitDesktopDiff(first.filePath);
+    if (changedFiles.length > 0) {
+      viewGitDesktopDiff(changedFiles[0].filePath);
     } else {
       const pathEl = document.getElementById("gd-diff-filepath");
       const currentPath = pathEl?.textContent || "";
@@ -140,10 +189,9 @@ async function loadGitDesktop() {
 }
 
 function filterChangedFiles(filter) {
-  window.state.gitDesktop.currentFilter = filter;
+  setGitDesktopState({ currentFilter: filter });
   document.querySelectorAll(".git-filter-tab").forEach((tab) => {
-    if (tab.getAttribute("data-filter") === filter) tab.classList.add("active");
-    else tab.classList.remove("active");
+    tab.classList.toggle("active", tab.getAttribute("data-filter") === filter);
   });
   renderGitDesktopChanges();
 }
@@ -156,12 +204,15 @@ function renderGitDesktopChanges() {
   if (countBadge) countBadge.textContent = window.state.gitDesktop.changedFiles?.length || 0;
 
   const filter = window.state.gitDesktop.currentFilter;
-  const files = (window.state.gitDesktop.changedFiles || []).filter((f) => {
-    if (filter === "staged") return f.staged;
-    if (filter === "unstaged") return !f.staged && f.status !== "untracked";
-    if (filter === "untracked") return f.status === "untracked";
-    return true;
-  });
+
+  const FILTER_PREDICATES = {
+    staged: (f) => f.staged,
+    unstaged: (f) => !f.staged && f.status !== "untracked",
+    untracked: (f) => f.status === "untracked",
+  };
+
+  const predicate = FILTER_PREDICATES[filter];
+  const files = (window.state.gitDesktop.changedFiles || []).filter((f) => (predicate ? predicate(f) : true));
 
   if (files.length === 0) {
     container.innerHTML = `
@@ -188,7 +239,7 @@ function renderGitDesktopChanges() {
     </div>`;
 
   for (const f of files) {
-    const riskBadgeClass = f.risk === "high" ? "badge-danger" : (f.risk === "medium" ? "badge-warning" : "badge-accent");
+    const riskBadgeClass = resolveRiskBadgeClass(f.risk);
     const groupBadge = f.logicalGroup ? `<span class="badge badge-accent" style="font-size:10px">${escapeHtml(f.logicalGroup)}</span>` : "";
 
     html += `
@@ -239,13 +290,9 @@ async function generateAutoCommitMessage(force = false) {
     const res = await api.generateCommitMessage(repo.id);
     if (res.summary) {
       summaryEl.value = res.summary;
-      if (res.description) {
-        descEl.value = res.description;
-      }
+      if (res.description) descEl.value = res.description;
       const branchLabel = document.getElementById("gd-commit-branch-label");
-      if (branchLabel && res.branch) {
-        branchLabel.textContent = res.branch;
-      }
+      if (branchLabel && res.branch) branchLabel.textContent = res.branch;
     }
   } catch (err) {
     const files = window.state.gitDesktop.changedFiles || [];
@@ -256,26 +303,12 @@ async function generateAutoCommitMessage(force = false) {
       const hasGit = paths.some((p) => p.includes("git"));
       const hasTests = paths.some((p) => p.includes("test"));
 
-      let scope = "core";
-      if (hasFrontend && hasApi) scope = "fullstack";
-      else if (hasFrontend) scope = "ui";
-      else if (hasGit) scope = "git";
-      else if (hasApi) scope = "api";
-      else if (hasTests) scope = "tests";
-
+      const scope = resolveScope({ hasFrontend, hasApi, hasGit, hasTests });
       const type = hasTests ? "test" : (files.some((f) => f.status === "added") ? "feat" : "fix");
       const topFileNames = paths.slice(0, 3).map((p) => p.split("/").pop().split(".")[0]).join(", ");
       summaryEl.value = `${type}(${scope}): update ${topFileNames}${paths.length > 3 ? ` and ${paths.length - 3} related components` : ""}`;
 
-      descEl.value = paths.map((p) => {
-        if (p.includes("api.js") || p.includes("api.ts")) return `- ${p}: add client API methods and backend endpoint handlers`;
-        if (p.includes("app.js") || p.includes("app.ts")) return `- ${p}: update application state management, event listeners, and UI views`;
-        if (p.includes("index.html")) return `- ${p}: refine layout structure, modal dialogs, and interactive action controls`;
-        if (p.includes("styles.css")) return `- ${p}: update design tokens, diff viewer syntax styling, and responsive layout rules`;
-        if (p.includes("git")) return `- ${p}: enhance git operation engine, branch refspec resolution, and commit planning`;
-        if (p.includes("fs")) return `- ${p}: expand filesystem navigation and OS file explorer dialog integration`;
-        return `- ${p}: apply component modifications and sync verified changes`;
-      }).slice(0, 8).join("\n");
+      descEl.value = paths.map(describeFile).slice(0, 8).join("\n");
     }
   } finally {
     if (autoBtn) {
@@ -292,7 +325,7 @@ async function viewGitDesktopDiff(filePath) {
     return;
   }
 
-  window.state.gitDesktop.selectedFile = filePath;
+  setGitDesktopState({ selectedFile: filePath });
 
   const revealBtn = document.getElementById("gd-btn-reveal-os");
   const editBtn = document.getElementById("gd-btn-open-editor");
@@ -308,26 +341,20 @@ async function viewGitDesktopDiff(filePath) {
     const statusText = fileObj ? fileObj.status.toUpperCase() : "MODIFIED";
     statusBadge.textContent = statusText;
     statusBadge.style.display = "inline-block";
-    statusBadge.className = `badge ${statusText === "ADDED" ? "badge-success" : (statusText === "DELETED" ? "badge-danger" : "badge-warning")}`;
+    statusBadge.className = `badge ${resolveStatusBadgeClass(statusText)}`;
   }
 
   const metaEl = document.getElementById("gd-diff-meta");
   if (metaEl) metaEl.textContent = `Unified diff for ${filePath}`;
 
-  const rows = document.querySelectorAll(".git-change-row");
-  rows.forEach((r) => {
+  document.querySelectorAll(".git-change-row").forEach((r) => {
     const nameEl = r.querySelector(".git-file-name");
-    if (nameEl && nameEl.getAttribute("title") === filePath) {
-      r.classList.add("selected");
-    } else {
-      r.classList.remove("selected");
-    }
+    r.classList.toggle("selected", nameEl?.getAttribute("title") === filePath);
   });
 
   const summaryInput = document.getElementById("gd-commit-summary");
   if (summaryInput && !summaryInput.value.trim()) {
-    const basename = filePath.split("/").pop();
-    summaryInput.placeholder = `Update ${basename}`;
+    summaryInput.placeholder = `Update ${filePath.split("/").pop()}`;
   }
 
   const viewer = document.getElementById("gd-diff-viewer");
@@ -338,7 +365,7 @@ async function viewGitDesktopDiff(filePath) {
 
   try {
     const res = await api.getGitDiff(repo.id, filePath);
-    if (res && res.diff && res.diff.trim()) {
+    if (res?.diff?.trim()) {
       renderFormattedDiff("gd-diff-viewer", res.diff, filePath);
       return;
     }
@@ -346,9 +373,9 @@ async function viewGitDesktopDiff(filePath) {
       renderFormattedDiff("gd-diff-viewer", res, filePath);
       return;
     }
-    if (res && res.files && Array.isArray(res.files)) {
+    if (res?.files && Array.isArray(res.files)) {
       const match = res.files.find((f) => f.filePath === filePath);
-      if (match && match.diff && match.diff.trim()) {
+      if (match?.diff?.trim()) {
         renderFormattedDiff("gd-diff-viewer", match.diff, filePath);
         return;
       }
@@ -368,7 +395,8 @@ async function viewGitDesktopDiff(filePath) {
 
 async function openCurrentFileInOs(mode = "reveal") {
   const filePath = window.state.gitDesktop?.selectedFile || document.getElementById("gd-diff-filepath")?.textContent;
-  if (!filePath || filePath.includes("Select a file") || filePath.includes("In sync") || filePath.includes("All Changed Files")) {
+  const isPlaceholder = !filePath || /Select a file|In sync|All Changed Files/.test(filePath);
+  if (isPlaceholder) {
     showToast("Please select a specific file from the changes list", "warning");
     return;
   }
@@ -382,7 +410,7 @@ async function openSpecificFileInOs(filePath, mode = "reveal") {
 
   try {
     const res = await api.openInOs(filePath, repo?.id || "", mode);
-    if (res && res.success) {
+    if (res?.success) {
       showToast(res.message || "Opened successfully in OS", "success");
     } else {
       showToast(`OS error: ${res.error || res.message}`, "error");
@@ -430,7 +458,7 @@ async function viewAllFilesDiff() {
     const res = await api.getGitDiff(repo.id, "");
     const diffText = (res && res.diff) || (typeof res === "string" ? res : "");
 
-    if (!diffText || !diffText.trim()) {
+    if (!diffText?.trim()) {
       if (viewer) {
         viewer.innerHTML = `
           <div class="empty-state" style="padding:48px 20px">
@@ -452,7 +480,7 @@ function renderMultiFileDiff(containerId, diffText) {
   const el = document.getElementById(containerId);
   if (!el) return;
 
-  if (!diffText || !diffText.trim()) {
+  if (!diffText?.trim()) {
     el.innerHTML = `<div class="empty-state" style="padding:32px"><div class="empty-title">No diff content</div></div>`;
     return;
   }
@@ -491,11 +519,18 @@ function renderMultiFileDiff(containerId, diffText) {
     let lineNumOld = 0;
     let lineNumNew = 0;
 
+    const SKIP_PREFIXES = ["diff --git", "index ", "--- ", "+++ ", "new file mode"];
+
+    const renderDiffLine = {
+      chunk: (escaped) => `<div class="diff-file-row diff-line-chunk"><div class="diff-line-number" style="background:#f1f5f9;color:#64748b">...</div><div class="diff-line-content">${escaped}</div></div>`,
+      add: (escaped, num) => `<div class="diff-file-row diff-line-add"><div class="diff-line-number" style="background:#dcfce7;color:#15803d">${num}</div><div class="diff-line-content">${escaped}</div></div>`,
+      del: (escaped, num) => `<div class="diff-file-row diff-line-del"><div class="diff-line-number" style="background:#fee2e2;color:#b91c1c">${num}</div><div class="diff-line-content">${escaped}</div></div>`,
+      context: (escaped, num) => `<div class="diff-file-row diff-line-context"><div class="diff-line-number">${num}</div><div class="diff-line-content">${escaped}</div></div>`,
+    };
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      if (line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("--- ") || line.startsWith("+++ ") || line.startsWith("new file mode")) {
-        continue;
-      }
+      if (SKIP_PREFIXES.some((p) => line.startsWith(p))) continue;
       const escaped = escapeHtml(line);
 
       if (line.startsWith("@@")) {
@@ -504,18 +539,15 @@ function renderMultiFileDiff(containerId, diffText) {
           lineNumOld = parseInt(hunkMatch[1], 10);
           lineNumNew = parseInt(hunkMatch[2], 10);
         }
-        html += `<div class="diff-file-row diff-line-chunk"><div class="diff-line-number" style="background:#f1f5f9;color:#64748b">...</div><div class="diff-line-content">${escaped}</div></div>`;
+        html += renderDiffLine.chunk(escaped);
       } else if (line.startsWith("+")) {
-        const numStr = lineNumNew > 0 ? lineNumNew++ : "+";
-        html += `<div class="diff-file-row diff-line-add"><div class="diff-line-number" style="background:#dcfce7;color:#15803d">${numStr}</div><div class="diff-line-content">${escaped}</div></div>`;
+        html += renderDiffLine.add(escaped, lineNumNew > 0 ? lineNumNew++ : "+");
       } else if (line.startsWith("-")) {
-        const numStr = lineNumOld > 0 ? lineNumOld++ : "-";
-        html += `<div class="diff-file-row diff-line-del"><div class="diff-line-number" style="background:#fee2e2;color:#b91c1c">${numStr}</div><div class="diff-line-content">${escaped}</div></div>`;
+        html += renderDiffLine.del(escaped, lineNumOld > 0 ? lineNumOld++ : "-");
       } else {
         if (lineNumOld > 0) lineNumOld++;
         if (lineNumNew > 0) lineNumNew++;
-        const numStr = lineNumNew > 0 ? (lineNumNew - 1) : "";
-        html += `<div class="diff-file-row diff-line-context"><div class="diff-line-number">${numStr}</div><div class="diff-line-content">${escaped}</div></div>`;
+        html += renderDiffLine.context(escaped, lineNumNew > 0 ? (lineNumNew - 1) : "");
       }
     }
 
@@ -556,6 +588,13 @@ function renderFormattedDiff(containerId, diffText, filePath = "") {
   let lineNumOld = 0;
   let lineNumNew = 0;
 
+  const renderDiffLine = {
+    chunk: (escaped) => `<div class="diff-file-row diff-line-chunk"><div class="diff-line-number" style="background:#f1f5f9;color:#64748b">...</div><div class="diff-line-content">${escaped}</div></div>`,
+    add: (escaped, num) => `<div class="diff-file-row diff-line-add"><div class="diff-line-number" style="background:#dcfce7;color:#15803d">${num}</div><div class="diff-line-content">${escaped}</div></div>`,
+    del: (escaped, num) => `<div class="diff-file-row diff-line-del"><div class="diff-line-number" style="background:#fee2e2;color:#b91c1c">${num}</div><div class="diff-line-content">${escaped}</div></div>`,
+    context: (escaped, num) => `<div class="diff-file-row diff-line-context"><div class="diff-line-number">${num}</div><div class="diff-line-content">${escaped}</div></div>`,
+  };
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const escaped = escapeHtml(line);
@@ -566,18 +605,15 @@ function renderFormattedDiff(containerId, diffText, filePath = "") {
         lineNumOld = parseInt(match[1], 10);
         lineNumNew = parseInt(match[2], 10);
       }
-      html += `<div class="diff-file-row diff-line-chunk"><div class="diff-line-number" style="background:#f1f5f9;color:#64748b">...</div><div class="diff-line-content">${escaped}</div></div>`;
+      html += renderDiffLine.chunk(escaped);
     } else if (line.startsWith("+") && !line.startsWith("+++")) {
-      const numStr = lineNumNew > 0 ? lineNumNew++ : "+";
-      html += `<div class="diff-file-row diff-line-add"><div class="diff-line-number" style="background:#dcfce7;color:#15803d">${numStr}</div><div class="diff-line-content">${escaped}</div></div>`;
+      html += renderDiffLine.add(escaped, lineNumNew > 0 ? lineNumNew++ : "+");
     } else if (line.startsWith("-") && !line.startsWith("---")) {
-      const numStr = lineNumOld > 0 ? lineNumOld++ : "-";
-      html += `<div class="diff-file-row diff-line-del"><div class="diff-line-number" style="background:#fee2e2;color:#b91c1c">${numStr}</div><div class="diff-line-content">${escaped}</div></div>`;
+      html += renderDiffLine.del(escaped, lineNumOld > 0 ? lineNumOld++ : "-");
     } else {
       if (lineNumOld > 0) lineNumOld++;
       if (lineNumNew > 0) lineNumNew++;
-      const numStr = lineNumNew > 0 ? (lineNumNew - 1) : "";
-      html += `<div class="diff-file-row diff-line-context"><div class="diff-line-number">${numStr}</div><div class="diff-line-content">${escaped}</div></div>`;
+      html += renderDiffLine.context(escaped, lineNumNew > 0 ? (lineNumNew - 1) : "");
     }
   }
 
@@ -593,50 +629,40 @@ function switchGitDesktopTab(tabName) {
   const allDiffPanel = document.getElementById("panel-gd-all-diff");
   const outputPanel = document.getElementById("panel-gd-output");
 
-  if (diffBtn) { diffBtn.className = tabName === "gd-diff" ? "btn btn-secondary btn-sm" : "btn btn-ghost btn-sm"; }
-  if (allDiffBtn) { allDiffBtn.className = tabName === "gd-all-diff" ? "btn btn-secondary btn-sm" : "btn btn-ghost btn-sm"; }
-  if (outputBtn) { outputBtn.className = tabName === "gd-output" ? "btn btn-secondary btn-sm" : "btn btn-ghost btn-sm"; }
+  if (diffBtn) diffBtn.className = tabName === "gd-diff" ? "btn btn-secondary btn-sm" : "btn btn-ghost btn-sm";
+  if (allDiffBtn) allDiffBtn.className = tabName === "gd-all-diff" ? "btn btn-secondary btn-sm" : "btn btn-ghost btn-sm";
+  if (outputBtn) outputBtn.className = tabName === "gd-output" ? "btn btn-secondary btn-sm" : "btn btn-ghost btn-sm";
 
   if (diffPanel) diffPanel.style.display = tabName === "gd-diff" ? "block" : "none";
   if (allDiffPanel) allDiffPanel.style.display = tabName === "gd-all-diff" ? "block" : "none";
   if (outputPanel) outputPanel.style.display = tabName === "gd-output" ? "block" : "none";
 
-  if (tabName === "gd-all-diff") {
-    viewAllFilesDiff();
-  }
+  if (tabName === "gd-all-diff") viewAllFilesDiff();
 }
 
 function switchGitDesktopLeftTab(tab) {
-  const changesTab = document.getElementById("gd-tab-changes");
-  const planTab = document.getElementById("gd-tab-commit-plan");
-  const historyTab = document.getElementById("gd-tab-history");
-  const changesPanel = document.getElementById("gd-panel-changes");
-  const planPanel = document.getElementById("gd-panel-commit-plan");
-  const historyPanel = document.getElementById("gd-panel-history");
+  const mapping = LEFT_TAB_MAP[tab] ?? LEFT_TAB_MAP.history;
+  const { tab: tabId, panel: panelId, style } = mapping;
 
-  changesTab?.classList.remove("active");
-  planTab?.classList.remove("active");
-  historyTab?.classList.remove("active");
+  // Remove active from all tabs, hide all panels
+  ["gd-tab-changes", "gd-tab-commit-plan", "gd-tab-history"].forEach((id) => {
+    document.getElementById(id)?.classList.remove("active");
+  });
+  ["gd-panel-changes", "gd-panel-commit-plan", "gd-panel-history"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  });
 
-  if (changesPanel) changesPanel.style.display = "none";
-  if (planPanel) planPanel.style.display = "none";
-  if (historyPanel) historyPanel.style.display = "none";
+  // Activate the selected tab
+  document.getElementById(tabId)?.classList.add("active");
+  const panel = document.getElementById(panelId);
+  if (panel) panel.style.display = style;
 
-  if (tab === "changes") {
-    changesTab?.classList.add("active");
-    if (changesPanel) changesPanel.style.display = "flex";
-  } else if (tab === "commit-plan") {
-    planTab?.classList.add("active");
-    if (planPanel) planPanel.style.display = "flex";
-    if (!window.state.gitDesktop.commitPlan) {
-      triggerAIAnalyzeChanges();
-    }
-  } else {
-    historyTab?.classList.add("active");
-    if (historyPanel) historyPanel.style.display = "block";
-    if (typeof window.loadGitDesktopHistory === "function") {
-      window.loadGitDesktopHistory();
-    }
+  if (tab === "commit-plan" && !window.state.gitDesktop.commitPlan) {
+    triggerAIAnalyzeChanges();
+  }
+  if (tab === "history" && typeof window.loadGitDesktopHistory === "function") {
+    window.loadGitDesktopHistory();
   }
 }
 
@@ -706,17 +732,18 @@ async function triggerAIAnalyzeChanges() {
   try {
     const data = await api.analyzeChanges(repo.id);
     const plan = data.plan || data;
-    window.state.gitDesktop.commitPlan = plan;
+    setGitDesktopState({ commitPlan: plan });
 
     if (summaryEl) {
       summaryEl.textContent = plan.summary || `${plan.totalFiles} files grouped into ${plan.groups.length} logical commits.`;
     }
 
     if (plan.changedFiles && Array.isArray(plan.changedFiles)) {
-      window.state.gitDesktop.changedFiles = plan.changedFiles.map((f) => ({
+      const changedFiles = plan.changedFiles.map((f) => ({
         ...f,
-        code: f.status === "added" ? "A" : (f.status === "deleted" ? "D" : (f.status === "untracked" ? "?" : "M")),
+        code: STATUS_CODE_MAP[f.status] ?? "M",
       }));
+      setGitDesktopState({ changedFiles });
       renderGitDesktopChanges();
     }
 
@@ -724,7 +751,7 @@ async function triggerAIAnalyzeChanges() {
     if (typeof window.renderCommitPlanView === "function") {
       window.renderCommitPlanView(plan);
     } else if (planContainer) {
-      if (!plan.groups || plan.groups.length === 0) {
+      if (!plan.groups?.length) {
         planContainer.innerHTML = `
           <div class="empty-state" style="padding:24px">
             <div class="empty-title">Working tree clean</div>
@@ -737,8 +764,9 @@ async function triggerAIAnalyzeChanges() {
 
       let planHtml = "";
       plan.groups.forEach((grp, idx) => {
-        const commitMsg = grp.suggestedCommit ? `${grp.suggestedCommit.type}${grp.suggestedCommit.scope ? `(${grp.suggestedCommit.scope})` : ""}: ${grp.suggestedCommit.subject}` : grp.name;
-        const riskClass = grp.risk === "high" ? "badge-danger" : (grp.risk === "medium" ? "badge-warning" : "badge-accent");
+        const { type, scope, subject } = grp.suggestedCommit || {};
+        const commitMsg = grp.suggestedCommit ? `${type}${scope ? `(${scope})` : ""}: ${subject}` : grp.name;
+        const riskClass = resolveRiskBadgeClass(grp.risk);
 
         planHtml += `
           <div class="commit-plan-card">
@@ -794,10 +822,10 @@ async function triggerAICommitAll() {
     if (res.success) {
       showToast(`Successfully created ${res.totalCreated} logical commits!`, "success");
       const consoleOut = document.getElementById("gd-console-output");
-      let logText = `=== COMMIT ALL EXECUTION SUCCESSFUL ===\nBranch: ${res.branch}\nTotal commits created: ${res.totalCreated}\n\n`;
-      (res.commits || []).forEach((c, idx) => {
-        logText += `[Commit ${idx + 1}] SHA: ${c.commitHash} | ${c.commitMessage}\nFiles (${c.files.length}):\n${c.files.map((f) => `  - ${f}`).join("\n")}\n\n`;
-      });
+      const logText = `=== COMMIT ALL EXECUTION SUCCESSFUL ===\nBranch: ${res.branch}\nTotal commits created: ${res.totalCreated}\n\n` +
+        (res.commits || []).map((c, idx) =>
+          `[Commit ${idx + 1}] SHA: ${c.commitHash} | ${c.commitMessage}\nFiles (${c.files.length}):\n${c.files.map((f) => `  - ${f}`).join("\n")}\n`
+        ).join("\n");
       if (consoleOut) consoleOut.textContent = logText;
       switchGitDesktopTab("gd-output");
 
@@ -853,7 +881,8 @@ async function triggerGitPull() {
     if (consoleEl) consoleEl.textContent = res.output || res.error || "Pull executed.";
     switchGitDesktopTab("gd-output");
 
-    if (!res.success && (res.error?.includes("conflict") || res.output?.includes("conflict"))) {
+    const hasConflict = !res.success && (res.error?.includes("conflict") || res.output?.includes("conflict"));
+    if (hasConflict) {
       showToast("Merge conflict encountered during pull! Opening Conflict Center...", "warning");
       navigate("conflicts");
       return;
@@ -912,16 +941,12 @@ async function openPushPreviewModal() {
     branchSelect.innerHTML = `<option value="${escapeHtml(currentBranch)}">🌿 Current branch: ${escapeHtml(currentBranch)}</option>`;
   }
 
+  const PROTECTED_BRANCHES = ["main", "master", "production"];
+  const isProtected = PROTECTED_BRANCHES.includes(currentBranch);
   const branchRuleEl = document.getElementById("push-check-branch");
-  const isProtected = ["main", "master", "production"].includes(currentBranch);
   if (branchRuleEl) {
-    if (isProtected) {
-      branchRuleEl.textContent = "Protected branch (requires review)";
-      branchRuleEl.className = "badge badge-warning";
-    } else {
-      branchRuleEl.textContent = "PASSED (Safe branch)";
-      branchRuleEl.className = "badge badge-success";
-    }
+    branchRuleEl.textContent = isProtected ? "Protected branch (requires review)" : "PASSED (Safe branch)";
+    branchRuleEl.className = isProtected ? "badge badge-warning" : "badge badge-success";
   }
 
   const commitsListEl = document.getElementById("push-commits-list");
@@ -934,17 +959,12 @@ async function openPushPreviewModal() {
     const branchesData = await api.getGitBranches(repo.id);
     const branches = branchesData.branches || [];
     if (branchSelect) {
-      let opts = `<option value="${escapeHtml(currentBranch)}">🌿 Current branch (${escapeHtml(currentBranch)})</option>`;
       const otherBranches = branches.filter((b) => b.name !== currentBranch);
-      if (otherBranches.length > 0) {
-        opts += `<optgroup label="Available Repository Branches">`;
-        otherBranches.forEach((b) => {
-          opts += `<option value="${escapeHtml(b.name)}">${escapeHtml(b.name)}</option>`;
-        });
-        opts += `</optgroup>`;
-      }
-      opts += `<option value="__custom__">➕ Push to custom / new branch name...</option>`;
-      branchSelect.innerHTML = opts;
+      const otherOpts = otherBranches.map((b) => `<option value="${escapeHtml(b.name)}">${escapeHtml(b.name)}</option>`).join("");
+      branchSelect.innerHTML = `
+        <option value="${escapeHtml(currentBranch)}">🌿 Current branch (${escapeHtml(currentBranch)})</option>
+        ${otherBranches.length > 0 ? `<optgroup label="Available Repository Branches">${otherOpts}</optgroup>` : ""}
+        <option value="__custom__">➕ Push to custom / new branch name...</option>`;
     }
   } catch (e) {
     console.warn("Could not fetch branches for push modal:", e);
@@ -957,15 +977,13 @@ async function openPushPreviewModal() {
     if (countEl) countEl.textContent = `${commits.length} outgoing commit(s)`;
 
     if (commitsListEl) {
-      if (commits.length === 0) {
-        commitsListEl.innerHTML = `<div class="text-muted" style="font-size:12px;text-align:center;padding:12px">No outgoing commits waiting. Remote is up to date.</div>`;
-      } else {
-        commitsListEl.innerHTML = commits.map((c) => `
+      commitsListEl.innerHTML = commits.length === 0
+        ? `<div class="text-muted" style="font-size:12px;text-align:center;padding:12px">No outgoing commits waiting. Remote is up to date.</div>`
+        : commits.map((c) => `
           <div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:5px 8px;border-bottom:1px solid var(--c-border-subtle)">
             <code style="font-weight:700;color:var(--c-accent);font-size:11px">${escapeHtml(c.shortHash || c.hash?.slice(0, 7) || "")}</code>
             <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(c.subject || c.message || "")}</span>
           </div>`).join("");
-      }
     }
   } catch (err) {
     if (commitsListEl) {
@@ -979,12 +997,9 @@ function onPushTargetBranchChanged() {
   const customInput = document.getElementById("push-custom-branch-input");
   if (!select || !customInput) return;
 
-  if (select.value === "__custom__") {
-    customInput.style.display = "block";
-    customInput.focus();
-  } else {
-    customInput.style.display = "none";
-  }
+  const showCustom = select.value === "__custom__";
+  customInput.style.display = showCustom ? "block" : "none";
+  if (showCustom) customInput.focus();
 }
 
 async function executePushFromModal() {
@@ -993,13 +1008,11 @@ async function executePushFromModal() {
 
   const select = document.getElementById("push-target-branch-select");
   const customInput = document.getElementById("push-custom-branch-input");
-  let targetBranch = select ? select.value : "";
+  let targetBranch = select?.value ?? "";
   if (targetBranch === "__custom__" && customInput) {
     targetBranch = customInput.value.trim();
   }
-  if (!targetBranch) {
-    targetBranch = window.state.gitDesktop.gitStatus?.branch || repo.currentBranch || "main";
-  }
+  targetBranch ||= window.state.gitDesktop.gitStatus?.branch || repo.currentBranch || "main";
 
   const remote = document.getElementById("push-remote-select")?.value || "origin";
   const setUpstream = document.getElementById("push-set-upstream")?.checked !== false;
@@ -1153,21 +1166,15 @@ async function triggerAIShip() {
 }
 
 // Event delegation for data-action attributes
-document.addEventListener('click', (e) => {
-  const target = e.target.closest('[data-action]');
+document.addEventListener("click", (e) => {
+  const target = e.target.closest("[data-action]");
   if (!target) return;
+
+  if (target.dataset.stopprop === "true") e.stopPropagation();
+
   const action = target.dataset.action;
-  const value = target.dataset.value;
-  const extra = target.dataset.extra;
-
-  if (target.dataset.stopprop === 'true') {
-    e.stopPropagation();
-  }
-
-  if (action === 'switchGitDesktopTab') switchGitDesktopTab(value);
-  else if (action === 'viewGitDesktopDiff') viewGitDesktopDiff(value);
-  else if (action === 'openSpecificFileInOs') openSpecificFileInOs(value, target.dataset.mode || 'reveal');
-  else if (action === 'checkoutSelectedBranch') checkoutSelectedBranch(value);
+  const handler = ACTION_DISPATCH[action];
+  if (handler) handler(target.dataset.value, target);
 });
 
 // Window exports

@@ -23,11 +23,11 @@ const createFileEntity = (file: ParsedFile): GraphEntity => ({
   name: path.basename(file.filePath),
   filePath: file.filePath,
   startLine: 1,
-  endLine: file.content ? file.content.split(/\r?\n/).length : 1,
+  endLine: file.content?.split(/\r?\n/).length ?? 1,
   language: file.language,
   metadata: {
     directory: path.dirname(file.filePath),
-    imports: file.imports.map((item) => item.source),
+    imports: file.imports.map(({ source }) => source),
   },
 });
 
@@ -54,28 +54,24 @@ const createClassEntity = (file: ParsedFile, classInfo: ParsedClass): GraphEntit
 });
 
 const createModuleEntities = (file: ParsedFile): GraphEntity[] =>
-  file.imports.map((m) => ({
-    id: `module:${normalizeId(m.source)}`,
+  file.imports.map(({ source }) => ({
+    id: `module:${normalizeId(source)}`,
     type: "module" as const,
-    name: m.source,
+    name: source,
     metadata: { importedBy: file.filePath },
   }));
 
-export function extractEntitiesFromFile(file: ParsedFile): GraphEntity[] {
-  return [
-    createFileEntity(file),
-    ...file.functions.map((fn) => createFunctionEntity(file, fn)),
-    ...file.classes.map((c) => createClassEntity(file, c)),
-    ...createModuleEntities(file),
-  ];
-}
+export const extractEntitiesFromFile = (file: ParsedFile): GraphEntity[] => [
+  createFileEntity(file),
+  ...file.functions.map((fn) => createFunctionEntity(file, fn)),
+  ...file.classes.map((c) => createClassEntity(file, c)),
+  ...createModuleEntities(file),
+];
 
-export function extractEntities(parsedFiles: ParsedFile[]): GraphEntity[] {
-  const entityMap = new Map<string, GraphEntity>();
-  for (const file of parsedFiles) {
-    for (const entity of extractEntitiesFromFile(file)) {
-      if (!entityMap.has(entity.id)) entityMap.set(entity.id, entity);
-    }
-  }
-  return Array.from(entityMap.values());
-}
+export const extractEntities = (parsedFiles: ParsedFile[]): GraphEntity[] =>
+  Array.from(
+    parsedFiles
+      .flatMap((file) => extractEntitiesFromFile(file))
+      .reduce((map, entity) => map.set(entity.id, entity), new Map<string, GraphEntity>())
+      .values()
+  );

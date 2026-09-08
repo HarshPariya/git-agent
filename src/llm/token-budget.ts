@@ -18,6 +18,18 @@ export interface BudgetedContextResult {
 export const estimateTokens = (text: string): number =>
   Math.ceil(text.length / 4);
 
+const formatLocation = (item: CompressedEvidence): string =>
+  item.page ? `, page ${item.page}` : item.location ? `, ${item.location}` : "";
+
+const formatEvidenceHeader = (item: CompressedEvidence): string =>
+  `[${item.id}][${item.sourceType.toUpperCase()}] ${item.source}${formatLocation(item)}\n`;
+
+const formatEvidenceBlock = (item: CompressedEvidence): string =>
+  `[${item.id}][${item.sourceType.toUpperCase()}]\n${item.source}${formatLocation(item)}\n${item.content}`;
+
+const truncateContent = (content: string, maxTokens: number): string =>
+  `${content.slice(0, maxTokens * 4)}\n...[truncated]`;
+
 export class TokenBudgetManager {
   private readonly config: TokenBudgetConfig;
 
@@ -31,44 +43,35 @@ export class TokenBudgetManager {
   }
 
   fitEvidence(evidence: readonly CompressedEvidence[]): BudgetedContextResult {
+    const { maxRetrievedChunks, maxRagContextTokens } = this.config;
     const activeEvidence: CompressedEvidence[] = [];
     let currentTokens = 0;
     let droppedChunkCount = 0;
 
-    for (const item of evidence.slice(0, this.config.maxRetrievedChunks)) {
-      const header = `[${item.id}][${item.sourceType.toUpperCase()}] ${item.source}${item.page ? `, page ${item.page}` : item.location ? `, ${item.location}` : ""
-        }\n`;
-      const itemText = `${header}${item.content}\n\n`;
-      const itemTokens = estimateTokens(itemText);
+    for (const item of evidence.slice(0, maxRetrievedChunks)) {
+      const itemTokens = estimateTokens(`${formatEvidenceHeader(item)}${item.content}\n\n`);
 
-      if (currentTokens + itemTokens <= this.config.maxRagContextTokens) {
+      if (currentTokens + itemTokens <= maxRagContextTokens) {
         activeEvidence.push(item);
         currentTokens += itemTokens;
-      } else {
-        const availableTokens = this.config.maxRagContextTokens - currentTokens;
-        if (availableTokens > 100) {
-          const truncatedContent = item.content.slice(0, availableTokens * 4) + "\n...[truncated]";
-          const truncatedItem: CompressedEvidence = { ...item, content: truncatedContent };
-          activeEvidence.push(truncatedItem);
-          currentTokens += estimateTokens(`${header}${truncatedContent}\n\n`);
-        } else {
-          droppedChunkCount++;
-        }
+        continue;
       }
+
+      const available = maxRagContextTokens - currentTokens;
+      if (available > 100) {
+        const truncatedItem = { ...item, content: truncateContent(item.content, available) };
+        activeEvidence.push(truncatedItem);
+        currentTokens += estimateTokens(`${formatEvidenceHeader(truncatedItem)}${truncatedItem.content}\n\n`);
+        continue;
+      }
+
+      droppedChunkCount++;
     }
 
-    droppedChunkCount += Math.max(0, evidence.length - this.config.maxRetrievedChunks);
-
-    const formattedEvidence = activeEvidence
-      .map(
-        (item) =>
-          `[${item.id}][${item.sourceType.toUpperCase()}]\n${item.source}${item.page ? `, page ${item.page}` : item.location ? `, ${item.location}` : ""
-          }\n${item.content}`,
-      )
-      .join("\n\n");
+    droppedChunkCount += Math.max(0, evidence.length - maxRetrievedChunks);
 
     return {
-      formattedEvidence,
+      formattedEvidence: activeEvidence.map(formatEvidenceBlock).join("\n\n"),
       evidenceItems: activeEvidence,
       ragContextTokens: currentTokens,
       droppedChunkCount,
@@ -77,14 +80,9 @@ export class TokenBudgetManager {
 
   fitMemory(memoryText: string): { formattedMemory: string; memoryTokens: number } {
     const memoryTokens = estimateTokens(memoryText);
-    if (memoryTokens <= this.config.maxMemoryTokens) {
-      return { formattedMemory: memoryText, memoryTokens };
-    }
+    if (memoryTokens <= this.config.maxMemoryTokens) return { formattedMemory: memoryText, memoryTokens };
 
     const truncated = memoryText.slice(-this.config.maxMemoryTokens * 4);
-    return {
-      formattedMemory: truncated,
-      memoryTokens: estimateTokens(truncated),
-    };
+    return { formattedMemory: truncated, memoryTokens: estimateTokens(truncated) };
   }
 }

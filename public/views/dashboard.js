@@ -73,8 +73,8 @@ function renderDashboardRepos(repos) {
         <div class="empty-title">No repositories connected</div>
         <div class="empty-desc">Connect any local project from your laptop or workspace (Mac, Windows, Linux) or import from GitHub.</div>
         <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm" onclick="openFolderBrowser()">📁 Add Local Folder</button>
-          <button class="btn btn-ghost btn-sm" onclick="showGitHubModalFlow()">🐙 Connect GitHub</button>
+          <button class="btn btn-primary btn-sm" data-action="openFolderBrowser">📁 Add Local Folder</button>
+          <button class="btn btn-ghost btn-sm" data-action="showGitHubModalFlow">🐙 Connect GitHub</button>
         </div>
       </div>
     `;
@@ -114,7 +114,7 @@ function renderDashboardSessions(sessions) {
         <div class="empty-icon">🔍</div>
         <div class="empty-title">No debug sessions yet</div>
         <div class="empty-desc">Start a session to isolate failing code paths and verify fixes.</div>
-        <button class="btn btn-primary btn-sm" onclick="navigate('debug')">Start Debugging</button>
+        <button class="btn btn-primary btn-sm" data-action="navigate" data-value="debug">Start Debugging</button>
       </div>
     `;
     return;
@@ -141,15 +141,6 @@ function renderDashboardSessions(sessions) {
     )
     .join("");
 }
-
-// Event delegation for data-action attributes
-document.addEventListener('click', (e) => {
-  const target = e.target.closest('[data-action]');
-  if (!target) return;
-  const action = target.dataset.action;
-  const value = target.dataset.value;
-  if (action === 'quickDebugRepo') quickDebugRepo(value);
-});
 
 // Window exports
 window.checkHealth = checkHealth;

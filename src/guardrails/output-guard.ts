@@ -17,10 +17,13 @@ const SENSITIVE_PATTERNS = [
   /system\s+prompt\s*[:=]\s*(?:you\s+are|instructions)/i,
 ] as const;
 
+const containsSensitiveData = (response: string): boolean =>
+  SENSITIVE_PATTERNS.some((pattern) => pattern.test(response));
+
 const OUTPUT_RULES: ReadonlyArray<(res: string) => string | null> = [
   (res) => (!res ? "The generated response is empty." : null),
   (res) => (res.length > MAX_RESPONSE_LENGTH ? "The generated response exceeds the maximum allowed length." : null),
-  (res) => (SENSITIVE_PATTERNS.some((p) => p.test(res)) ? "The generated response contains restricted information." : null),
+  (res) => (containsSensitiveData(res) ? "The generated response contains restricted information." : null),
 ];
 
 export const validateOutput = ({ response }: OutputGuardRequest): OutputGuardResult => {

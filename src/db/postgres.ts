@@ -3,57 +3,59 @@ import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from "pg
 
 const connectionString = process.env.DATABASE_URL;
 
-if (!connectionString) console.warn("⚠️ DATABASE_URL is not configured.");
+if (!connectionString) console.warn("DATABASE_URL is not configured.");
+
+const POOL_MAX = Number.parseInt(process.env.PG_POOL_MAX ?? "10", 10);
+const DB_TIMEOUT_MS = 5000;
+const STATEMENT_TIMEOUT_MS = 10000;
+const IDLE_TIMEOUT_MS = 30_000;
+
+const TRANSIENT_CODES = new Set(["ECONNRESET", "ETIMEDOUT", "57P01"]);
+const isTransientError = (err: unknown): boolean =>
+  err instanceof Error &&
+  (TRANSIENT_CODES.has((err as { code?: string }).code ?? "") ||
+    err.message.includes("timeout"));
 
 export const pool = new Pool({
   connectionString,
-  max: Number.parseInt(process.env.PG_POOL_MAX ?? "10", 10),
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
-  statement_timeout: 10000,
+  max: POOL_MAX,
+  idleTimeoutMillis: IDLE_TIMEOUT_MS,
+  connectionTimeoutMillis: DB_TIMEOUT_MS,
+  statement_timeout: STATEMENT_TIMEOUT_MS,
 });
 
-pool.on("error", (err) => console.error("❌ Unexpected PostgreSQL Pool Error:", err));
+pool.on("error", (err) => console.error("Unexpected PostgreSQL Pool Error:", err));
 
-export async function query<T extends QueryResultRow = QueryResultRow>(
+export const query = <T extends QueryResultRow = QueryResultRow>(
   text: string,
   params: unknown[] = [],
-): Promise<QueryResult<T>> {
-  return pool.query<T>(text, params);
-}
+): Promise<QueryResult<T>> => pool.query<T>(text, params);
 
-export async function queryWithRetry<T extends QueryResultRow = QueryResultRow>(
+export const queryWithRetry = async <T extends QueryResultRow = QueryResultRow>(
   text: string,
   params: unknown[] = [],
   maxRetries = 3,
   delayMs = 200,
-): Promise<QueryResult<T>> {
+): Promise<QueryResult<T>> => {
   let attempt = 0;
 
   while (true) {
     try {
       return await pool.query<T>(text, params);
-    } catch (error: any) {
+    } catch (error: unknown) {
       attempt++;
-      const isTransient =
-        ["ECONNRESET", "ETIMEDOUT", "57P01"].includes(error?.code) ||
-        error?.message?.includes("timeout");
-
-      if (isTransient && attempt < maxRetries) {
-        console.warn(
-          `⚠️ Temporary DB error (${error.message}). Retrying (${attempt}/${maxRetries}) in ${delayMs}ms...`,
-        );
-        await new Promise((res) => setTimeout(res, delayMs * attempt));
-        continue;
-      }
-      throw error;
+      if (!isTransientError(error) || attempt >= maxRetries) throw error;
+      console.warn(
+        `Temporary DB error (${error instanceof Error ? error.message : "unknown"}). Retrying (${attempt}/${maxRetries}) in ${delayMs}ms...`,
+      );
+      await new Promise((res) => setTimeout(res, delayMs * attempt));
     }
   }
-}
+};
 
-export async function withTransaction<T>(
+export const withTransaction = async <T>(
   callback: (client: PoolClient) => Promise<T>,
-): Promise<T> {
+): Promise<T> => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -66,7 +68,7 @@ export async function withTransaction<T>(
   } finally {
     client.release();
   }
-}
+};
 
 export interface DatabaseHealthStatus {
   status: "healthy" | "unhealthy";
@@ -77,48 +79,42 @@ export interface DatabaseHealthStatus {
   timestamp: string;
 }
 
-export async function getDatabaseHealth(): Promise<DatabaseHealthStatus> {
-  const startTime = Date.now();
+const buildHealth = (status: "healthy" | "unhealthy", latencyMs: number): DatabaseHealthStatus => ({
+  status,
+  latencyMs,
+  totalConnections: pool.totalCount,
+  idleConnections: pool.idleCount,
+  waitingCount: pool.waitingCount,
+  timestamp: new Date().toISOString(),
+});
 
+export const getDatabaseHealth = async (): Promise<DatabaseHealthStatus> => {
+  const start = Date.now();
   try {
     await query("SELECT 1");
-    return {
-      status: "healthy",
-      latencyMs: Date.now() - startTime,
-      totalConnections: pool.totalCount,
-      idleConnections: pool.idleCount,
-      waitingCount: pool.waitingCount,
-      timestamp: new Date().toISOString(),
-    };
+    return buildHealth("healthy", Date.now() - start);
   } catch {
-    return {
-      status: "unhealthy",
-      latencyMs: Date.now() - startTime,
-      totalConnections: pool.totalCount,
-      idleConnections: pool.idleCount,
-      waitingCount: pool.waitingCount,
-      timestamp: new Date().toISOString(),
-    };
+    return buildHealth("unhealthy", Date.now() - start);
   }
-}
+};
 
-export async function testDatabaseConnection(): Promise<boolean> {
+export const testDatabaseConnection = async (): Promise<boolean> => {
   try {
-    const health = await getDatabaseHealth();
-    if (health.status === "healthy") {
-      console.log(`✓ PostgreSQL connected (Latency: ${health.latencyMs}ms, Pool: ${health.totalConnections} active).`);
+    const { status, latencyMs, totalConnections } = await getDatabaseHealth();
+    if (status === "healthy") {
+      console.log(`PostgreSQL connected (Latency: ${latencyMs}ms, Pool: ${totalConnections} active).`);
       return true;
     }
-    console.error("❌ PostgreSQL health check failed.");
+    console.error("PostgreSQL health check failed.");
     return false;
   } catch (error) {
-    console.error("❌ PostgreSQL connection failed:", error);
+    console.error("PostgreSQL connection failed:", error);
     return false;
   }
-}
+};
 
-export async function closeDatabase(): Promise<void> {
-  console.log("🔌 Gracefully closing PostgreSQL connection pool...");
+export const closeDatabase = async (): Promise<void> => {
+  console.log("Closing PostgreSQL connection pool...");
   await pool.end();
-  console.log("✓ Connection pool closed.");
-}
+  console.log("Connection pool closed.");
+};

@@ -3,33 +3,235 @@ import type { FixPlan } from "./fix-planner.js";
 import type { DebugContext } from "./context-builder.js";
 
 export type CriticVerdict = "APPROVED" | "REJECTED" | "NEEDS_REVISION";
-export interface CriticFinding { readonly severity: "critical" | "major" | "minor" | "info"; readonly category: "correctness" | "security" | "performance" | "test_coverage" | "scope_creep" | "git_safety" | "regression_risk"; readonly description: string; readonly suggestion?: string; }
-export interface CriticReview { readonly verdict: CriticVerdict; readonly score: number; readonly summary: string; readonly findings: readonly CriticFinding[]; readonly fixesRootCause: boolean; readonly testsAdequate: boolean; readonly gitStateSafe: boolean; readonly reviewedAt: string; }
+
+export interface CriticFinding {
+  readonly severity: "critical" | "major" | "minor" | "info";
+  readonly category:
+    | "correctness"
+    | "security"
+    | "performance"
+    | "test_coverage"
+    | "scope_creep"
+    | "git_safety"
+    | "regression_risk";
+  readonly description: string;
+  readonly suggestion?: string;
+}
+
+export interface CriticReview {
+  readonly verdict: CriticVerdict;
+  readonly score: number;
+  readonly summary: string;
+  readonly findings: readonly CriticFinding[];
+  readonly fixesRootCause: boolean;
+  readonly testsAdequate: boolean;
+  readonly gitStateSafe: boolean;
+  readonly reviewedAt: string;
+}
+
+const SCORE_THRESHOLDS: ReadonlyArray<{ minScore: number; verdict: CriticVerdict }> = [
+  { minScore: 80, verdict: "APPROVED" },
+  { minScore: 60, verdict: "NEEDS_REVISION" },
+];
+
+const DEFAULT_REVIEW: CriticReview = {
+  verdict: "NEEDS_REVISION",
+  score: 70,
+  summary: "Review complete.",
+  findings: [],
+  fixesRootCause: true,
+  testsAdequate: true,
+  gitStateSafe: true,
+  reviewedAt: new Date().toISOString(),
+};
 
 export class CriticAgent {
-  async review(plan: FixPlan, ctx: DebugContext, testsPassed: boolean): Promise<CriticReview> {
-    if (await isLlmAvailable()) return this.reviewWithLlm(plan, ctx, testsPassed);
-    return this.reviewDeterministic(plan, ctx, testsPassed);
+  async review(
+    plan: FixPlan,
+    ctx: DebugContext,
+    testsPassed: boolean
+  ): Promise<CriticReview> {
+    const useLlm = await isLlmAvailable();
+    return useLlm
+      ? this.reviewWithLlm(plan, ctx, testsPassed)
+      : this.reviewDeterministic(plan, ctx, testsPassed);
   }
 
-  private async reviewWithLlm(plan: FixPlan, ctx: DebugContext, testsPassed: boolean): Promise<CriticReview> {
-    const prompt = `You are a senior software engineer conducting a critical code review.\n\nDEBUGGING TASK: ${ctx.query}\nROOT CAUSE: ${plan.rootCause}\nRISK LEVEL: ${plan.riskLevel}\nTESTS PASSED: ${testsPassed}\n\nFILES CHANGED:\n${plan.filesToChange.map((f) => `- ${f.filePath}: ${f.description}`).join("\n") || "None"}\n\nEVIDENCE USED:\n${plan.evidence.slice(0, 5).join("\n")}\n\nReview this fix and respond in JSON:\n{"verdict":"APPROVED|REJECTED|NEEDS_REVISION","score":0-100,"summary":"One paragraph review summary","findings":[{"severity":"critical|major|minor|info","category":"correctness|security|performance|test_coverage|scope_creep|git_safety|regression_risk","description":"Specific finding","suggestion":"Optional suggestion"}],"fixesRootCause":true|false,"testsAdequate":true|false,"gitStateSafe":true|false}\n\nREVIEW CRITERIA:\n- Does the fix address the actual root cause?\n- Are tests adequate?\n- Does it introduce regressions?\n- Is the scope limited to the problem?\n- Is the git state safe?\n- Are security implications considered?\n- CRITICAL findings => REJECTED\n- Score >= 80 => APPROVED\n- Score 60-79 => NEEDS_REVISION\n- Score < 60 => REJECTED`;
+  private async reviewWithLlm(
+    plan: FixPlan,
+    ctx: DebugContext,
+    testsPassed: boolean
+  ): Promise<CriticReview> {
+    const prompt = this.buildReviewPrompt(plan, ctx, testsPassed);
+
     try {
-      const response = await callLlm([{ role: "system", content: "You are a senior code reviewer. Output only valid JSON." }, { role: "user", content: prompt }]);
-      const jsonMatch = /\{[\s\S]*\}/.exec(response.content);
-      if (!jsonMatch) throw new Error("No JSON");
-      const parsed = JSON.parse(jsonMatch[0]) as { verdict?: CriticVerdict; score?: number; summary?: string; findings?: CriticFinding[]; fixesRootCause?: boolean; testsAdequate?: boolean; gitStateSafe?: boolean };
-      return { verdict: parsed.verdict ?? "NEEDS_REVISION", score: Math.min(100, Math.max(0, parsed.score ?? 70)), summary: parsed.summary ?? "Review complete.", findings: parsed.findings ?? [], fixesRootCause: parsed.fixesRootCause ?? true, testsAdequate: parsed.testsAdequate ?? testsPassed, gitStateSafe: parsed.gitStateSafe ?? true, reviewedAt: new Date().toISOString() };
-    } catch { return this.reviewDeterministic(plan, ctx, testsPassed); }
+      const response = await callLlm([
+        {
+          role: "system",
+          content: "You are a senior code reviewer. Output only valid JSON.",
+        },
+        { role: "user", content: prompt },
+      ]);
+
+      return this.parseLlmResponse(response.content, testsPassed);
+    } catch {
+      return this.reviewDeterministic(plan, ctx, testsPassed);
+    }
   }
 
-  private reviewDeterministic(plan: FixPlan, _ctx: DebugContext, testsPassed: boolean): CriticReview {
-    const findings: CriticFinding[] = []; let score = 75;
-    if (!testsPassed) { score -= 30; findings.push({ severity: "critical", category: "correctness", description: "Tests did not pass after applying fix.", suggestion: "Investigate failing tests before approving." }); }
-    if (plan.filesToChange.length === 0) { score -= 10; findings.push({ severity: "minor", category: "correctness", description: "No files were changed. Fix may be incomplete." }); }
-    if (plan.riskLevel === "HIGH" || plan.riskLevel === "CRITICAL") { score -= 15; findings.push({ severity: "major", category: "git_safety", description: `Fix carries ${plan.riskLevel} risk. Manual review strongly recommended.` }); }
-    const verdict: CriticVerdict = score >= 80 ? "APPROVED" : score >= 60 ? "NEEDS_REVISION" : "REJECTED";
-    return { verdict, score, summary: `Deterministic review: ${verdict}. Score: ${score}/100. Tests: ${testsPassed ? "PASSED" : "FAILED"}.`, findings, fixesRootCause: true, testsAdequate: testsPassed, gitStateSafe: plan.riskLevel !== "CRITICAL", reviewedAt: new Date().toISOString() };
+  private buildReviewPrompt(
+    plan: FixPlan,
+    ctx: DebugContext,
+    testsPassed: boolean
+  ): string {
+    const filesChanged =
+      plan.filesToChange.map((f) => `- ${f.filePath}: ${f.description}`).join("\n") ||
+      "None";
+    const evidenceUsed = plan.evidence.slice(0, 5).join("\n");
+
+    return `You are a senior software engineer conducting a critical code review.
+
+DEBUGGING TASK: ${ctx.query}
+ROOT CAUSE: ${plan.rootCause}
+RISK LEVEL: ${plan.riskLevel}
+TESTS PASSED: ${testsPassed}
+
+FILES CHANGED:
+${filesChanged}
+
+EVIDENCE USED:
+${evidenceUsed}
+
+Review this fix and respond in JSON:
+{"verdict":"APPROVED|REJECTED|NEEDS_REVISION","score":0-100,"summary":"One paragraph review summary","findings":[{"severity":"critical|major|minor|info","category":"correctness|security|performance|test_coverage|scope_creep|git_safety|regression_risk","description":"Specific finding","suggestion":"Optional suggestion"}],"fixesRootCause":true|false,"testsAdequate":true|false,"gitStateSafe":true|false}
+
+REVIEW CRITERIA:
+- Does the fix address the actual root cause?
+- Are tests adequate?
+- Does it introduce regressions?
+- Is the scope limited to the problem?
+- Is the git state safe?
+- Are security implications considered?
+- CRITICAL findings => REJECTED
+- Score >= 80 => APPROVED
+- Score 60-79 => NEEDS_REVISION
+- Score < 60 => REJECTED`;
+  }
+
+  private parseLlmResponse(
+    content: string,
+    testsPassed: boolean
+  ): CriticReview {
+    const jsonMatch = /\{[\s\S]*\}/.exec(content);
+    if (!jsonMatch) {
+      throw new Error("No JSON found in LLM response");
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]) as {
+      verdict?: CriticVerdict;
+      score?: number;
+      summary?: string;
+      findings?: CriticFinding[];
+      fixesRootCause?: boolean;
+      testsAdequate?: boolean;
+      gitStateSafe?: boolean;
+    };
+
+    return {
+      verdict: parsed.verdict ?? DEFAULT_REVIEW.verdict,
+      score: Math.min(100, Math.max(0, parsed.score ?? DEFAULT_REVIEW.score)),
+      summary: parsed.summary ?? DEFAULT_REVIEW.summary,
+      findings: parsed.findings ?? DEFAULT_REVIEW.findings,
+      fixesRootCause: parsed.fixesRootCause ?? DEFAULT_REVIEW.fixesRootCause,
+      testsAdequate: parsed.testsAdequate ?? testsPassed,
+      gitStateSafe: parsed.gitStateSafe ?? DEFAULT_REVIEW.gitStateSafe,
+      reviewedAt: new Date().toISOString(),
+    };
+  }
+
+  private reviewDeterministic(
+    plan: FixPlan,
+    _ctx: DebugContext,
+    testsPassed: boolean
+  ): CriticReview {
+    const findings: CriticFinding[] = [];
+    let score = 75;
+
+    score = this.applyTestPenalty(score, testsPassed, findings);
+    score = this.applyEmptyChangePenalty(score, plan, findings);
+    score = this.applyRiskPenalty(score, plan, findings);
+
+    const verdict = this.determineVerdict(score);
+    const summary = `Deterministic review: ${verdict}. Score: ${score}/100. Tests: ${testsPassed ? "PASSED" : "FAILED"}.`;
+
+    return {
+      verdict,
+      score,
+      summary,
+      findings,
+      fixesRootCause: true,
+      testsAdequate: testsPassed,
+      gitStateSafe: plan.riskLevel !== "CRITICAL",
+      reviewedAt: new Date().toISOString(),
+    };
+  }
+
+  private applyTestPenalty(
+    score: number,
+    testsPassed: boolean,
+    findings: CriticFinding[]
+  ): number {
+    if (testsPassed) {
+      return score;
+    }
+
+    findings.push({
+      severity: "critical",
+      category: "correctness",
+      description: "Tests did not pass after applying fix.",
+      suggestion: "Investigate failing tests before approving.",
+    });
+    return score - 30;
+  }
+
+  private applyEmptyChangePenalty(
+    score: number,
+    plan: FixPlan,
+    findings: CriticFinding[]
+  ): number {
+    if (plan.filesToChange.length > 0) {
+      return score;
+    }
+
+    findings.push({
+      severity: "minor",
+      category: "correctness",
+      description: "No files were changed. Fix may be incomplete.",
+    });
+    return score - 10;
+  }
+
+  private applyRiskPenalty(
+    score: number,
+    plan: FixPlan,
+    findings: CriticFinding[]
+  ): number {
+    if (plan.riskLevel !== "HIGH" && plan.riskLevel !== "CRITICAL") {
+      return score;
+    }
+
+    findings.push({
+      severity: "major",
+      category: "git_safety",
+      description: `Fix carries ${plan.riskLevel} risk. Manual review strongly recommended.`,
+    });
+    return score - 15;
+  }
+
+  private determineVerdict(score: number): CriticVerdict {
+    return (
+      SCORE_THRESHOLDS.find((t) => score >= t.minScore)?.verdict ?? "REJECTED"
+    );
   }
 }
 

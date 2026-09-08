@@ -17,6 +17,10 @@ export const isPathWithinRoot = (filePath: string, rootDirectory: string): boole
   return resolvedFile.startsWith(resolvedRoot) && resolvedFile !== resolvedRoot;
 };
 
-export const isSecretFile = (filename: string): boolean => SECRET_PATTERNS.some((pattern) => pattern.test(path.basename(filename)));
+export const isSecretFile = (filename: string): boolean =>
+  SECRET_PATTERNS.some((pattern) => pattern.test(path.basename(filename)));
+
 export const isIgnoredDirectory = (dirName: string): boolean => IGNORED_DIRECTORIES.has(dirName);
-export const isIgnoredFile = (filename: string): boolean => IGNORED_FILES.has(path.basename(filename)) || isSecretFile(filename);
+
+export const isIgnoredFile = (filename: string): boolean =>
+  IGNORED_FILES.has(path.basename(filename)) || isSecretFile(filename);

@@ -6,20 +6,23 @@ export interface HnswTuningOptions {
   efConstruction?: number;
 }
 
-export async function setHnswSearchPrecision(efSearch = 100): Promise<void> {
+const DEFAULT_M = 16;
+const DEFAULT_EF_CONSTRUCTION = 64;
+const DEFAULT_EF_SEARCH = 100;
+
+export const setHnswSearchPrecision = async (efSearch = DEFAULT_EF_SEARCH): Promise<void> => {
   await query(`SET LOCAL hnsw.ef_search = ${Math.floor(efSearch)};`);
-}
+};
 
-export async function rebuildHnswIndex(
+export const rebuildHnswIndex = async (
   options: HnswTuningOptions = {},
-): Promise<void> {
-  const m = options.m ?? 16;
-  const efConstruction = options.efConstruction ?? 64;
+): Promise<void> => {
+  const m = options.m ?? DEFAULT_M;
+  const efConstruction = options.efConstruction ?? DEFAULT_EF_CONSTRUCTION;
 
-  console.log(`⚙ Tuning HNSW index parameters (m=${m}, ef_construction=${efConstruction})...`);
+  console.log(`Tuning HNSW index parameters (m=${m}, ef_construction=${efConstruction})...`);
 
   await query(`DROP INDEX IF EXISTS idx_code_chunks_embedding_hnsw;`);
-
   await query(`
     CREATE INDEX idx_code_chunks_embedding_hnsw
     ON code_chunks
@@ -27,5 +30,5 @@ export async function rebuildHnswIndex(
     WITH (m = ${m}, ef_construction = ${efConstruction});
   `);
 
-  console.log("✓ HNSW index successfully tuned and rebuilt.");
-}
+  console.log("HNSW index successfully tuned and rebuilt.");
+};

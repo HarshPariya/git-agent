@@ -4,7 +4,14 @@ import { extractEntities } from "../graph/entity-extractor.js";
 import { extractRelationships } from "../graph/relationship-extractor.js";
 import { buildGraph, findEntitiesByName, getGraphStats, traverseGraph } from "../graph/graph-builder.js";
 
-async function main() {
+const sumBy = <T>(items: T[], fn: (item: T) => number): number => items.reduce((total, item) => total + fn(item), 0);
+
+const logSample = <T>(items: T[], label: string, format: (item: T) => string, limit = 8) => {
+  console.log(`Sample ${label}:\n`);
+  for (const item of items.slice(0, limit)) console.log(format(item));
+};
+
+const main = async () => {
   const root = process.cwd();
 
   console.log("\nScanning repository...\n");
@@ -12,65 +19,64 @@ async function main() {
   console.log(`Source files found: ${files.length}`);
 
   const parsedFiles = await parseRepository(root);
-  const functionCount = parsedFiles.reduce((t, f) => t + f.functions.length, 0);
-  const classCount = parsedFiles.reduce((t, f) => t + f.classes.length, 0);
-  const importCount = parsedFiles.reduce((t, f) => t + f.imports.length, 0);
+  const totalFunctions = sumBy(parsedFiles, (f) => f.functions.length);
+  const totalClasses = sumBy(parsedFiles, (f) => f.classes.length);
+  const totalImports = sumBy(parsedFiles, (f) => f.imports.length);
+  console.log(`Files parsed: ${parsedFiles.length}\nFunctions found: ${totalFunctions}\nClasses found: ${totalClasses}\nImports found: ${totalImports}`);
 
-  console.log(`Files parsed: ${parsedFiles.length}\nFunctions found: ${functionCount}\nClasses found: ${classCount}\nImports found: ${importCount}`);
+  // Chunking
   console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCHUNKING\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
   const chunks = chunkRepository(parsedFiles);
-  const functionChunks = chunks.filter((c) => c.type === "function");
-  const classChunks = chunks.filter((c) => c.type === "class");
-  const fileChunks = chunks.filter((c) => c.type === "file");
+  const chunkCounts = ["function", "class", "file"] as const;
+  const counts = Object.fromEntries(chunkCounts.map((type) => [type, chunks.filter((c) => c.type === type).length])) as Record<string, number>;
+  console.log(`Total chunks: ${chunks.length}\nFunction chunks: ${counts.function}\nClass chunks: ${counts.class}\nFile chunks: ${counts.file}`);
 
-  console.log(`Total chunks: ${chunks.length}\nFunction chunks: ${functionChunks.length}\nClass chunks: ${classChunks.length}\nFile chunks: ${fileChunks.length}\n\nSample chunks:\n`);
-  for (const chunk of chunks.slice(0, 8)) {
-    console.log(`  ${chunk.id}\n  Type: ${chunk.type}\n  Name: ${chunk.name}\n  Lines: ${chunk.startLine}-${chunk.endLine}\n  File: ${chunk.filePath}\n`);
-  }
+  logSample(chunks, "chunks", (c) => `  ${c.id}\n  Type: ${c.type}\n  Name: ${c.name}\n  Lines: ${c.startLine}-${c.endLine}\n  File: ${c.filePath}\n`);
 
+  // Entity Extraction
   console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nGRAPH ENTITY EXTRACTION\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
   const entities = extractEntities(parsedFiles);
-  const fileEntities = entities.filter((e) => e.type === "file");
-  const functionEntities = entities.filter((e) => e.type === "function");
-  const classEntities = entities.filter((e) => e.type === "class");
-  const moduleEntities = entities.filter((e) => e.type === "module");
+  const entityTypes = ["file", "function", "class", "module"] as const;
+  const entityCounts = Object.fromEntries(entityTypes.map((type) => [type, entities.filter((e) => e.type === type).length])) as Record<string, number>;
+  console.log(`Total entities: ${entities.length}\nFile entities: ${entityCounts.file}\nFunction entities: ${entityCounts.function}\nClass entities: ${entityCounts.class}\nModule entities: ${entityCounts.module}`);
 
-  console.log(`Total entities: ${entities.length}\nFile entities: ${fileEntities.length}\nFunction entities: ${functionEntities.length}\nClass entities: ${classEntities.length}\nModule entities: ${moduleEntities.length}\n\nSample graph entities:\n`);
-  for (const entity of entities.slice(0, 8)) {
-    let info = `  ${entity.id}\n  Type: ${entity.type}\n  Name: ${entity.name}`;
-    if (entity.filePath) info += `\n  File: ${entity.filePath}`;
-    if (entity.startLine !== undefined && entity.endLine !== undefined) info += `\n  Lines: ${entity.startLine}-${entity.endLine}`;
-    console.log(`${info}\n`);
-  }
+  logSample(entities, "graph entities", (e) => {
+    const lines = [`  ${e.id}`, `  Type: ${e.type}`, `  Name: ${e.name}`];
+    if (e.filePath) lines.push(`  File: ${e.filePath}`);
+    if (e.startLine !== undefined && e.endLine !== undefined) lines.push(`  Lines: ${e.startLine}-${e.endLine}`);
+    return `${lines.join("\n")}\n`;
+  });
 
+  // Relationship Extraction
   console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nGRAPH RELATIONSHIP EXTRACTION\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
   const relationships = extractRelationships(parsedFiles, entities);
-  const containsRelationships = relationships.filter((r) => r.type === "contains");
-  const importRelationships = relationships.filter((r) => r.type === "imports");
-  const callRelationships = relationships.filter((r) => r.type === "calls");
+  const relTypes = ["contains", "imports", "calls"] as const;
+  const relCounts = Object.fromEntries(relTypes.map((type) => [type, relationships.filter((r) => r.type === type).length])) as Record<string, number>;
+  console.log(`Total relationships: ${relationships.length}\nCONTAINS: ${relCounts.contains}\nIMPORTS: ${relCounts.imports}\nCALLS: ${relCounts.calls}`);
 
-  console.log(`Total relationships: ${relationships.length}\nCONTAINS: ${containsRelationships.length}\nIMPORTS: ${importRelationships.length}\nCALLS: ${callRelationships.length}\n\nSample relationships:\n`);
-  for (const rel of relationships.slice(0, 10)) {
-    console.log(`  ${rel.type.toUpperCase()}\n  ${rel.sourceId}\n      ↓\n  ${rel.targetId}\n`);
-  }
+  logSample(relationships, "relationships", (r) => `  ${r.type.toUpperCase()}\n  ${r.sourceId}\n      ↓\n  ${r.targetId}\n`, 10);
 
+  // Graph Build
   console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nGRAPH BUILD\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
   const graph = buildGraph(entities, relationships);
   const stats = getGraphStats(graph);
   console.log(`Graph nodes: ${stats.totalNodes}\nGraph edges: ${stats.totalEdges}\n\nEntity breakdown:\n${stats.entityCounts}\n\nRelationship breakdown:\n${stats.relationshipCounts}`);
 
-  const normalizeMatches = findEntitiesByName(graph, "normalizeId");
-  if (normalizeMatches.length > 0 && normalizeMatches[0]) {
-    console.log(`\nTraversal from: ${normalizeMatches[0].name}\n`);
-    const traversal = traverseGraph(graph, normalizeMatches[0].id, { maxDepth: 2 });
-    for (const result of traversal) {
-      console.log(`${"  ".repeat(result.depth)}↳ ${result.entity.type}: ${result.entity.name}`);
+  const [firstMatch] = findEntitiesByName(graph, "normalizeId");
+  if (firstMatch) {
+    console.log(`\nTraversal from: ${firstMatch.name}\n`);
+    for (const { depth, entity } of traverseGraph(graph, firstMatch.id, { maxDepth: 2 })) {
+      console.log(`${"  ".repeat(depth)}↳ ${entity.type}: ${entity.name}`);
     }
   }
-}
+};
 
-main().catch((error) => { console.error("Parser/chunker test failed:"); console.error(error); process.exit(1); });
+main().catch((error) => {
+  console.error("Parser/chunker test failed:");
+  console.error(error);
+  process.exit(1);
+});

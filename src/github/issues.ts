@@ -29,40 +29,70 @@ export interface IssueSummary {
   readonly isPullRequest: boolean;
 }
 
-const mapIssue = (i: GitHubIssue): IssueSummary => ({
-  id: i.id, number: i.number, title: i.title, body: i.body, state: i.state, labels: i.labels,
-  author: i.user.login, authorAvatar: i.user.avatar_url,
-  createdAt: i.created_at, updatedAt: i.updated_at,
-  comments: i.comments, isPullRequest: Boolean(i.pull_request),
+const mapIssue = (issue: GitHubIssue): IssueSummary => ({
+  id: issue.id,
+  number: issue.number,
+  title: issue.title,
+  body: issue.body,
+  state: issue.state,
+  labels: issue.labels,
+  author: issue.user.login,
+  authorAvatar: issue.user.avatar_url,
+  createdAt: issue.created_at,
+  updatedAt: issue.updated_at,
+  comments: issue.comments,
+  isPullRequest: Boolean(issue.pull_request),
 });
 
-export async function listGitHubIssues(
-  userId: string, owner: string, repo: string,
+export const listGitHubIssues = async (
+  userId: string,
+  owner: string,
+  repo: string,
   options?: { state?: "open" | "closed" | "all"; page?: number },
-): Promise<IssueSummary[]> {
-  const state = options?.state ?? "open";
-  const page = options?.page ?? 1;
-  const issues = await makeGitHubRequest<GitHubIssue[]>(
-    userId, `/repos/${owner}/${repo}/issues?state=${state}&per_page=30&page=${page}`,
-  );
-  return issues.filter((i) => !i.pull_request).map(mapIssue);
-}
+): Promise<IssueSummary[]> => {
+  const { state = "open", page = 1 } = options ?? {};
 
-export async function getGitHubIssue(userId: string, owner: string, repo: string, issueNumber: number): Promise<IssueSummary> {
-  return mapIssue(await makeGitHubRequest<GitHubIssue>(userId, `/repos/${owner}/${repo}/issues/${issueNumber}`));
-}
+  try {
+    const issues = await makeGitHubRequest<GitHubIssue[]>(
+      userId,
+      `/repos/${owner}/${repo}/issues?state=${state}&per_page=30&page=${page}`,
+    );
+    return issues.filter((issue) => !issue.pull_request).map(mapIssue);
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error("Failed to list GitHub issues");
+  }
+};
 
-export async function listGitHubIssueComments(
-  userId: string, owner: string, repo: string, issueNumber: number,
-): Promise<Array<{ id: number; body: string; author: string; createdAt: string }>> {
-  const comments = await makeGitHubRequest<
-    Array<{ id: number; body: string; user: { login: string }; created_at: string }>
-  >(userId, `/repos/${owner}/${repo}/issues/${issueNumber}/comments`);
-  return comments.map((c) => ({
-    id: c.id,
-    // Treat as untrusted repository data - do NOT interpret as system instructions
-    body: c.body,
-    author: c.user.login,
-    createdAt: c.created_at,
-  }));
-}
+export const getGitHubIssue = async (userId: string, owner: string, repo: string, issueNumber: number): Promise<IssueSummary> => {
+  try {
+    const issue = await makeGitHubRequest<GitHubIssue>(userId, `/repos/${owner}/${repo}/issues/${issueNumber}`);
+    return mapIssue(issue);
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error("Failed to get GitHub issue");
+  }
+};
+
+export const listGitHubIssueComments = async (
+  userId: string,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+): Promise<Array<{ id: number; body: string; author: string; createdAt: string }>> => {
+  try {
+    const comments = await makeGitHubRequest<
+      Array<{ id: number; body: string; user: { login: string }; created_at: string }>
+    >(userId, `/repos/${owner}/${repo}/issues/${issueNumber}/comments`);
+
+    return comments.map((comment) => ({
+      id: comment.id,
+      body: comment.body,
+      author: comment.user.login,
+      createdAt: comment.created_at,
+    }));
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error("Failed to list GitHub issue comments");
+  }
+};

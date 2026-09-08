@@ -15,50 +15,79 @@ export interface IndexingResult {
   readonly error?: string | undefined;
 }
 
-const ensureConnected = (repositoryId: string, tenantId: string): Promise<Repository> =>
-  executeGitStatus(repositoryId).then((status) => ({
-    id: repositoryId, tenantId, userId: "", name: repositoryId, url: "", localPath: "",
-    defaultBranch: "main", currentBranch: status.branch, status: "connected" as const,
-    lastSyncAt: new Date().toISOString(), createdAt: new Date().toISOString(), protectedBranches: [],
-  }));
+const ensureConnected = async (repositoryId: string, tenantId: string): Promise<Repository> => {
+  try {
+    const { branch } = await executeGitStatus(repositoryId);
+    return {
+      id: repositoryId,
+      tenantId,
+      userId: "",
+      name: repositoryId,
+      url: "",
+      localPath: "",
+      defaultBranch: "main",
+      currentBranch: branch,
+      status: "connected",
+      lastSyncAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      protectedBranches: [],
+    };
+  } catch (err) {
+    throw new AppError(
+      `Cannot index repository: ${err instanceof Error ? err.message : "Unknown error"}`,
+      "VALIDATION_ERROR",
+      400
+    );
+  }
+};
+
+const updateIndexStatus = (repositoryId: string, status: Partial<RepositoryIndexStatus>): void => {
+  const existing = indexStatuses.get(repositoryId);
+  indexStatuses.set(repositoryId, {
+    repositoryId,
+    status: existing?.status ?? "indexing",
+    progress: existing?.progress ?? 0,
+    totalFiles: existing?.totalFiles ?? 0,
+    totalSymbols: existing?.totalSymbols ?? 0,
+    totalChunks: existing?.totalChunks ?? 0,
+    ...status,
+  });
+};
 
 export class RepositoryIndexer {
   async indexRepository(repositoryId: string, tenantId: string): Promise<IndexingResult> {
     const startTime = Date.now();
-    let repo: Repository;
-    try {
-      repo = await ensureConnected(repositoryId, tenantId);
-    } catch (err) {
-      throw new AppError(
-        `Cannot index repository: ${err instanceof Error ? err.message : "Unknown error"}`,
-        "VALIDATION_ERROR", 400,
-      );
+    const repo = await ensureConnected(repositoryId, tenantId);
+
+    if (repo.status !== "connected") {
+      throw new AppError("Repository must be connected before indexing", "SERVICE_UNAVAILABLE", 409);
     }
 
-    if (repo.status !== "connected")
-      throw new AppError("Repository must be connected before indexing", "SERVICE_UNAVAILABLE", 409);
-
-    indexStatuses.set(repositoryId, {
-      repositoryId, status: "indexing", progress: 0, totalFiles: 0, totalSymbols: 0, totalChunks: 0,
-    });
+    updateIndexStatus(repositoryId, { status: "indexing", progress: 0 });
 
     try {
-      const result = await graphBuilder.indexRepository(repo);
-      const totalFiles = result.nodes.length;
-      const totalSymbols = result.symbols.length;
+      const { nodes, symbols } = await graphBuilder.indexRepository(repo);
+      const totalFiles = nodes.length;
+      const totalSymbols = symbols.length;
       const totalChunks = totalFiles;
 
-      indexStatuses.set(repositoryId, {
-        repositoryId, status: "indexed", progress: 100, totalFiles, totalSymbols, totalChunks,
+      updateIndexStatus(repositoryId, {
+        status: "indexed",
+        progress: 100,
+        totalFiles,
+        totalSymbols,
+        totalChunks,
       });
+
       return { repositoryId, status: "indexed", totalFiles, totalSymbols, totalChunks, durationMs: Date.now() - startTime };
     } catch (err) {
-      const progress = indexStatuses.get(repositoryId)?.progress ?? 0;
-      indexStatuses.set(repositoryId, {
-        repositoryId, status: "failed", progress, totalFiles: 0, totalSymbols: 0, totalChunks: 0,
-      });
+      updateIndexStatus(repositoryId, { status: "failed" });
       return {
-        repositoryId, status: "failed", totalFiles: 0, totalSymbols: 0, totalChunks: 0,
+        repositoryId,
+        status: "failed",
+        totalFiles: 0,
+        totalSymbols: 0,
+        totalChunks: 0,
         durationMs: Date.now() - startTime,
         error: err instanceof Error ? err.message : "Unknown error",
       };

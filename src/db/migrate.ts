@@ -8,10 +8,43 @@ export interface MigrationRecord {
   applied_at: Date;
 }
 
-export async function runMigrations(
+const MIGRATION_PATTERN = /^(\d+)_/;
+const SQL_EXTENSION = ".sql";
+
+const getAppliedVersions = async (): Promise<Set<number>> => {
+  const { rows } = await queryWithRetry<MigrationRecord>(
+    `SELECT version FROM schema_migrations ORDER BY version ASC`,
+  );
+  return new Set(rows.map(({ version }) => version));
+};
+
+const readMigrationFiles = async (dir: string): Promise<string[]> => {
+  try {
+    const files = await fs.readdir(dir);
+    return files.filter((f) => f.endsWith(SQL_EXTENSION)).sort();
+  } catch {
+    console.warn(`Migrations directory not found at: ${dir}`);
+    return [];
+  }
+};
+
+const applyMigration = async (filePath: string, fileName: string, version: number) => {
+  console.log(`Applying migration ${fileName}...`);
+  const sql = await fs.readFile(filePath, "utf8");
+  await withTransaction(async (client) => {
+    await client.query(sql);
+    await client.query(
+      `INSERT INTO schema_migrations (version, name) VALUES ($1, $2)`,
+      [version, fileName],
+    );
+  });
+  console.log(`Migration ${fileName} applied successfully.`);
+};
+
+export const runMigrations = async (
   migrationsDir = path.resolve(process.cwd(), "migrations"),
-): Promise<void> {
-  console.log("📦 Checking PostgreSQL database migrations...");
+): Promise<void> => {
+  console.log("Checking PostgreSQL database migrations...");
 
   await queryWithRetry(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -21,57 +54,36 @@ export async function runMigrations(
     );
   `);
 
-  const appliedResult = await queryWithRetry<MigrationRecord>(
-    `SELECT version, name, applied_at FROM schema_migrations ORDER BY version ASC`,
-  );
-  const appliedVersions = new Set(appliedResult.rows.map((row) => row.version));
-
-  let files: string[] = [];
-  try {
-    files = (await fs.readdir(migrationsDir))
-      .filter((f) => f.endsWith(".sql"))
-      .sort();
-  } catch {
-    console.warn(`⚠️ Migrations directory not found at: ${migrationsDir}`);
-    return;
-  }
+  const appliedVersions = await getAppliedVersions();
+  const files = await readMigrationFiles(migrationsDir);
 
   let appliedCount = 0;
 
   for (const file of files) {
-    const match = file.match(/^(\d+)_/);
+    const match = file.match(MIGRATION_PATTERN);
     if (!match?.[1]) continue;
 
     const version = Number.parseInt(match[1], 10);
     if (appliedVersions.has(version)) continue;
 
-    console.log(`🚀 Applying migration ${file}...`);
-    const sql = await fs.readFile(path.join(migrationsDir, file), "utf8");
-
-    await withTransaction(async (client) => {
-      await client.query(sql);
-      await client.query(
-        `INSERT INTO schema_migrations (version, name) VALUES ($1, $2)`,
-        [version, file],
-      );
-    });
-
-    console.log(`✓ Migration ${file} applied successfully.`);
+    await applyMigration(path.join(migrationsDir, file), file, version);
     appliedCount++;
   }
 
   console.log(
     appliedCount === 0
-      ? "✓ Database schema is up to date (no pending migrations)."
-      : `✓ Applied ${appliedCount} new migration(s).`,
+      ? "Database schema is up to date (no pending migrations)."
+      : `Applied ${appliedCount} new migration(s).`,
   );
-}
+};
 
-if (process.argv[1]?.endsWith("migrate.ts") || process.argv[1]?.endsWith("migrate.js")) {
+const isMainModule = process.argv[1]?.endsWith("migrate.ts") || process.argv[1]?.endsWith("migrate.js");
+
+if (isMainModule) {
   runMigrations()
-    .then(() => closeDatabase())
+    .then(closeDatabase)
     .catch((err) => {
-      console.error("❌ Migration failed:", err);
+      console.error("Migration failed:", err);
       process.exit(1);
     });
 }

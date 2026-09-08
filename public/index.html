@@ -82,13 +82,13 @@
     <!-- HEADER -->
     <header class="header">
       <div class="header-left">
-        <div class="header-logo" onclick="navigate('dashboard')">
+        <div class="header-logo" data-action="navigate" data-value="dashboard">
           <div class="header-logo-icon">⚡</div>
           <span>Git Debug Agent</span>
         </div>
 
         <!-- Active repository switcher pill -->
-        <div class="active-repo-badge" id="header-active-repo" onclick="openActiveRepoPicker()"
+        <div class="active-repo-badge" id="header-active-repo" data-action="openActiveRepoPicker"
           title="Switch active repository">
           <div class="active-repo-dot"></div>
           <span id="header-active-repo-name">No repo selected</span>
@@ -114,7 +114,7 @@
           <span id="server-status-text">Connected</span>
         </div>
 
-        <button class="btn btn-secondary btn-sm" id="github-connect-btn" onclick="showGitHubConnectModal()">
+        <button class="btn btn-secondary btn-sm" id="github-connect-btn" data-action="showGitHubConnectModal">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
             <path
               d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
@@ -139,7 +139,7 @@
 
         <!-- 3-Action Quick Hero Row -->
         <div class="action-grid">
-          <div class="action-card featured" onclick="navigate('debug')">
+          <div class="action-card featured" data-action="navigate" data-value="debug">
             <div>
               <div class="action-card-icon">⚡</div>
               <div class="action-card-title">Run AI Debugger</div>
@@ -153,7 +153,7 @@
             </div>
           </div>
 
-          <div class="action-card" onclick="navigate('git-desktop')">
+          <div class="action-card" data-action="navigate" data-value="git-desktop">
             <div>
               <div class="action-card-icon" style="color:#4f46e5">🖥️</div>
               <div class="action-card-title">Open Git Desktop</div>
@@ -168,7 +168,7 @@
             </div>
           </div>
 
-          <div class="action-card" onclick="openFolderBrowser()">
+          <div class="action-card" data-action="openFolderBrowser">
             <div>
               <div class="action-card-icon" style="color:#0284c7">📁</div>
               <div class="action-card-title">Connect Repository</div>
@@ -186,19 +186,19 @@
 
         <!-- Stats Row -->
         <div class="grid-4" id="dashboard-stats">
-          <div class="stat-card" onclick="navigate('repositories')" style="cursor:pointer">
+          <div class="stat-card" data-action="navigate" data-value="repositories" style="cursor:pointer">
             <div class="stat-label">Connected Repositories</div>
             <div class="stat-value" id="stat-repos">0</div>
           </div>
-          <div class="stat-card" onclick="navigate('git-desktop')" style="cursor:pointer">
+          <div class="stat-card" data-action="navigate" data-value="git-desktop" style="cursor:pointer">
             <div class="stat-label">Current Changes</div>
             <div class="stat-value" id="stat-changes">0 files</div>
           </div>
-          <div class="stat-card" onclick="navigate('debug')" style="cursor:pointer">
+          <div class="stat-card" data-action="navigate" data-value="debug" style="cursor:pointer">
             <div class="stat-label">Debug Sessions</div>
             <div class="stat-value" id="stat-sessions">0</div>
           </div>
-          <div class="stat-card" onclick="navigate('history')" style="cursor:pointer">
+          <div class="stat-card" data-action="navigate" data-value="history" style="cursor:pointer">
             <div class="stat-label">Fixes Applied</div>
             <div class="stat-value" id="stat-fixes">0</div>
           </div>
@@ -213,14 +213,14 @@
                 <div class="card-title">Connected Repositories</div>
                 <div class="card-subtitle">Active repositories ready for AI analysis</div>
               </div>
-              <button class="btn btn-secondary btn-sm" onclick="navigate('repositories')">View All</button>
+              <button class="btn btn-secondary btn-sm" data-action="navigate" data-value="repositories">View All</button>
             </div>
             <div id="dashboard-repos">
               <div class="empty-state">
                 <div class="empty-icon">📁</div>
                 <div class="empty-title">No repositories yet</div>
                 <div class="empty-desc">Connect a local or GitHub repository to get started.</div>
-                <button class="btn btn-primary btn-sm" onclick="openFolderBrowser()">Browse Folders</button>
+                <button class="btn btn-primary btn-sm" data-action="openFolderBrowser">Browse Folders</button>
               </div>
             </div>
           </div>
@@ -232,14 +232,14 @@
                 <div class="card-title">Recent Debug Sessions</div>
                 <div class="card-subtitle">History of bug investigations & root causes</div>
               </div>
-              <button class="btn btn-secondary btn-sm" onclick="navigate('history')">View All</button>
+              <button class="btn btn-secondary btn-sm" data-action="navigate" data-value="history">View All</button>
             </div>
             <div id="dashboard-sessions">
               <div class="empty-state">
                 <div class="empty-icon">🔍</div>
                 <div class="empty-title">No debug sessions yet</div>
                 <div class="empty-desc">Start a session to isolate failing code paths and verify fixes.</div>
-                <button class="btn btn-primary btn-sm" onclick="navigate('debug')">Start Debugging</button>
+                <button class="btn btn-primary btn-sm" data-action="navigate" data-value="debug">Start Debugging</button>
               </div>
             </div>
           </div>
@@ -251,7 +251,7 @@
                 <div class="card-title">Engine Health</div>
                 <div class="card-subtitle">Live status of debugging pipelines</div>
               </div>
-              <button class="btn btn-secondary btn-sm" onclick="checkHealth()">Refresh</button>
+              <button class="btn btn-secondary btn-sm" data-action="checkHealth">Refresh</button>
             </div>
             <div id="system-status-list" style="display:flex;flex-direction:column;gap:10px">
               <div class="agent-phase done">
@@ -353,8 +353,8 @@
             <div class="section-subtitle">Manage connected local folders and GitHub repositories</div>
           </div>
           <div style="display:flex;gap:10px">
-            <button class="btn btn-secondary" onclick="openFolderBrowser()">📁 Browse Local Folders</button>
-            <button class="btn btn-primary" onclick="showGitHubModalFlow()">
+            <button class="btn btn-secondary" data-action="openFolderBrowser">📁 Browse Local Folders</button>
+            <button class="btn btn-primary" data-action="showGitHubModalFlow">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                 <path
                   d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
@@ -370,8 +370,8 @@
             <div class="empty-title">No repositories connected</div>
             <div class="empty-desc">Add a local repository or connect a GitHub repository to start debugging.</div>
             <div style="display:flex;gap:10px;margin-top:8px">
-              <button class="btn btn-secondary btn-sm" onclick="openFolderBrowser()">Browse Folders</button>
-              <button class="btn btn-primary btn-sm" onclick="showGitHubModalFlow()">Connect GitHub</button>
+              <button class="btn btn-secondary btn-sm" data-action="openFolderBrowser">Browse Folders</button>
+              <button class="btn btn-primary btn-sm" data-action="showGitHubModalFlow">Connect GitHub</button>
             </div>
           </div>
         </div>
@@ -382,13 +382,13 @@
         <!-- Git Desktop Repository Header -->
         <div class="git-desktop-header card" style="margin-bottom:16px;padding:14px 18px">
           <div class="git-desktop-repo-info">
-            <div class="git-repo-pill" onclick="openActiveRepoPicker()" title="Switch active repository"
+            <div class="git-repo-pill" data-action="openActiveRepoPicker" title="Switch active repository"
               style="cursor:pointer">
               <span class="git-repo-icon">🌿</span>
               <span id="gd-repo-name" class="git-repo-name" style="font-weight:700">Select a repository</span>
               <span style="font-size:10px;color:var(--c-text-muted)">▾</span>
             </div>
-            <div class="git-meta-item" onclick="openBranchSwitcherModal()" style="cursor:pointer"
+            <div class="git-meta-item" data-action="openBranchSwitcherModal" style="cursor:pointer"
               title="Click to switch or create branch">
               <span class="git-meta-label">Branch:</span>
               <span id="gd-branch-name" class="badge badge-accent"
@@ -412,22 +412,22 @@
 
           <!-- Git Desktop Main Actions Toolbar -->
           <div class="git-desktop-actions">
-            <button class="btn btn-primary btn-sm" id="gd-btn-analyze" onclick="triggerAIAnalyzeChanges()">
+            <button class="btn btn-primary btn-sm" id="gd-btn-analyze" data-action="triggerAIAnalyzeChanges">
               ⚡ AI Analyze Changes
             </button>
-            <button class="btn btn-secondary btn-sm" id="gd-btn-fetch" onclick="triggerGitFetch()">
+            <button class="btn btn-secondary btn-sm" id="gd-btn-fetch" data-action="triggerGitFetch">
               📥 Fetch origin
             </button>
-            <button class="btn btn-secondary btn-sm" id="gd-btn-pull" onclick="triggerGitPull()">
+            <button class="btn btn-secondary btn-sm" id="gd-btn-pull" data-action="triggerGitPull">
               ⬇️ Pull
             </button>
-            <button class="btn btn-secondary btn-sm" id="gd-btn-sync" onclick="triggerGitSync()">
+            <button class="btn btn-secondary btn-sm" id="gd-btn-sync" data-action="triggerGitSync">
               🔄 Sync
             </button>
-            <button class="btn btn-secondary btn-sm" id="gd-btn-push" onclick="openPushPreviewModal()">
+            <button class="btn btn-secondary btn-sm" id="gd-btn-push" data-action="openPushPreviewModal">
               ⬆️ Push origin
             </button>
-            <button class="btn btn-secondary btn-sm" id="gd-btn-ship" onclick="triggerAIShip()">
+            <button class="btn btn-secondary btn-sm" id="gd-btn-ship" data-action="triggerAIShip">
               🚀 AI Ship
             </button>
           </div>
@@ -440,14 +440,14 @@
             <!-- Left Tabs: Changes vs Commit Plan vs History -->
             <div class="tabs"
               style="padding:0 12px;border-bottom:1px solid var(--c-border);background:var(--c-surface-hover)">
-              <div class="tab-item active" id="gd-tab-changes" onclick="switchGitDesktopLeftTab('changes')">
+              <div class="tab-item active" id="gd-tab-changes" data-action="switchGitDesktopLeftTab" data-value="changes">
                 Changes <span class="badge badge-accent" id="gd-changes-count"
                   style="margin-left:4px;font-size:10px">0</span>
               </div>
-              <div class="tab-item" id="gd-tab-commit-plan" onclick="switchGitDesktopLeftTab('commit-plan')">
+              <div class="tab-item" id="gd-tab-commit-plan" data-action="switchGitDesktopLeftTab" data-value="commit-plan">
                 🤖 Commit Plan
               </div>
-              <div class="tab-item" id="gd-tab-history" onclick="switchGitDesktopLeftTab('history')">
+              <div class="tab-item" id="gd-tab-history" data-action="switchGitDesktopLeftTab" data-value="history">
                 History
               </div>
             </div>
@@ -460,11 +460,11 @@
                 <div style="font-size:12px;font-weight:600;color:var(--c-text-secondary)">Changed Files</div>
                 <div class="git-filter-tabs">
                   <button class="git-filter-tab active" data-filter="all"
-                    onclick="filterChangedFiles('all')">All</button>
+                    data-action="filterChangedFiles" data-value="all">All</button>
                   <button class="git-filter-tab" data-filter="staged"
-                    onclick="filterChangedFiles('staged')">Staged</button>
+                    data-action="filterChangedFiles" data-value="staged">Staged</button>
                   <button class="git-filter-tab" data-filter="unstaged"
-                    onclick="filterChangedFiles('unstaged')">Unstaged</button>
+                    data-action="filterChangedFiles" data-value="unstaged">Unstaged</button>
                 </div>
               </div>
 
@@ -493,7 +493,7 @@
                   <span style="font-size:10.5px;font-weight:600;color:var(--c-text-muted);letter-spacing:.5px">COMMIT
                     MESSAGE</span>
                   <button type="button" id="gd-auto-generate-btn" class="btn btn-ghost btn-sm"
-                    onclick="generateAutoCommitMessage(true)"
+                    data-action="generateAutoCommitMessage" data-value="true"
                     style="padding:2px 8px;font-size:11px;border:1px solid var(--c-border);border-radius:var(--r-sm)">
                     ✨ Auto-Generate
                   </button>
@@ -502,7 +502,7 @@
                   style="font-size:12px;margin-bottom:6px;width:100%" />
                 <textarea class="form-input form-textarea" id="gd-commit-desc" rows="2"
                   placeholder="Description (optional)" style="font-size:11px;margin-bottom:8px;width:100%"></textarea>
-                <button class="btn btn-primary btn-sm full-width" id="gd-btn-commit" onclick="commitFromGitDesktop()">
+                <button class="btn btn-primary btn-sm full-width" id="gd-btn-commit" data-action="commitFromGitDesktop">
                   Commit to <span id="gd-commit-branch-label" style="font-weight:700;margin-left:2px">main</span>
                 </button>
               </div>
@@ -526,7 +526,7 @@
                   <div id="gd-ai-summary" style="font-size:11px;color:var(--c-text-secondary);margin-top:1px">
                     Auto-grouped changes</div>
                 </div>
-                <button class="btn btn-primary btn-sm" id="gd-btn-commit-all" onclick="triggerAICommitAll()"
+                <button class="btn btn-primary btn-sm" id="gd-btn-commit-all" data-action="triggerAICommitAll"
                   style="display:none;font-size:11px;padding:3px 8px;white-space:nowrap">
                   ⚡ Commit All
                 </button>
@@ -558,11 +558,11 @@
                 </div>
                 <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
                   <!-- OS Direct Open Actions -->
-                  <button class="btn btn-ghost btn-sm" id="gd-btn-reveal-os" onclick="openCurrentFileInOs('reveal')"
+                  <button class="btn btn-ghost btn-sm" id="gd-btn-reveal-os" data-action="openCurrentFileInOs" data-value="reveal"
                     title="Reveal file in Windows File Explorer" style="padding:4px 8px;font-size:11px;display:none">
                     📂 Reveal
                   </button>
-                  <button class="btn btn-ghost btn-sm" id="gd-btn-open-editor" onclick="openCurrentFileInOs('edit')"
+                  <button class="btn btn-ghost btn-sm" id="gd-btn-open-editor" data-action="openCurrentFileInOs" data-value="edit"
                     title="Open file directly in VS Code / default editor"
                     style="padding:4px 8px;font-size:11px;display:none">
                     📝 Open Editor
@@ -570,13 +570,13 @@
                   <span id="gd-diff-status-badge" class="badge badge-secondary" style="display:none">STATUS</span>
                   <div class="tabs" style="padding:0;background:transparent;border:none">
                     <button class="btn btn-secondary btn-sm" id="gd-tab-btn-diff"
-                      onclick="switchGitDesktopTab('gd-diff')" style="padding:4px 10px;font-size:11px">File
+                      data-action="switchGitDesktopTab" data-value="gd-diff" style="padding:4px 10px;font-size:11px">File
                       Diff</button>
                     <button class="btn btn-ghost btn-sm" id="gd-tab-btn-all-diff"
-                      onclick="switchGitDesktopTab('gd-all-diff')" style="padding:4px 10px;font-size:11px">📑 All
+                      data-action="switchGitDesktopTab" data-value="gd-all-diff" style="padding:4px 10px;font-size:11px">📑 All
                       Changes (<span id="gd-all-diff-count">0</span>)</button>
                     <button class="btn btn-ghost btn-sm" id="gd-tab-btn-output"
-                      onclick="switchGitDesktopTab('gd-output')" style="padding:4px 10px;font-size:11px">Console
+                      data-action="switchGitDesktopTab" data-value="gd-output" style="padding:4px 10px;font-size:11px">Console
                       Output</button>
                   </div>
                 </div>
@@ -644,7 +644,7 @@
                       <option value="">Select repository...</option>
                     </select>
                     <button type="button" class="btn btn-secondary btn-sm"
-                      onclick="openFolderBrowser()">Browse...</button>
+                      data-action="openFolderBrowser">Browse...</button>
                   </div>
                 </div>
 
@@ -686,7 +686,7 @@
                 </div>
                 <div style="display:flex;flex-direction:column;gap:8px">
                   <div class="folder-row"
-                    onclick="setDebugExample('Fix authentication regression: requests failing with 500 error after recent commit')">
+                    data-action="setDebugExample" data-value="Fix authentication regression: requests failing with 500 error after recent commit">
                     <div class="folder-row-left">
                       <span style="font-size:16px">🔐</span>
                       <span class="folder-name">Authentication flow regression</span>
@@ -694,7 +694,7 @@
                     <span class="badge badge-accent">Preset</span>
                   </div>
                   <div class="folder-row"
-                    onclick="setDebugExample('Investigate failing test suite in user service module')">
+                    data-action="setDebugExample" data-value="Investigate failing test suite in user service module">
                     <div class="folder-row-left">
                       <span style="font-size:16px">🧪</span>
                       <span class="folder-name">Unit test failure analysis</span>
@@ -702,7 +702,7 @@
                     <span class="badge badge-accent">Preset</span>
                   </div>
                   <div class="folder-row"
-                    onclick="setDebugExample('Resolve git merge conflict between main branch and feature branch')">
+                    data-action="setDebugExample" data-value="Resolve git merge conflict between main branch and feature branch">
                     <div class="folder-row-left">
                       <span style="font-size:16px">⚡</span>
                       <span class="folder-name">Merge conflict resolution</span>
@@ -710,7 +710,7 @@
                     <span class="badge badge-accent">Preset</span>
                   </div>
                   <div class="folder-row"
-                    onclick="setDebugExample('Find which commit introduced regression using git bisect')">
+                    data-action="setDebugExample" data-value="Find which commit introduced regression using git bisect">
                     <div class="folder-row-left">
                       <span style="font-size:16px">📜</span>
                       <span class="folder-name">Regression search with Git Bisect</span>
@@ -742,7 +742,7 @@
           <div class="debug-layout">
             <!-- Header bar -->
             <div class="debug-header-bar">
-              <button class="btn btn-secondary btn-sm" onclick="exitDebugSession()">← Back</button>
+              <button class="btn btn-secondary btn-sm" data-action="exitDebugSession">← Back</button>
               <div style="flex:1">
                 <div style="font-size:14px;font-weight:700" id="session-repo-label">Repository: —</div>
                 <div style="font-size:12px;color:var(--c-text-muted)" id="session-type-label">Type: —</div>
@@ -753,7 +753,7 @@
                 <div id="session-status-badge" class="badge badge-accent">Investigating...</div>
               </div>
               <button class="btn btn-danger btn-sm" id="abort-session-btn"
-                onclick="abortCurrentSession()">Abort</button>
+                data-action="abortCurrentSession">Abort</button>
             </div>
 
             <!-- Problem & Agent Execution Row -->
@@ -822,13 +822,13 @@
                       SURGICAL PATCH PREVIEW
                     </div>
                     <div style="display:flex;gap:8px;flex-wrap:wrap">
-                      <button class="btn btn-primary btn-sm" id="diff-apply-btn" onclick="applyFix()">🔧 Apply
+                      <button class="btn btn-primary btn-sm" id="diff-apply-btn" data-action="applyFix">🔧 Apply
                         Patch</button>
-                      <button class="btn btn-danger btn-sm" id="diff-revert-btn" onclick="revertFix()"
+                      <button class="btn btn-danger btn-sm" id="diff-revert-btn" data-action="revertFix"
                         style="display:none">↩️ Revert Patch</button>
-                      <button class="btn btn-secondary btn-sm" id="diff-commit-btn" onclick="commitAndPushFix()">📝
+                      <button class="btn btn-secondary btn-sm" id="diff-commit-btn" data-action="commitAndPushFix">📝
                         Commit & Push</button>
-                      <button class="btn btn-secondary btn-sm" id="diff-pr-btn" onclick="openCreatePRModal()">🚀 Create
+                      <button class="btn btn-secondary btn-sm" id="diff-pr-btn" data-action="openCreatePRModal">🚀 Create
                         PR</button>
                     </div>
                   </div>
@@ -848,7 +848,7 @@
                     <div style="font-size:12px;font-weight:600;color:var(--c-text-secondary)">
                       3-WAY MERGE CONFLICT RESOLVER
                     </div>
-                    <button class="btn btn-primary btn-sm" id="resolve-conflicts-btn" onclick="resolveConflicts()">
+                    <button class="btn btn-primary btn-sm" id="resolve-conflicts-btn" data-action="resolveConflicts">
                       ⚡ AI Semantic Resolve All
                     </button>
                   </div>
@@ -894,14 +894,14 @@
                 <div><strong>Fix Plan:</strong> <span id="rc-fix"></span></div>
               </div>
               <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
-                <button class="btn btn-primary" id="apply-fix-btn" onclick="applyFix()">🔧 Apply Verified Patch</button>
-                <button class="btn btn-danger" id="revert-fix-btn" onclick="revertFix()" style="display:none">↩️ Revert
+                <button class="btn btn-primary" id="apply-fix-btn" data-action="applyFix">🔧 Apply Verified Patch</button>
+                <button class="btn btn-danger" id="revert-fix-btn" data-action="revertFix" style="display:none">↩️ Revert
                   Patch</button>
-                <button class="btn btn-secondary" id="commit-fix-btn" onclick="commitAndPushFix()">📝 Safe Commit &
+                <button class="btn btn-secondary" id="commit-fix-btn" data-action="commitAndPushFix">📝 Safe Commit &
                   Push</button>
-                <button class="btn btn-secondary" id="create-pr-btn" onclick="openCreatePRModal()">🚀 Create Pull
+                <button class="btn btn-secondary" id="create-pr-btn" data-action="openCreatePRModal">🚀 Create Pull
                   Request</button>
-                <button class="btn btn-secondary" onclick="requestDetails()">Review Evidence</button>
+                <button class="btn btn-secondary" data-action="requestDetails">Review Evidence</button>
               </div>
             </div>
           </div>
@@ -916,10 +916,10 @@
             <div class="section-subtitle">Issues tracked across connected repositories</div>
           </div>
           <div style="display:flex;gap:10px;align-items:center">
-            <select class="form-select" id="issues-repo-select" style="width:220px" onchange="loadIssues()">
+            <select class="form-select" id="issues-repo-select" style="width:220px" data-action="loadIssues">
               <option value="">Select repository...</option>
             </select>
-            <select class="form-select" id="issues-state-filter" style="width:110px" onchange="loadIssues()">
+            <select class="form-select" id="issues-state-filter" style="width:110px" data-action="loadIssues">
               <option value="open">Open</option>
               <option value="closed">Closed</option>
               <option value="all">All</option>
@@ -945,14 +945,14 @@
             <div class="section-subtitle">Review, audit, and analyze PR diffs with AI</div>
           </div>
           <div style="display:flex;gap:10px;align-items:center">
-            <select class="form-select" id="prs-repo-select" style="width:220px" onchange="loadPRs()">
+            <select class="form-select" id="prs-repo-select" style="width:220px" data-action="loadPRs">
               <option value="">Select repository...</option>
             </select>
-            <select class="form-select" id="prs-state-filter" style="width:110px" onchange="loadPRs()">
+            <select class="form-select" id="prs-state-filter" style="width:110px" data-action="loadPRs">
               <option value="open">Open</option>
               <option value="closed">Closed</option>
             </select>
-            <button class="btn btn-primary btn-sm" onclick="openCreatePRModal()"
+            <button class="btn btn-primary btn-sm" data-action="openCreatePRModal"
               style="display:flex;align-items:center;gap:6px;padding:6px 14px">
               🚀 + New Pull Request
             </button>
@@ -977,10 +977,10 @@
             <div class="section-subtitle">Semantic resolution across merge, rebase, and cherry-pick branches</div>
           </div>
           <div style="display:flex;gap:10px;align-items:center">
-            <select class="form-select" id="conflicts-repo-select" style="width:220px" onchange="loadConflictsPage()">
+            <select class="form-select" id="conflicts-repo-select" style="width:220px" data-action="loadConflictsPage">
               <option value="">Select repository...</option>
             </select>
-            <button class="btn btn-primary btn-sm" onclick="triggerResolveAllConflicts()">
+            <button class="btn btn-primary btn-sm" data-action="triggerResolveAllConflicts">
               ⚡ Resolve All Conflicts
             </button>
           </div>
@@ -1039,7 +1039,7 @@
                     →</a>
                 </div>
               </div>
-              <button class="btn btn-github" onclick="connectGitHub()">Connect GitHub Account</button>
+              <button class="btn btn-github" data-action="connectGitHub">Connect GitHub Account</button>
             </div>
             <div id="github-connected-view" style="display:none">
               <div class="agent-phase done" style="margin-bottom:14px">
@@ -1049,7 +1049,7 @@
                   <div class="agent-phase-desc">GitHub account active & synced</div>
                 </div>
               </div>
-              <button class="btn btn-danger btn-sm" onclick="disconnectGitHub()">Disconnect GitHub</button>
+              <button class="btn btn-danger btn-sm" data-action="disconnectGitHub">Disconnect GitHub</button>
             </div>
           </div>
 
@@ -1063,7 +1063,7 @@
                 <div class="form-label">Signed in as</div>
                 <div style="font-size:14px;font-weight:600;margin-top:4px" id="settings-email">—</div>
               </div>
-              <button class="btn btn-danger btn-sm" onclick="logout()" style="width:fit-content">Sign Out</button>
+              <button class="btn btn-danger btn-sm" data-action="logout" style="width:fit-content">Sign Out</button>
             </div>
           </div>
 
@@ -1080,7 +1080,7 @@
                   <option value="autonomous">Autonomous — Auto-applies low-risk fixes and runs tests</option>
                 </select>
               </div>
-              <button class="btn btn-primary btn-sm" onclick="saveAgentConfig()" style="width:fit-content">Save
+              <button class="btn btn-primary btn-sm" data-action="saveAgentConfig" style="width:fit-content">Save
                 Settings</button>
             </div>
           </div>
@@ -1105,11 +1105,11 @@
      ============================================================ -->
   <div id="modal-folder-browser" class="modal-overlay" style="display:none">
     <div class="modal" style="max-width:780px;width:96vw">
-      <div class="modal-close" onclick="closeModal('modal-folder-browser')">×</div>
+      <div class="modal-close" data-action="closeModal" data-value="modal-folder-browser">×</div>
       <div
         style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:12px;flex-wrap:wrap">
         <div class="modal-title" style="margin-bottom:0">Select Repository / Project Folder</div>
-        <button class="btn btn-secondary btn-sm" id="btn-open-os-dialog" onclick="triggerNativeFolderPicker()"
+        <button class="btn btn-secondary btn-sm" id="btn-open-os-dialog" data-action="triggerNativeFolderPicker"
           style="display:flex;align-items:center;gap:6px;font-weight:600">
           🗔 Open OS File Dialog
         </button>
@@ -1120,7 +1120,7 @@
       </div>
 
       <!-- Drag & Drop / Native OS Dialog Zone -->
-      <div class="folder-drop-zone" id="folder-drop-zone" onclick="triggerNativeFolderPicker()"
+      <div class="folder-drop-zone" id="folder-drop-zone" data-action="triggerNativeFolderPicker"
         style="border:2px dashed var(--c-border);border-radius:var(--r-md);padding:12px;text-align:center;cursor:pointer;background:var(--c-surface-hover);transition:var(--transition-fast);margin-bottom:10px;font-size:12px">
         <span style="font-size:15px">📁</span> <strong>Drag &amp; drop any folder here</strong> or click to open native
         OS Folder Dialog
@@ -1144,7 +1144,7 @@
             <div class="current-target-title">🌿 Git Repository Detected</div>
             <div class="current-target-path" id="folder-repo-name">—</div>
           </div>
-          <button class="btn btn-primary btn-sm" id="folder-connect-current-btn" onclick="connectCurrentBrowsedFolder()"
+          <button class="btn btn-primary btn-sm" id="folder-connect-current-btn" data-action="connectCurrentBrowsedFolder"
             style="white-space:nowrap;flex-shrink:0">
             Select &amp; Connect Repo
           </button>
@@ -1155,8 +1155,8 @@
           <input class="form-input" id="folder-path-input"
             placeholder="Paste or enter any local repository path (e.g. ~/projects/repo, C:\projects\workspace)"
             style="flex:1;font-size:12px;font-family:var(--font-mono)" />
-          <button class="btn btn-secondary btn-sm" onclick="browseToEnteredPath()">Go</button>
-          <button class="btn btn-primary btn-sm" onclick="connectEnteredPath()">Connect</button>
+          <button class="btn btn-secondary btn-sm" data-action="browseToEnteredPath">Go</button>
+          <button class="btn btn-primary btn-sm" data-action="connectEnteredPath">Connect</button>
         </div>
 
         <!-- Folder + file list container -->
@@ -1166,10 +1166,10 @@
       </div>
 
       <div class="modal-actions" style="margin-top:14px;display:flex;justify-content:space-between;align-items:center">
-        <button class="btn btn-secondary btn-sm" id="folder-connect-anyway-btn" onclick="connectCurrentBrowsedFolder()">
+        <button class="btn btn-secondary btn-sm" id="folder-connect-anyway-btn" data-action="connectCurrentBrowsedFolder">
           📁 Connect Current Folder
         </button>
-        <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-folder-browser')">Cancel</button>
+        <button class="btn btn-ghost btn-sm" data-action="closeModal" data-value="modal-folder-browser">Cancel</button>
       </div>
     </div>
   </div>
@@ -1177,12 +1177,12 @@
   <!-- GitHub Repos Modal -->
   <div id="modal-github-repos" class="modal-overlay" style="display:none">
     <div class="modal" style="max-width:640px">
-      <div class="modal-close" onclick="closeModal('modal-github-repos')">×</div>
+      <div class="modal-close" data-action="closeModal" data-value="modal-github-repos">×</div>
       <div class="modal-title">Select GitHub Repository</div>
       <div class="modal-desc">Choose a cloud repository to import for AI debugging.</div>
       <div class="form-group" style="margin-bottom:12px">
         <input class="form-input" type="text" id="github-repo-search" placeholder="Filter repositories..."
-          oninput="filterGitHubRepos()" />
+          data-action="filterGitHubRepos" />
       </div>
       <div id="github-repos-list" style="max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:8px">
         <div class="text-muted" style="font-size:13px;text-align:center;padding:20px">
@@ -1190,7 +1190,7 @@
         </div>
       </div>
       <div class="modal-actions">
-        <button class="btn btn-secondary" onclick="closeModal('modal-github-repos')">Cancel</button>
+        <button class="btn btn-secondary" data-action="closeModal" data-value="modal-github-repos">Cancel</button>
       </div>
     </div>
   </div>
@@ -1198,7 +1198,7 @@
   <!-- GitHub Connect Modal -->
   <div id="modal-github-connect" class="modal-overlay" style="display:none">
     <div class="modal">
-      <div class="modal-close" onclick="closeModal('modal-github-connect')">×</div>
+      <div class="modal-close" data-action="closeModal" data-value="modal-github-connect">×</div>
       <div class="modal-title">Connect GitHub Account</div>
       <div class="modal-desc">Enter your Personal Access Token to link cloud repositories, issues, and pull requests.
       </div>
@@ -1215,8 +1215,8 @@
         </div>
       </div>
       <div class="modal-actions">
-        <button class="btn btn-secondary" onclick="closeModal('modal-github-connect')">Cancel</button>
-        <button class="btn btn-primary" onclick="connectGitHubFromModal()">Connect</button>
+        <button class="btn btn-secondary" data-action="closeModal" data-value="modal-github-connect">Cancel</button>
+        <button class="btn btn-primary" data-action="connectGitHubFromModal">Connect</button>
       </div>
     </div>
   </div>
@@ -1224,7 +1224,7 @@
   <!-- Create Pull Request Modal -->
   <div id="modal-create-pr" class="modal-overlay" style="display:none">
     <div class="modal" style="max-width:560px">
-      <div class="modal-close" onclick="closeModal('modal-create-pr')">×</div>
+      <div class="modal-close" data-action="closeModal" data-value="modal-create-pr">×</div>
       <div class="modal-title">🚀 Create Pull Request</div>
       <div class="modal-desc">Create a PR from this verified fix to merge into your target branch.</div>
       <div style="display:flex;flex-direction:column;gap:12px">
@@ -1249,8 +1249,8 @@
         </div>
       </div>
       <div class="modal-actions" style="margin-top:16px">
-        <button class="btn btn-secondary" onclick="closeModal('modal-create-pr')">Cancel</button>
-        <button class="btn btn-primary" id="submit-create-pr-btn" onclick="submitCreatePR()">Create Pull
+        <button class="btn btn-secondary" data-action="closeModal" data-value="modal-create-pr">Cancel</button>
+        <button class="btn btn-primary" id="submit-create-pr-btn" data-action="submitCreatePR">Create Pull
           Request</button>
       </div>
     </div>
@@ -1259,7 +1259,7 @@
   <!-- Push Preview & Target Branch Selection Modal -->
   <div id="modal-push-preview" class="modal-overlay" style="display:none">
     <div class="modal" style="max-width:620px;width:96vw">
-      <div class="modal-close" onclick="closeModal('modal-push-preview')">×</div>
+      <div class="modal-close" data-action="closeModal" data-value="modal-push-preview">×</div>
       <div class="modal-title">⬆️ Push to Remote Repository</div>
       <div class="modal-desc">Choose which remote branch you want to push to and verify outgoing commits.</div>
 
@@ -1282,7 +1282,7 @@
         <div style="display:grid;grid-template-columns:1fr 140px;gap:10px">
           <div class="form-group">
             <label class="form-label" for="push-target-branch-select">Target Branch to Push To</label>
-            <select class="form-select" id="push-target-branch-select" onchange="onPushTargetBranchChanged()">
+            <select class="form-select" id="push-target-branch-select" data-action="onPushTargetBranchChanged">
               <option value="">Loading branches...</option>
             </select>
             <input class="form-input" id="push-custom-branch-input"
@@ -1335,8 +1335,8 @@
       </div>
 
       <div class="modal-actions" style="margin-top:16px">
-        <button class="btn btn-secondary" onclick="closeModal('modal-push-preview')">Cancel</button>
-        <button class="btn btn-primary" id="confirm-push-btn" onclick="executePushFromModal()">
+        <button class="btn btn-secondary" data-action="closeModal" data-value="modal-push-preview">Cancel</button>
+        <button class="btn btn-primary" id="confirm-push-btn" data-action="executePushFromModal">
           Confirm &amp; Push to Remote
         </button>
       </div>
@@ -1346,12 +1346,12 @@
   <!-- Branch Switcher Modal (GitHub Desktop Style) -->
   <div id="modal-branch-switcher" class="modal-overlay" style="display:none">
     <div class="modal" style="max-width:520px;width:96vw">
-      <div class="modal-close" onclick="closeModal('modal-branch-switcher')">×</div>
+      <div class="modal-close" data-action="closeModal" data-value="modal-branch-switcher">×</div>
       <div class="modal-title">🔀 Switch Branch</div>
       <div class="modal-desc">Checkout an existing local/remote branch or create a new branch.</div>
 
       <div class="form-group" style="margin-bottom:12px">
-        <input class="form-input" id="branch-search-input" placeholder="Search branches..." oninput="filterBranchList()"
+        <input class="form-input" id="branch-search-input" placeholder="Search branches..." data-action="filterBranchList"
           style="font-size:13px" />
       </div>
 
@@ -1367,12 +1367,12 @@
         <div style="display:flex;gap:8px">
           <input class="form-input" id="new-branch-name-input" placeholder="e.g. feature/my-new-task"
             style="flex:1;font-size:12px;font-family:var(--font-mono)" />
-          <button class="btn btn-primary btn-sm" onclick="createAndCheckoutBranch()">Create &amp; Switch</button>
+          <button class="btn btn-primary btn-sm" data-action="createAndCheckoutBranch">Create &amp; Switch</button>
         </div>
       </div>
 
       <div class="modal-actions" style="margin-top:16px">
-        <button class="btn btn-secondary" onclick="closeModal('modal-branch-switcher')">Close</button>
+        <button class="btn btn-secondary" data-action="closeModal" data-value="modal-branch-switcher">Close</button>
       </div>
     </div>
   </div>

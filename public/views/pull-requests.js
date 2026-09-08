@@ -241,16 +241,16 @@ function reviewPR(repoId, prTitle) {
 }
 
 // Event delegation for data-action attributes
+const PR_ACTIONS = {
+  reviewPR: (value, extra) => reviewPR(value, extra),
+  quickMergePR: (value) => quickMergePR(value),
+};
+
 document.addEventListener('click', (e) => {
   const target = e.target.closest('[data-action]');
   if (!target) return;
-  const action = target.dataset.action;
-  const value = target.dataset.value;
-  const extra = target.dataset.extra;
-
-  if (action === 'openCreatePRModal') openCreatePRModal(value);
-  else if (action === 'reviewPR') reviewPR(value, extra);
-  else if (action === 'quickMergePR') quickMergePR(value);
+  const { action, value, extra } = target.dataset;
+  PR_ACTIONS[action]?.(value, extra);
 });
 
 // Window exports

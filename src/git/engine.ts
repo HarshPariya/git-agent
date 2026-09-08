@@ -1,12 +1,15 @@
 import fs from "node:fs";
 import { AppError } from "../errors/app-error.js";
 import type { GitOperation, GitOperationType, GitOperationRisk, GitStatusOutput, GitStatusEntry, GitLogEntry, GitDiffEntry, GitBranch } from "../types/git.js";
+import { execAsync } from "./utils.js";
 
 export type { GitOperationType };
 
 const repositoryPaths = new Map<string, string>();
 
-export function registerRepositoryPath(repositoryId: string, localPath: string): void { repositoryPaths.set(repositoryId, localPath); }
+export function registerRepositoryPath(repositoryId: string, localPath: string): void {
+  repositoryPaths.set(repositoryId, localPath);
+}
 
 export function getExecutionPath(repositoryOrPath: string): string {
   if (!repositoryOrPath) return process.cwd();
@@ -39,6 +42,18 @@ const GIT_OPERATION_CATALOG: readonly GitOperation[] = [
 
 const PROTECTED_BRANCH_PATTERNS = ["main", "master", "production", "release", "develop", "staging"];
 
+const STATUS_CHAR_MAP: Record<string, GitStatusEntry["status"]> = {
+  "??": "untracked", "!!": "ignored", A: "added", M: "modified",
+  D: "deleted", R: "renamed", C: "copied",
+};
+
+const parseStatusChar = (code: string): GitStatusEntry["status"] =>
+  STATUS_CHAR_MAP[code] ?? "modified";
+
+const RISK_LABELS: Record<GitOperationRisk, string> = {
+  safe: "read-only", controlled: "requires-approval", dangerous: "requires-review",
+};
+
 export function classifyOperation(type: GitOperationType): GitOperation {
   const op = GIT_OPERATION_CATALOG.find((o) => o.type === type);
   if (!op) throw new AppError(`Unknown git operation: ${type}`, "VALIDATION_ERROR", 400);
@@ -50,109 +65,144 @@ export function isProtectedBranch(branch: string): boolean {
   return PROTECTED_BRANCH_PATTERNS.some((p) => normalized === p);
 }
 
-export function getProtectedBranchNames(): readonly string[] { return PROTECTED_BRANCH_PATTERNS; }
+export function getProtectedBranchNames(): readonly string[] {
+  return PROTECTED_BRANCH_PATTERNS;
+}
 
 export async function executeGitStatus(repoPath: string): Promise<GitStatusOutput> {
   const output = await runGit(getExecutionPath(repoPath), "status --porcelain -b");
   const lines = output.trim().split("\n").filter(Boolean);
   const branchLine = lines[0] ?? "";
   const branchMatch = branchLine.match(/^## (?:(.+?)(?:\.\.\.(.+))?(?:\s*\[(.)\])?)$/);
-  let branch = "unknown", ahead = 0, behind = 0, detached = false;
+
+  let branch = "unknown";
+  let ahead = 0;
+  let behind = 0;
+  let detached = false;
 
   if (branchMatch) {
     let branchName = branchMatch[1] ?? "unknown";
-    if (branchName.startsWith("No commits yet on ")) branchName = branchName.replace("No commits yet on ", "").trim();
-    branch = branchName;
-    detached = branchName === "(no branch)" || branchName.includes("no branch");
-    if (detached) branch = "detached";
+    branchName = branchName.replace("No commits yet on ", "").trim();
+    detached = branchName.includes("no branch");
+    branch = detached ? "detached" : branchName;
+
     const trackingInfo = branchMatch[3];
-    if (trackingInfo) {
-      const aheadMatch = trackingInfo.match(/ahead\s+(\d+)/);
-      const behindMatch = trackingInfo.match(/behind\s+(\d+)/);
-      if (aheadMatch && aheadMatch[1]) ahead = parseInt(aheadMatch[1], 10);
-      if (behindMatch && behindMatch[1]) behind = parseInt(behindMatch[1], 10);
-    }
+    const aheadMatch = trackingInfo?.match(/ahead\s+(\d+)/);
+    const behindMatch = trackingInfo?.match(/behind\s+(\d+)/);
+    ahead = aheadMatch ? parseInt(aheadMatch[1] ?? "0", 10) : 0;
+    behind = behindMatch ? parseInt(behindMatch[1] ?? "0", 10) : 0;
   }
 
   const entries: GitStatusEntry[] = [];
-  const statusChar = (idx: string): GitStatusEntry["status"] => {
-    if (idx.startsWith("??")) return "untracked"; if (idx.startsWith("!!")) return "ignored";
-    if (idx.startsWith("A")) return "added"; if (idx.startsWith("M")) return "modified";
-    if (idx.startsWith("D")) return "deleted"; if (idx.startsWith("R")) return "renamed";
-    if (idx.startsWith("C")) return "copied"; return "modified";
-  };
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
     if (!line || line.startsWith("##")) continue;
+
     const indexStatus = line.substring(0, 2);
     const workTreeStatus = line.substring(2, 4);
-    entries.push({ filePath: line.substring(3).trim(), status: workTreeStatus !== "  " ? statusChar(workTreeStatus) : statusChar(indexStatus), staged: indexStatus !== " " && indexStatus !== "? ", workingTreeStatus: workTreeStatus, indexStatus });
+    entries.push({
+      filePath: line.substring(3).trim(),
+      status: workTreeStatus !== "  " ? parseStatusChar(workTreeStatus) : parseStatusChar(indexStatus),
+      staged: indexStatus !== " " && indexStatus !== "? ",
+      workingTreeStatus: workTreeStatus,
+      indexStatus,
+    });
   }
+
   return { branch, ahead, behind, detached, entries, clean: entries.length === 0 };
 }
 
-export async function executeGitLog(repoPath: string, options?: { count?: number; branch?: string }): Promise<GitLogEntry[]> {
+export async function executeGitLog(
+  repoPath: string,
+  options?: { count?: number; branch?: string },
+): Promise<GitLogEntry[]> {
   const count = options?.count ?? 20;
   const ref = options?.branch ?? "HEAD";
-  const output = await runGit(getExecutionPath(repoPath), ["log", `--max-count=${count}`, "--pretty=format:%H|%h|%an|%ae|%ai|%s", ref]);
+  const output = await runGit(
+    getExecutionPath(repoPath),
+    ["log", `--max-count=${count}`, "--pretty=format:%H|%h|%an|%ae|%ai|%s", ref],
+  );
+
   if (!output.trim()) return [];
+
   return output.trim().split("\n").map((line) => {
-    const parts = line.split("|");
-    return { hash: parts[0] ?? "", shortHash: (parts[1] || parts[0]?.substring(0, 7) || ""), author: parts[2] ?? "unknown", email: parts[3] ?? "", date: parts[4] ?? "", message: parts[5] ?? line, branch: ref };
+    const [hash, shortHash, author, email, date, ...rest] = line.split("|");
+    return {
+      hash: hash ?? "",
+      shortHash: shortHash || hash?.substring(0, 7) || "",
+      author: author ?? "unknown",
+      email: email ?? "",
+      date: date ?? "",
+      message: rest.join("|") || line,
+      branch: ref,
+    };
   });
 }
 
-export async function executeGitDiff(repoPath: string, options?: { staged?: boolean; filePath?: string }): Promise<GitDiffEntry[]> {
+export async function executeGitDiff(
+  repoPath: string,
+  options?: { staged?: boolean; filePath?: string },
+): Promise<GitDiffEntry[]> {
   const parts = ["diff"];
   if (options?.staged) parts.push("--cached");
   parts.push("--stat");
   if (options?.filePath) parts.push("--", options.filePath);
+
   const output = await runGit(getExecutionPath(repoPath), parts);
   if (!output.trim()) return [];
+
   return output.trim().split("\n").filter(Boolean).map((line) => {
     const diffMatch = line.match(/^(.+?)\s+\|\s*(\d+)\s+(\d+)?$/);
-    if (diffMatch) return { filePath: diffMatch[1] ?? "", status: "modified" as const, additions: parseInt(diffMatch[2] || "0", 10), deletions: parseInt(diffMatch[3] || "0", 10) };
-    return { filePath: line, status: "modified" as const, additions: 0, deletions: 0 };
+    if (!diffMatch) return { filePath: line, status: "modified" as const, additions: 0, deletions: 0 };
+    return {
+      filePath: diffMatch[1] ?? "",
+      status: "modified" as const,
+      additions: parseInt(diffMatch[2] ?? "0", 10),
+      deletions: parseInt(diffMatch[3] ?? "0", 10),
+    };
   });
 }
 
 export async function executeGitBranches(repoPath: string): Promise<GitBranch[]> {
   const output = await runGit(getExecutionPath(repoPath), "branch -a --no-color");
   if (!output.trim()) return [];
+
   return output.trim().split("\n").map((line) => {
     const trimmed = line.trim();
     const current = trimmed.startsWith("*");
-    const name = trimmed.replace("* ", "").replace(/^remotes\/[^\/]+\//, "");
+    const name = trimmed.replace("* ", "").replace(/^remotes\/[^/]+\//, "");
     const remote = trimmed.startsWith("remotes/") ? trimmed : undefined;
     return { name, current, ahead: 0, behind: 0, ...(remote !== undefined && { remote }) };
   });
 }
 
-export async function executeGitOperation(repoPath: string, type: GitOperationType, args: string[], options?: { dryRun?: boolean; approvalToken?: string }): Promise<{ output: string; success: boolean }> {
+export async function executeGitOperation(
+  repoPath: string,
+  type: GitOperationType,
+  args: string[],
+  options?: { dryRun?: boolean; approvalToken?: string },
+): Promise<{ output: string; success: boolean }> {
   const op = classifyOperation(type);
-  if (op.requiresApproval && !options?.approvalToken) throw new AppError(`Operation ${type} requires approval`, "AUTHORIZATION_ERROR", 403);
-  if (options?.dryRun && !op.dryRunSupported) throw new AppError(`Dry run not supported for ${type}`, "VALIDATION_ERROR", 400);
-  if (options?.dryRun) return { output: `[DRY RUN] Would execute: git ${type} ${args.join(" ")}`, success: true };
+  if (op.requiresApproval && !options?.approvalToken) {
+    throw new AppError(`Operation ${type} requires approval`, "AUTHORIZATION_ERROR", 403);
+  }
+  if (options?.dryRun && !op.dryRunSupported) {
+    throw new AppError(`Dry run not supported for ${type}`, "VALIDATION_ERROR", 400);
+  }
+  if (options?.dryRun) {
+    return { output: `[DRY RUN] Would execute: git ${type} ${args.join(" ")}`, success: true };
+  }
+
   const output = await runGit(getExecutionPath(repoPath), [type, ...args]);
   return { output, success: true };
 }
 
-async function runGit(repoPath: string, args: string | readonly string[]): Promise<string> {
-  const { execFile } = await import("node:child_process");
-  const argArray = Array.isArray(args) ? [...args] : (args as string).split(" ").filter(Boolean);
-  return new Promise((resolve, reject) => {
-    execFile("git", argArray, { cwd: repoPath, maxBuffer: 10 * 1024 * 1024, timeout: 60_000 }, (error, stdout, stderr) => {
-      if (error) { reject(new AppError(`Git command failed: ${error.message}\n${stderr || stdout}`, "TOOL_ERROR", 500)); return; }
-      resolve(stdout || "");
-    });
-  });
+export function validateGitUrl(url: string): boolean {
+  return /^https?:\/\/|git@|ssh:\/\//.test(url);
 }
 
-export function validateGitUrl(url: string): boolean { return /^https?:\/\/|git@|ssh:\/\//.test(url); }
-
 export function getRiskLabel(risk: GitOperationRisk): string {
-  const labels: Record<GitOperationRisk, string> = { safe: "read-only", controlled: "requires-approval", dangerous: "requires-review" };
-  return labels[risk];
+  return RISK_LABELS[risk];
 }
 
 export function buildGitCommand(type: GitOperationType, ...args: string[]): string {
@@ -161,3 +211,22 @@ export function buildGitCommand(type: GitOperationType, ...args: string[]): stri
 }
 
 export { GIT_OPERATION_CATALOG };
+
+async function runGit(repoPath: string, args: string | readonly string[]): Promise<string> {
+  try {
+    const argArray = typeof args === "string" ? args.split(" ").filter(Boolean) : [...args];
+    const { stdout } = await execAsync(`git ${argArray.join(" ")}`, {
+      cwd: repoPath,
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 60_000,
+    });
+    return stdout ?? "";
+  } catch (err: unknown) {
+    const e = err as { message?: string; stderr?: string; stdout?: string };
+    throw new AppError(
+      `Git command failed: ${e.message ?? "unknown error"}\n${e.stderr ?? e.stdout ?? ""}`,
+      "TOOL_ERROR",
+      500,
+    );
+  }
+}

@@ -25,89 +25,76 @@ interface MutableCostMetrics {
   avgTokensPerRequest: number;
 }
 
+const ZERO_METRICS: MutableCostMetrics = {
+  totalTokens: 0,
+  totalRequests: 0,
+  totalCostUsd: 0,
+  cacheHits: 0,
+  cacheMisses: 0,
+  avgTokensPerRequest: 0,
+};
+
+const computeHash = (input: string): number => {
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    hash = (hash << 5) - hash + input.charCodeAt(i);
+    hash |= 0;
+  }
+  return hash;
+};
+
 export class LlmCostOptimizer {
   private readonly config: LlmCostConfig;
-  private readonly cache = new Map<
-    string,
-    { response: string; tokens: TokenUsage; expiresAt: number }
-  >();
-  private readonly metrics: MutableCostMetrics = {
-    totalTokens: 0,
-    totalRequests: 0,
-    totalCostUsd: 0,
-    cacheHits: 0,
-    cacheMisses: 0,
-    avgTokensPerRequest: 0,
-  };
+  private readonly cache = new Map<string, { response: string; tokens: TokenUsage; expiresAt: number }>();
+  private readonly metrics: MutableCostMetrics = { ...ZERO_METRICS };
   private readonly tokenCounts: number[] = [];
-  private readonly minuteWindow: { count: number; resetAt: number } = {
-    count: 0,
-    resetAt: Date.now() + 60000,
-  };
+  private readonly minuteWindow = { count: 0, resetAt: Date.now() + 60_000 };
 
   constructor(config: Partial<LlmCostConfig> = {}) {
     this.config = { ...DEFAULT_COST_CONFIG, ...config };
   }
 
-  private estimateTokens(text: string): number {
-    return Math.ceil(text.length / 4);
-  }
+  private estimateTokens = (text: string): number => Math.ceil(text.length / 4);
 
-  private generateCacheKey(instructions: string, input: string): string {
-    const combined = `${instructions}|${input}`;
-    let hash = 0;
-    for (let i = 0; i < combined.length; i++) {
-      hash = (hash << 5) - hash + combined.charCodeAt(i);
-      hash |= 0;
-    }
-    return `${hash}`;
-  }
+  private generateCacheKey = (instructions: string, input: string): string =>
+    `${computeHash(`${instructions}|${input}`)}`;
 
   checkRateLimit(): { allowed: boolean; retryAfterMs?: number } {
     const now = Date.now();
     if (now >= this.minuteWindow.resetAt) {
       this.minuteWindow.count = 0;
-      this.minuteWindow.resetAt = now + 60000;
+      this.minuteWindow.resetAt = now + 60_000;
     }
 
-    const exceeded = this.minuteWindow.count >= this.config.maxTokensPerMinute;
-    return exceeded
+    return this.minuteWindow.count >= this.config.maxTokensPerMinute
       ? { allowed: false, retryAfterMs: this.minuteWindow.resetAt - now }
       : { allowed: true };
   }
 
-  getCachedResponse(
-    instructions: string,
-    input: string,
-  ): { text: string; tokens: TokenUsage } | null {
+  getCachedResponse(instructions: string, input: string): { text: string; tokens: TokenUsage } | null {
     if (!this.config.enableCaching) return null;
 
     const key = this.generateCacheKey(instructions, input);
     const entry = this.cache.get(key);
-    const isExpired = Boolean(entry && Date.now() > entry.expiresAt);
-    isExpired && this.cache.delete(key);
+    if (!entry) { this.metrics.cacheMisses++; return null; }
 
-    const valid = entry && !isExpired;
-    valid ? this.metrics.cacheHits++ : this.metrics.cacheMisses++;
-    return valid ? { text: entry.response, tokens: entry.tokens } : null;
+    const expired = Date.now() > entry.expiresAt;
+    if (expired) { this.cache.delete(key); this.metrics.cacheMisses++; return null; }
+
+    this.metrics.cacheHits++;
+    return { text: entry.response, tokens: entry.tokens };
   }
 
-  cacheResponse(
-    instructions: string,
-    input: string,
-    response: string,
-    tokens: TokenUsage,
-  ): void {
+  cacheResponse(instructions: string, input: string, response: string, tokens: TokenUsage): void {
     if (!this.config.enableCaching) return;
 
-    const key = this.generateCacheKey(instructions, input);
-    while (this.cache.size >= 10000) {
+    while (this.cache.size >= 10_000) {
       const oldest = this.cache.keys().next().value;
       if (!oldest) break;
       this.cache.delete(oldest);
     }
 
-    this.cache.set(key, {
+    this.cache.set(this.generateCacheKey(instructions, input), {
       response,
       tokens,
       expiresAt: Date.now() + this.config.cacheTtlMs,
@@ -115,17 +102,16 @@ export class LlmCostOptimizer {
   }
 
   recordUsage(tokens: TokenUsage): void {
-    this.metrics.totalTokens += tokens.totalTokens;
+    const { totalTokens } = tokens;
+    this.metrics.totalTokens += totalTokens;
     this.metrics.totalRequests++;
-    this.tokenCounts.push(tokens.totalTokens);
+    this.metrics.avgTokensPerRequest = this.metrics.totalTokens / this.metrics.totalRequests;
+    this.minuteWindow.count += totalTokens;
+
+    this.tokenCounts.push(totalTokens);
     if (this.tokenCounts.length > 1000) this.tokenCounts.shift();
 
-    this.metrics.avgTokensPerRequest =
-      this.metrics.totalTokens / this.metrics.totalRequests;
-    this.minuteWindow.count += tokens.totalTokens;
-
-    const costPer1k = this.config.costPer1kTokens ?? 0.002;
-    this.metrics.totalCostUsd += (tokens.totalTokens / 1000) * costPer1k;
+    this.metrics.totalCostUsd += (totalTokens / 1000) * (this.config.costPer1kTokens ?? 0.002);
   }
 
   getMetrics(): CostMetrics {
@@ -136,31 +122,22 @@ export class LlmCostOptimizer {
     const estimated = this.estimateTokens(context);
     if (estimated <= maxTokens) return context;
 
-    const ratio = maxTokens / estimated;
-    const truncatedLength = Math.floor(context.length * ratio * 0.9);
+    const truncatedLength = Math.floor(context.length * (maxTokens / estimated) * 0.9);
     return `${context.slice(0, truncatedLength)}...`;
   }
 
   summarizeIfNeeded(context: string): string {
-    return this.config.summarizeLongContext &&
-      this.estimateTokens(context) > this.config.maxContextLength
-      ? this.truncateContext(context, this.config.maxContextLength)
+    const { summarizeLongContext, maxContextLength } = this.config;
+    return summarizeLongContext && this.estimateTokens(context) > maxContextLength
+      ? this.truncateContext(context, maxContextLength)
       : context;
   }
 
   resetMetrics(): void {
-    Object.assign(this.metrics, {
-      totalTokens: 0,
-      totalRequests: 0,
-      totalCostUsd: 0,
-      cacheHits: 0,
-      cacheMisses: 0,
-      avgTokensPerRequest: 0,
-    });
+    Object.assign(this.metrics, { ...ZERO_METRICS });
     this.tokenCounts.length = 0;
   }
 }
 
-export const createLlmCostOptimizer = (
-  config?: Partial<LlmCostConfig>,
-): LlmCostOptimizer => new LlmCostOptimizer(config);
+export const createLlmCostOptimizer = (config?: Partial<LlmCostConfig>): LlmCostOptimizer =>
+  new LlmCostOptimizer(config);

@@ -8,7 +8,19 @@ import { query } from "../db/postgres.js";
 import { isIgnoredDirectory, isIgnoredFile, isPathWithinRoot, MAX_FILE_SIZE_BYTES } from "./cleaner.js";
 import { toRepositoryPath } from "../retrieval/repository-path.js";
 
-export interface IncrementalIndexStats { file: string; action: "indexed" | "deleted" | "skipped"; chunksCount: number; reason?: string; }
+export interface IncrementalIndexStats {
+  file: string;
+  action: "indexed" | "deleted" | "skipped";
+  chunksCount: number;
+  reason?: string;
+}
+
+const skipResult = (file: string, reason: string): IncrementalIndexStats => ({
+  file,
+  action: "skipped",
+  chunksCount: 0,
+  reason,
+});
 
 export class RepositoryIndexer {
   private readonly repositoryName: string;
@@ -16,21 +28,39 @@ export class RepositoryIndexer {
   private watcher: fsSync.FSWatcher | null = null;
   private debounceMap = new Map<string, NodeJS.Timeout>();
 
-  constructor(rootDirectory: string, repositoryName = "ai-chatbot") { this.rootDirectory = path.resolve(rootDirectory); this.repositoryName = repositoryName; }
+  constructor(rootDirectory: string, repositoryName = "ai-chatbot") {
+    this.rootDirectory = path.resolve(rootDirectory);
+    this.repositoryName = repositoryName;
+  }
 
   public async indexSingleFile(filePath: string): Promise<IncrementalIndexStats> {
     const absolutePath = path.resolve(filePath);
+
     if (!isPathWithinRoot(absolutePath, this.rootDirectory) && absolutePath !== this.rootDirectory)
-      return { file: filePath, action: "skipped", chunksCount: 0, reason: "Out of root boundary" };
+      return skipResult(filePath, "Out of root boundary");
+
     if (isIgnoredFile(path.basename(absolutePath)))
-      return { file: filePath, action: "skipped", chunksCount: 0, reason: "Secret or ignored file" };
-    let exists = false;
-    try { const stat = await fs.stat(absolutePath); exists = true; if (stat.size > MAX_FILE_SIZE_BYTES) return { file: filePath, action: "skipped", chunksCount: 0, reason: "File exceeds 1 MB limit" }; }
-    catch { exists = false; }
-    if (!exists) return this.deleteFileFromIndex(absolutePath);
-    const parsedFile = { ...(await parseFile(absolutePath)), filePath: toRepositoryPath(this.rootDirectory, absolutePath) };
+      return skipResult(filePath, "Secret or ignored file");
+
+    let stat: import("node:fs").Stats | null = null;
+    try {
+      stat = await fs.stat(absolutePath);
+    } catch {
+      return this.deleteFileFromIndex(absolutePath);
+    }
+
+    if (stat.size > MAX_FILE_SIZE_BYTES)
+      return skipResult(filePath, "File exceeds 1 MB limit");
+
+    const parsedFile = {
+      ...(await parseFile(absolutePath)),
+      filePath: toRepositoryPath(this.rootDirectory, absolutePath),
+    };
+
     const chunks: CodeChunk[] = chunkFile(parsedFile);
-    if (chunks.length === 0) return { file: filePath, action: "skipped", chunksCount: 0, reason: "No indexable content" };
+    if (chunks.length === 0)
+      return skipResult(filePath, "No indexable content");
+
     await upsertChunks(this.repositoryName, chunks);
     console.log(`⚡ Auto-Indexed changed file: ${path.basename(filePath)} (${chunks.length} chunks)`);
     return { file: filePath, action: "indexed", chunksCount: chunks.length };
@@ -46,20 +76,36 @@ export class RepositoryIndexer {
 
   public watchRepository(onChange?: (stats: IncrementalIndexStats) => void, debounceMs = 300): void {
     if (this.watcher) return;
+
     console.log(`👁 Starting automatic file watcher on ${this.rootDirectory}...`);
     this.watcher = fsSync.watch(this.rootDirectory, { recursive: true }, (_eventType, filename) => {
       if (!filename) return;
+
       const fullPath = path.join(this.rootDirectory, filename);
-      if (filename.split(path.sep).some((part) => isIgnoredDirectory(part) || isIgnoredFile(part))) return;
-      if (this.debounceMap.has(fullPath)) clearTimeout(this.debounceMap.get(fullPath));
+      const shouldSkip = filename.split(path.sep).some((part) => isIgnoredDirectory(part) || isIgnoredFile(part));
+      if (shouldSkip) return;
+
+      const existing = this.debounceMap.get(fullPath);
+      if (existing) clearTimeout(existing);
+
       const timer = setTimeout(async () => {
         this.debounceMap.delete(fullPath);
-        try { const stats = await this.indexSingleFile(fullPath); if (onChange) onChange(stats); }
-        catch (err) { console.error(`❌ Error auto-indexing ${filename}:`, err); }
+        try {
+          const stats = await this.indexSingleFile(fullPath);
+          onChange?.(stats);
+        } catch (err) {
+          console.error(`❌ Error auto-indexing ${filename}:`, err instanceof Error ? err.message : err);
+        }
       }, debounceMs);
+
       this.debounceMap.set(fullPath, timer);
     });
   }
 
-  public stopWatching(): void { if (this.watcher) { this.watcher.close(); this.watcher = null; console.log("🛑 Automatic file watcher stopped."); } }
+  public stopWatching(): void {
+    if (!this.watcher) return;
+    this.watcher.close();
+    this.watcher = null;
+    console.log("🛑 Automatic file watcher stopped.");
+  }
 }

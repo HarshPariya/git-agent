@@ -25,36 +25,45 @@ if (!JWT_SECRET && process.env.NODE_ENV === "production") {
   throw new Error("AUTH_SECRET must be configured in production");
 }
 const SESSION_SECRET = JWT_SECRET || "development-only-auth-secret";
-const TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+const SALT_LENGTH = 16;
+const PBKDF2_ITERATIONS = 1000;
+const PBKDF2_KEY_LENGTH = 64;
 
 const hashPassword = (password: string, salt: string): string =>
-  crypto.pbkdf2Sync(password, salt, 1000, 64, "sha512").toString("hex");
+  crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, PBKDF2_KEY_LENGTH, "sha512").toString("hex");
+
+const generateSalt = (): string => crypto.randomBytes(SALT_LENGTH).toString("hex");
+
+interface DefaultAccount {
+  id: string;
+  email: string;
+  name: string;
+  tenantId: string;
+  role: User["role"];
+  password: string;
+}
+
+const DEFAULT_ACCOUNTS: readonly DefaultAccount[] = [
+  { id: "user-admin-1", email: "admin@codegpt.io", name: "Enterprise Admin", tenantId: "tenant-enterprise", role: "admin", password: "password123" },
+  { id: "user-alice-1", email: "alice@company-a.com", name: "Alice Developer", tenantId: "tenant-alpha", role: "developer", password: "password123" },
+  { id: "user-bob-1", email: "bob@company-b.com", name: "Bob Engineer", tenantId: "tenant-beta", role: "developer", password: "password123" },
+];
 
 export class UserStore {
   private readonly usersByEmail = new Map<string, User>();
   private readonly usersById = new Map<string, User>();
 
   constructor() {
-    this.seedDefaultUsers();
-  }
-
-  private seedDefaultUsers(): void {
-    const defaultAccounts = [
-      { id: "user-admin-1", email: "admin@codegpt.io", name: "Enterprise Admin", tenantId: "tenant-enterprise", role: "admin" as const, password: "password123" },
-      { id: "user-alice-1", email: "alice@company-a.com", name: "Alice Developer", tenantId: "tenant-alpha", role: "developer" as const, password: "password123" },
-      { id: "user-bob-1", email: "bob@company-b.com", name: "Bob Engineer", tenantId: "tenant-beta", role: "developer" as const, password: "password123" },
-    ];
-
-    for (const acc of defaultAccounts) {
-      const salt = crypto.randomBytes(16).toString("hex");
-      const passwordHash = hashPassword(acc.password, salt);
+    for (const acc of DEFAULT_ACCOUNTS) {
+      const salt = generateSalt();
       const user: User = {
         id: acc.id,
         email: acc.email.toLowerCase(),
         name: acc.name,
         tenantId: acc.tenantId,
         role: acc.role,
-        passwordHash,
+        passwordHash: hashPassword(acc.password, salt),
         salt,
         createdAt: new Date().toISOString(),
       };
@@ -67,18 +76,17 @@ export class UserStore {
     email: string;
     name: string;
     password: string;
-    tenantId?: string | undefined;
-    role?: ("admin" | "developer" | "viewer") | undefined;
+    tenantId?: string;
+    role?: User["role"];
   }): User {
     const normalizedEmail = params.email.trim().toLowerCase();
     if (this.usersByEmail.has(normalizedEmail)) {
       throw new AppError("An account with this email already exists", "AUTHENTICATION_ERROR", 409);
     }
 
-    const salt = crypto.randomBytes(16).toString("hex");
-    const passwordHash = hashPassword(params.password, salt);
-    const userId = "usr-" + crypto.randomUUID().substring(0, 8);
-    const tenantId = params.tenantId?.trim() || "t-" + crypto.randomUUID().substring(0, 8);
+    const salt = generateSalt();
+    const userId = `usr-${crypto.randomUUID().substring(0, 8)}`;
+    const tenantId = params.tenantId?.trim() || `t-${crypto.randomUUID().substring(0, 8)}`;
 
     const user: User = {
       id: userId,
@@ -86,7 +94,7 @@ export class UserStore {
       name: params.name.trim() || normalizedEmail.split("@")[0] || "User",
       tenantId,
       role: params.role || "developer",
-      passwordHash,
+      passwordHash: hashPassword(params.password, salt),
       salt,
       createdAt: new Date().toISOString(),
     };
@@ -96,18 +104,15 @@ export class UserStore {
     return user;
   }
 
-  findByEmail(email: string): User | undefined {
-    return this.usersByEmail.get(email.trim().toLowerCase());
-  }
+  findByEmail = (email: string): User | undefined =>
+    this.usersByEmail.get(email.trim().toLowerCase());
 
-  findById(id: string): User | undefined {
-    return this.usersById.get(id);
-  }
+  findById = (id: string): User | undefined => this.usersById.get(id);
 
-  verifyPassword(user: User, candidatePassword: string): boolean {
+  verifyPassword = (user: User, candidatePassword: string): boolean => {
     const candidateHash = hashPassword(candidatePassword, user.salt);
     return crypto.timingSafeEqual(Buffer.from(user.passwordHash), Buffer.from(candidateHash));
-  }
+  };
 }
 
 export const userStore = new UserStore();
@@ -126,32 +131,30 @@ export const createSessionToken = (user: User): string => {
   return `${encodedPayload}.${signature}`;
 };
 
+const INVALID_TOKEN_ERROR = (message: string) =>
+  new AppError(message, "AUTHENTICATION_ERROR", 401);
+
 export const verifySessionToken = (token: string): AuthSession => {
   const parts = token.split(".");
-  if (parts.length !== 2) {
-    throw new AppError("Invalid authentication token format", "AUTHENTICATION_ERROR", 401);
-  }
+  if (parts.length !== 2) throw INVALID_TOKEN_ERROR("Invalid authentication token format");
 
   const [encodedPayload, signature] = parts;
-  if (!encodedPayload || !signature) {
-    throw new AppError("Invalid authentication token", "AUTHENTICATION_ERROR", 401);
-  }
+  if (!encodedPayload || !signature) throw INVALID_TOKEN_ERROR("Invalid authentication token");
 
   const expectedSignature = crypto.createHmac("sha256", SESSION_SECRET).update(encodedPayload).digest("base64url");
   const sigBuf = Buffer.from(signature);
   const expBuf = Buffer.from(expectedSignature);
+
   if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
-    throw new AppError("Invalid authentication token signature", "AUTHENTICATION_ERROR", 401);
+    throw INVALID_TOKEN_ERROR("Invalid authentication token signature");
   }
 
   try {
     const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as AuthSession;
-    if (payload.exp < Date.now()) {
-      throw new AppError("Authentication token expired", "AUTHENTICATION_ERROR", 401);
-    }
+    if (payload.exp < Date.now()) throw INVALID_TOKEN_ERROR("Authentication token expired");
     return payload;
   } catch (err) {
     if (err instanceof AppError) throw err;
-    throw new AppError("Malformed authentication token payload", "AUTHENTICATION_ERROR", 401);
+    throw INVALID_TOKEN_ERROR("Malformed authentication token payload");
   }
 };

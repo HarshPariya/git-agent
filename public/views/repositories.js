@@ -7,25 +7,14 @@ async function loadRepositories() {
   try {
     const data = await api.listRepositories();
     const repos = Array.isArray(data) ? data : data.repositories || [];
-    window.state.repositories = repos;
+    window.setState("repositories", repos);
 
     // Restore user's explicitly selected repo from localStorage or auto-activate first
     const savedRepoId = localStorage.getItem('gda_active_repo_id');
-    if (savedRepoId) {
-      const match = repos.find((r) => r.id === savedRepoId);
-      if (match) await setActiveRepository(match);
-      else if (repos.length > 0) await setActiveRepository(repos[0]);
-      else await setActiveRepository(null);
-    } else if (window.state.activeRepository) {
-      const match = repos.find((r) => r.id === window.state.activeRepository.id);
-      if (match) await setActiveRepository(match);
-      else if (repos.length > 0) await setActiveRepository(repos[0]);
-      else await setActiveRepository(null);
-    } else if (repos.length > 0) {
-      await setActiveRepository(repos[0]);
-    } else {
-      await setActiveRepository(null);
-    }
+    const currentRepoId = window.state.activeRepository?.id;
+    const targetId = savedRepoId || currentRepoId;
+    const match = targetId ? repos.find((r) => r.id === targetId) : null;
+    await setActiveRepository(match || repos[0] || null);
 
     renderRepositoriesList();
     populateRepoDropdowns();
@@ -47,8 +36,8 @@ function renderRepositoriesList() {
         <div class="empty-title">No repositories connected</div>
         <div class="empty-desc">Add any local project from your laptop or import from GitHub to start autonomous AI debugging.</div>
         <div style="display:flex;gap:10px;margin-top:14px;justify-content:center;flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm" onclick="openFolderBrowser()">📁 Add Local Folder</button>
-          <button class="btn btn-github btn-sm" onclick="showGitHubModalFlow()">🐙 Connect GitHub</button>
+          <button class="btn btn-primary btn-sm" data-action="openFolderBrowser">📁 Add Local Folder</button>
+          <button class="btn btn-github btn-sm" data-action="showGitHubModalFlow">🐙 Connect GitHub</button>
         </div>
       </div>
     `;
@@ -95,7 +84,7 @@ function renderRepositoriesList() {
 }
 
 async function setActiveRepository(repo) {
-  window.state.activeRepository = repo;
+  window.setState("activeRepository", repo);
   if (repo) {
     localStorage.setItem('gda_active_repo_id', repo.id);
   } else {
@@ -104,73 +93,73 @@ async function setActiveRepository(repo) {
 
   const label = document.getElementById('header-active-repo-name');
   if (label) {
-    label.textContent = repo ? (repo.name || "Local Repo") : 'Select Local Repository';
+    label.textContent = repo?.name || 'Select Local Repository';
   }
 
   const badge = document.getElementById('header-active-repo');
   if (badge) {
     const dot = badge.querySelector('.active-repo-dot');
-    if (repo) {
-      badge.style.opacity = '1';
-      if (dot) dot.style.background = 'var(--c-success)';
-    } else {
-      badge.style.opacity = '0.85';
-      if (dot) dot.style.background = 'var(--c-text-muted)';
-    }
+    badge.style.opacity = repo ? '1' : '0.85';
+    if (dot) dot.style.background = repo ? 'var(--c-success)' : 'var(--c-text-muted)';
   }
 
   populateRepoDropdowns();
 
   // Automatically fetch live branch and status across all views
-  if (repo) {
-    try {
-      const status = await api.getGitStatus(repo.id);
-      if (status) {
-        window.state.gitDesktop.gitStatus = status;
-        const branchName = status.branch || repo.currentBranch || repo.defaultBranch || 'main';
-        if (label) {
-          label.textContent = `${repo.name} · ${branchName}`;
-        }
-        const gdBranch = document.getElementById('gd-branch-name');
-        if (gdBranch) gdBranch.textContent = branchName;
-        const gdRepo = document.getElementById('gd-repo-name');
-        if (gdRepo) gdRepo.textContent = repo.name || repo.path;
-        const statBranch = document.getElementById('stat-branch');
-        if (statBranch) statBranch.textContent = branchName;
-        const statChanges = document.getElementById('stat-changes');
-        if (statChanges) statChanges.textContent = `${status.entries ? status.entries.length : 0} files`;
-
-        // Populate changed files for Git Desktop automatically
-        if (status.entries && Array.isArray(status.entries)) {
-          window.state.gitDesktop.changedFiles = status.entries.map((entry) => {
-            let code = "M";
-            if (entry.status === "added") code = "A";
-            else if (entry.status === "deleted") code = "D";
-            else if (entry.status === "renamed") code = "R";
-            else if (entry.status === "untracked") code = "?";
-
-            return {
-              filePath: entry.filePath,
-              status: entry.status,
-              code,
-              staged: entry.staged,
-              additions: entry.status === "added" ? 1 : 0,
-              deletions: 0,
-              risk: entry.filePath.includes("auth") || entry.filePath.includes("key") || entry.filePath.includes(".env") ? "high" : "low",
-              logicalGroup: null,
-            };
-          });
-
-          const countEl = document.getElementById("gd-changes-count");
-          if (countEl) countEl.textContent = `${window.state.gitDesktop.changedFiles.length} files`;
-          if (typeof window.renderGitDesktopChanges === "function") {
-            window.renderGitDesktopChanges();
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Could not fetch git status for active repo:", e);
+  if (!repo) {
+    if (window.state.currentPage === "git-desktop" && typeof window.loadGitDesktop === "function") {
+      window.loadGitDesktop();
     }
+    return;
+  }
+
+  try {
+    const status = await api.getGitStatus(repo.id);
+    if (!status) return;
+
+    const gitDesktopState = { gitStatus: status };
+    const branchName = status.branch || repo.currentBranch || repo.defaultBranch || 'main';
+    if (label) label.textContent = `${repo.name} · ${branchName}`;
+
+    const elements = {
+      'gd-branch-name': branchName,
+      'gd-repo-name': repo.name || repo.path,
+      'stat-branch': branchName,
+      'stat-changes': `${status.entries?.length || 0} files`,
+    };
+
+    Object.entries(elements).forEach(([id, text]) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    });
+
+    // Populate changed files for Git Desktop automatically
+    if (Array.isArray(status.entries)) {
+      const statusToCode = { added: "A", deleted: "D", renamed: "R", untracked: "?" };
+      const isSensitive = (path) => ["auth", "key", ".env"].some((s) => path.includes(s));
+
+      gitDesktopState.changedFiles = status.entries.map((entry) => ({
+        filePath: entry.filePath,
+        status: entry.status,
+        code: statusToCode[entry.status] || "M",
+        staged: entry.staged,
+        additions: entry.status === "added" ? 1 : 0,
+        deletions: 0,
+        risk: isSensitive(entry.filePath) ? "high" : "low",
+        logicalGroup: null,
+      }));
+
+      const countEl = document.getElementById("gd-changes-count");
+      if (countEl) countEl.textContent = `${gitDesktopState.changedFiles.length} files`;
+
+      window.setState("gitDesktop", { ...window.state.gitDesktop, ...gitDesktopState });
+
+      if (typeof window.renderGitDesktopChanges === "function") {
+        window.renderGitDesktopChanges();
+      }
+    }
+  } catch (e) {
+    console.warn("Could not fetch git status for active repo:", e);
   }
 
   // Refresh active page if Git Desktop is visible
@@ -263,13 +252,16 @@ async function indexRepo(repoId) {
 async function disconnectRepo(repoId) {
   if (!confirm("Are you sure you want to disconnect this repository?")) return;
   try {
-    window.state.repositories = (window.state.repositories || []).filter((r) => r.id !== repoId);
-    if (window.state.activeRepository && window.state.activeRepository.id === repoId) {
-      setActiveRepository(window.state.repositories.length > 0 ? window.state.repositories[0] : null);
+    const updatedRepos = (window.state.repositories || []).filter((r) => r.id !== repoId);
+    window.setState("repositories", updatedRepos);
+
+    if (window.state.activeRepository?.id === repoId) {
+      setActiveRepository(updatedRepos[0] || null);
     }
+
     renderRepositoriesList();
     if (typeof window.renderDashboardRepos === "function") {
-      window.renderDashboardRepos(window.state.repositories);
+      window.renderDashboardRepos(updatedRepos);
     }
     populateRepoDropdowns();
 
@@ -546,7 +538,7 @@ async function browseToDirectory(dirPath = "") {
 
   try {
     const data = await api.browseFilesystem(cleanDirPath);
-    window.state.currentBrowsedPath = data.currentPath;
+    window.setState("currentBrowsedPath", data.currentPath);
 
     if (pathEl) pathEl.textContent = data.currentPath;
     if (pathInput) pathInput.value = data.currentPath;
@@ -584,7 +576,7 @@ async function browseToDirectory(dirPath = "") {
         if (nameEl) nameEl.textContent = `${folderName} — ${data.currentPath}`;
         if (btn) btn.textContent = "➕ Add This Folder Directly";
       }
-      window.state.browsedFolderGit = { name: folderName, path: data.currentPath };
+      window.setState("browsedFolderGit", { name: folderName, path: data.currentPath });
     }
 
     let rowsHtml = "";
@@ -742,27 +734,35 @@ function showGitHubModalFlow() {
 async function loadGitHubStatus() {
   try {
     const status = await api.getGitHubStatus();
-    window.state.gitHubConnected = Boolean(status && status.connected);
-    window.state.gitHubUsername = status?.username || null;
+    const isConnected = Boolean(status?.connected);
+    window.setState("gitHubConnected", isConnected);
+    window.setState("gitHubUsername", status?.username || null);
 
-    const githubDesc = document.getElementById("status-github");
-    const githubIcon = document.getElementById("status-github-icon");
-    const githubBtn = document.getElementById("github-connect-btn");
-    const statusView = document.getElementById("github-status-view");
-    const connectForm = document.getElementById("github-connect-form");
-    const connectedView = document.getElementById("github-connected-view");
-    const usernameEl = document.getElementById("github-username");
+    const elements = {
+      githubDesc: document.getElementById("status-github"),
+      githubIcon: document.getElementById("status-github-icon"),
+      githubBtn: document.getElementById("github-connect-btn"),
+      statusView: document.getElementById("github-status-view"),
+      connectForm: document.getElementById("github-connect-form"),
+      connectedView: document.getElementById("github-connected-view"),
+      usernameEl: document.getElementById("github-username"),
+    };
 
-    if (window.state.gitHubConnected) {
+    const githubSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>`;
+
+    const { githubDesc, githubIcon, githubBtn, statusView, connectForm, connectedView, usernameEl } = elements;
+
+    if (isConnected) {
       if (githubDesc) githubDesc.textContent = `Connected as @${status.username}`;
       if (githubIcon) {
         githubIcon.className = "agent-phase-icon done";
         githubIcon.textContent = "✓";
       }
       if (githubBtn) {
-        githubBtn.innerHTML = `✓ @${status.username}`;
+        githubBtn.textContent = `✓ @${status.username}`;
         githubBtn.className = "btn btn-secondary btn-sm";
-        githubBtn.onclick = () => navigate("settings");
+        githubBtn.dataset.action = "navigateToSettings";
+        githubBtn.removeAttribute('onclick');
       }
       if (statusView) statusView.style.display = "none";
       if (connectForm) connectForm.style.display = "none";
@@ -777,11 +777,9 @@ async function loadGitHubStatus() {
         githubIcon.textContent = "🔗";
       }
       if (githubBtn) {
-        githubBtn.innerHTML = `
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
-          Connect GitHub
-        `;
-        githubBtn.onclick = showGitHubConnectModal;
+        githubBtn.innerHTML = `${githubSvg} Connect GitHub`;
+        githubBtn.dataset.action = "showGitHubConnectModal";
+        githubBtn.removeAttribute('onclick');
       }
       if (statusView) {
         statusView.innerHTML = `<div class="text-muted" style="font-size:13px;margin-bottom:12px">Connect your GitHub Personal Access Token to link cloud repositories, issues, and PRs.</div>`;
@@ -855,8 +853,9 @@ async function showGitHubReposModal() {
 
   try {
     const repos = await api.listGitHubRepos();
-    window.state.cachedGitHubRepos = Array.isArray(repos) ? repos : [];
-    renderGitHubReposModalList(window.state.cachedGitHubRepos);
+    const cachedRepos = Array.isArray(repos) ? repos : [];
+    window.setState("cachedGitHubRepos", cachedRepos);
+    renderGitHubReposModalList(cachedRepos);
   } catch (err) {
     listEl.innerHTML = `<div class="text-danger" style="font-size:13px;padding:20px">Failed to load GitHub repos: ${escapeHtml(err.message)}</div>`;
   }
@@ -923,18 +922,19 @@ async function connectSelectedGitHubRepo(name, cloneUrl) {
 document.addEventListener('click', (e) => {
   const target = e.target.closest('[data-action]');
   if (!target) return;
-  const action = target.dataset.action;
-  const value = target.dataset.value;
-  const extra = target.dataset.extra;
 
-  if (action === 'selectActiveRepo') selectActiveRepo(value);
-  else if (action === 'openRepoInGitDesktop') openRepoInGitDesktop(value);
-  else if (action === 'quickDebugRepo') quickDebugRepo(value);
-  else if (action === 'syncRepo') syncRepo(value);
-  else if (action === 'disconnectRepo') disconnectRepo(value);
-  else if (action === 'browseToDirectory') browseToDirectory(value);
-  else if (action === 'connectSpecificFolder') connectSpecificFolder(value, extra);
-  else if (action === 'connectSelectedGitHubRepo') connectSelectedGitHubRepo(value, extra);
+  const { action, value, extra } = target.dataset;
+  const actions = {
+    selectActiveRepo: () => selectActiveRepo(value),
+    openRepoInGitDesktop: () => openRepoInGitDesktop(value),
+    syncRepo: () => syncRepo(value),
+    disconnectRepo: () => disconnectRepo(value),
+    browseToDirectory: () => browseToDirectory(value),
+    connectSpecificFolder: () => connectSpecificFolder(value, extra),
+    connectSelectedGitHubRepo: () => connectSelectedGitHubRepo(value, extra),
+  };
+
+  actions[action]?.();
 });
 
 // Window exports

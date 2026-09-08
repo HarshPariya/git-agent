@@ -4,46 +4,57 @@ import type { ParsedClass, ParsedFile, ParsedFunction, SupportedLanguage } from 
 export type ChunkType = "file" | "function" | "class";
 
 export interface CodeChunk {
-  id: string; type: ChunkType; filePath: string; language: SupportedLanguage;
-  name?: string | undefined; startLine: number; endLine: number; content: string;
+  id: string;
+  type: ChunkType;
+  filePath: string;
+  language: SupportedLanguage;
+  name?: string | undefined;
+  startLine: number;
+  endLine: number;
+  content: string;
   metadata: { fileName: string; directory: string; imports: string[] };
 }
 
 const createChunkId = (filePath: string, type: ChunkType, name: string, startLine: number): string =>
   `${filePath.replace(/\\/g, "/").replace(/[^a-zA-Z0-9/_-]/g, "-")}:${type}:${name.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase()}:${startLine}`;
 
-const getLineCount = (content: string): number => content ? content.split(/\r?\n/).length : 0;
+const getLineCount = (content: string): number => content.split(/\r?\n/).length || 0;
 
-const createMetadata = (file: ParsedFile) => ({ fileName: path.basename(file.filePath), directory: path.dirname(file.filePath), imports: file.imports.map((item) => item.source) });
-
-const functionToChunk = (file: ParsedFile, fn: ParsedFunction): CodeChunk => ({
-  id: createChunkId(file.filePath, "function", fn.name, fn.startLine), type: "function",
-  filePath: file.filePath, language: file.language, name: fn.name,
-  startLine: fn.startLine, endLine: fn.endLine, content: fn.content, metadata: createMetadata(file),
+const createMetadata = (file: ParsedFile) => ({
+  fileName: path.basename(file.filePath),
+  directory: path.dirname(file.filePath),
+  imports: file.imports.map((item) => item.source),
 });
 
-const classToChunk = (file: ParsedFile, classInfo: ParsedClass): CodeChunk => ({
-  id: createChunkId(file.filePath, "class", classInfo.name, classInfo.startLine), type: "class",
-  filePath: file.filePath, language: file.language, name: classInfo.name,
-  startLine: classInfo.startLine, endLine: classInfo.endLine, content: classInfo.content, metadata: createMetadata(file),
+const buildChunk = (file: ParsedFile, type: ChunkType, name: string, startLine: number, endLine: number, content: string): CodeChunk => ({
+  id: createChunkId(file.filePath, type, name, startLine),
+  type,
+  filePath: file.filePath,
+  language: file.language,
+  name,
+  startLine,
+  endLine,
+  content,
+  metadata: createMetadata(file),
 });
 
-const fileToChunk = (file: ParsedFile): CodeChunk => ({
-  id: createChunkId(file.filePath, "file", path.basename(file.filePath), 1), type: "file",
-  filePath: file.filePath, language: file.language, name: path.basename(file.filePath),
-  startLine: 1, endLine: Math.max(getLineCount(file.content), 1), content: file.content, metadata: createMetadata(file),
-});
+const functionToChunk = (file: ParsedFile, fn: ParsedFunction): CodeChunk =>
+  buildChunk(file, "function", fn.name, fn.startLine, fn.endLine, fn.content);
 
-export function chunkFile(file: ParsedFile): CodeChunk[] {
-  const chunks: CodeChunk[] = [];
-  for (const fn of file.functions) chunks.push(functionToChunk(file, fn));
-  for (const classInfo of file.classes) chunks.push(classToChunk(file, classInfo));
-  if (chunks.length === 0 && file.content.trim().length > 0) chunks.push(fileToChunk(file));
-  return chunks;
-}
+const classToChunk = (file: ParsedFile, cls: ParsedClass): CodeChunk =>
+  buildChunk(file, "class", cls.name, cls.startLine, cls.endLine, cls.content);
 
-export function chunkRepository(parsedFiles: ParsedFile[]): CodeChunk[] {
-  const chunks: CodeChunk[] = [];
-  for (const file of parsedFiles) chunks.push(...chunkFile(file));
-  return chunks;
-}
+const fileToChunk = (file: ParsedFile): CodeChunk =>
+  buildChunk(file, "file", path.basename(file.filePath), 1, Math.max(getLineCount(file.content), 1), file.content);
+
+export const chunkFile = (file: ParsedFile): CodeChunk[] => {
+  const chunks = [
+    ...file.functions.map((fn) => functionToChunk(file, fn)),
+    ...file.classes.map((cls) => classToChunk(file, cls)),
+  ];
+
+  return chunks.length > 0 ? chunks : file.content.trim().length > 0 ? [fileToChunk(file)] : [];
+};
+
+export const chunkRepository = (parsedFiles: ParsedFile[]): CodeChunk[] =>
+  parsedFiles.flatMap((file) => chunkFile(file));

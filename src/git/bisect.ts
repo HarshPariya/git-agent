@@ -2,7 +2,7 @@ import type { Repository } from "../types/git.js";
 import { AppError } from "../errors/app-error.js";
 import { execAsync } from "./utils.js";
 
-interface BisectResult {
+export interface BisectResult {
   readonly commit: string;
   readonly shortHash: string;
   readonly message: string;
@@ -12,7 +12,7 @@ interface BisectResult {
   readonly isGood: boolean;
 }
 
-interface RegressionResult {
+export interface RegressionResult {
   readonly repositoryId: string;
   readonly startRef: string;
   readonly endRef: string;
@@ -22,72 +22,80 @@ interface RegressionResult {
   readonly commitsTested: number;
 }
 
-const runGit = async (repoPath: string, args: string[]): Promise<string> => {
+const NO_REGRESSION: BisectResult = {
+  commit: "", shortHash: "", message: "No regression found", author: "", date: "", isBad: false, isGood: true,
+};
+
+async function runGit(repoPath: string, args: string[]): Promise<string> {
   try {
-    const cmd = `git ${args.join(" ")}`;
-    const result = await execAsync(cmd, {
-      cwd: repoPath, maxBuffer: 10 * 1024 * 1024, timeout: 120_000,
+    const { stdout } = await execAsync(`git ${args.join(" ")}`, {
+      cwd: repoPath,
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 120_000,
     });
-    return result.stdout ?? "";
+    return stdout ?? "";
   } catch (err: unknown) {
-    const e = err as { code?: number; stdout?: string; stderr?: string; message?: string };
-    throw new AppError(`Git command failed: ${e.message || e.stderr || e.stdout}`, "TOOL_ERROR", 500);
+    const e = err as { message?: string; stderr?: string; stdout?: string };
+    throw new AppError(`Git command failed: ${e.message ?? e.stderr ?? e.stdout ?? "unknown error"}`, "TOOL_ERROR", 500);
   }
+}
+
+const parseLogLine = (logOutput: string): BisectResult => {
+  const [commit, author, date, ...rest] = logOutput.trim().split("|");
+  const shortHash = commit?.substring(0, 7) ?? "";
+  return { commit: commit ?? shortHash, shortHash, author: author ?? "", date: date ?? "", message: rest.join("|"), isBad: true, isGood: false };
 };
 
 export async function runBisect(
-  repo: Repository, startRef: string, endRef: string, testCommand: string,
+  repo: Repository,
+  startRef: string,
+  endRef: string,
+  testCommand: string,
 ): Promise<BisectResult> {
-  try {
-    await runGit(repo.localPath, ["bisect", "reset"]);
-  } catch { }
+  const reset = () => runGit(repo.localPath, ["bisect", "reset"]).catch(() => {});
+  await reset();
+
   try {
     await runGit(repo.localPath, ["bisect", "start"]);
     await runGit(repo.localPath, ["bisect", "bad", endRef]);
     await runGit(repo.localPath, ["bisect", "good", startRef]);
     await runGit(repo.localPath, ["bisect", "start", "--", testCommand]);
 
-    let bisectResult = await runGit(repo.localPath, ["bisect", "result"]);
-    if (!bisectResult.includes("first bad commit")) {
-      await runGit(repo.localPath, ["bisect", "reset"]);
-      return { commit: "", shortHash: "", message: "No regression found", author: "", date: "", isBad: false, isGood: true };
-    }
+    const result = await runGit(repo.localPath, ["bisect", "result"]);
+    if (!result.includes("first bad commit")) return NO_REGRESSION;
+
     await runGit(repo.localPath, ["bisect", "reset"]);
-    bisectResult = await runGit(repo.localPath, ["bisect", "visualize", "--oneline"]);
-    const lines = bisectResult.trim().split("\n").filter(Boolean);
-    if (lines.length === 0) throw new AppError("Bisect completed but no result available", "INTERNAL_ERROR", 500);
+    const visualize = await runGit(repo.localPath, ["bisect", "visualize", "--oneline"]);
+    const firstLine = visualize.trim().split("\n").filter(Boolean)[0] ?? "";
+    const match = firstLine.match(/([a-f0-9]{7,40})\s+(.*)/);
+    if (!match?.[1]) throw new AppError("Failed to parse bisect result", "INTERNAL_ERROR", 500);
 
-    const firstLine = lines[0] || "";
-    const parts = firstLine.match(/([a-f0-9]{7,40})\s+(.*)/);
-    if (!parts || !parts[1]) throw new AppError("Failed to parse bisect result", "INTERNAL_ERROR", 500);
-
-    const shortHash = parts[1].substring(0, 7);
-    const logOutput = await runGit(repo.localPath, ["show", "--format=%H|%an|%ai|%s", "-s", parts[1]]);
-    const logParts = logOutput.trim().split("|");
-    return {
-      commit: logParts[0] ?? shortHash, shortHash,
-      message: (parts[2] || logParts[3]) ?? "", author: logParts[1] ?? "", date: logParts[2] ?? "",
-      isBad: true, isGood: false,
-    };
+    const logOutput = await runGit(repo.localPath, ["show", "--format=%H|%an|%ai|%s", "-s", match[1]]);
+    const parsed = parseLogLine(logOutput);
+    return { ...parsed, shortHash: match[1].substring(0, 7), message: match[2] || parsed.message };
   } catch (err) {
-    try { await runGit(repo.localPath, ["bisect", "reset"]); } catch { }
+    await reset();
     throw err;
   }
 }
 
 export async function detectRegression(
-  repo: Repository, startRef: string, endRef: string,
+  repo: Repository,
+  startRef: string,
+  endRef: string,
 ): Promise<RegressionResult> {
-  const startLog = await runGit(repo.localPath, ["log", "--oneline", "--format=%H|%an|%ai|%s", "-1", startRef]);
-  const endLog = await runGit(repo.localPath, ["log", "--oneline", "--format=%H|%an|%ai|%s", "-1", endRef]);
-  const startParts = startLog.trim().split("|");
-  const endParts = endLog.trim().split("|");
+  const [startLog, endLog] = await Promise.all([
+    runGit(repo.localPath, ["log", "--oneline", "--format=%H|%an|%ai|%s", "-1", startRef]),
+    runGit(repo.localPath, ["log", "--oneline", "--format=%H|%an|%ai|%s", "-1", endRef]),
+  ]);
+
   return {
-    repositoryId: repo.id, startRef, endRef, foundRegression: true,
-    badCommit: { commit: endParts[0] ?? "", shortHash: (endParts[0] ?? "").substring(0, 7), message: endParts[3] ?? "", author: endParts[1] ?? "", date: endParts[2] ?? "", isBad: true, isGood: false },
-    goodCommit: { commit: startParts[0] ?? "", shortHash: (startParts[0] ?? "").substring(0, 7), message: startParts[3] ?? "", author: startParts[1] ?? "", date: startParts[2] ?? "", isBad: false, isGood: true },
+    repositoryId: repo.id,
+    startRef,
+    endRef,
+    foundRegression: true,
+    badCommit: parseLogLine(endLog),
+    goodCommit: { ...parseLogLine(startLog), isBad: false, isGood: true },
     commitsTested: 0,
   };
 }
-
-export type { BisectResult, RegressionResult };

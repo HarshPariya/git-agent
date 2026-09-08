@@ -8,12 +8,13 @@ const repositories = new Map<string, Repository>();
 const protectedBranches = new Map<string, ProtectedBranch[]>();
 
 const generateId = (prefix: string, stableKey?: string): string => {
-  if (stableKey) {
-    let hash = 0;
-    for (let i = 0; i < stableKey.length; i++) { hash = ((hash << 5) - hash) + stableKey.charCodeAt(i); hash = hash & hash; }
-    return `${prefix}${Math.abs(hash).toString(16).padStart(8, "0").slice(0, 8)}`;
+  if (!stableKey) return `${prefix}${crypto.randomUUID().slice(0, 8)}`;
+  let hash = 0;
+  for (let i = 0; i < stableKey.length; i++) {
+    hash = ((hash << 5) - hash) + stableKey.charCodeAt(i);
+    hash = hash & hash;
   }
-  return `${prefix}${crypto.randomUUID().slice(0, 8)}`;
+  return `${prefix}${Math.abs(hash).toString(16).padStart(8, "0").slice(0, 8)}`;
 };
 
 const resolveLocalPath = (name: string): string => {
@@ -22,12 +23,15 @@ const resolveLocalPath = (name: string): string => {
 };
 
 const validateLocalPath = (candidate: string): string => {
-  if (!candidate || typeof candidate !== "string") throw new Error("Repository path must be a non-empty string");
+  if (!candidate?.trim()) throw new Error("Repository path must be a non-empty string");
   const resolved = path.resolve(candidate.replace(/^["']|["']$/g, "").trim());
-  if (process.env.REPOSITORY_ROOT?.trim()) {
-    const relative = path.relative(path.resolve(process.env.REPOSITORY_ROOT.trim()), resolved);
+
+  const repoRoot = process.env.REPOSITORY_ROOT?.trim();
+  if (repoRoot) {
+    const relative = path.relative(path.resolve(repoRoot), resolved);
     if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Repository path must be inside REPOSITORY_ROOT");
   }
+
   return resolved;
 };
 
@@ -43,49 +47,32 @@ export class RepositoryStore {
 
   getRepository(repositoryId: string, tenantId: string): Repository | undefined {
     const repo = repositories.get(repositoryId);
-    if (!repo || (repo.tenantId !== tenantId && repo.tenantId !== "tenant-default")) return undefined;
-    return repo;
+    return repo?.tenantId === tenantId || repo?.tenantId === "tenant-default" ? repo : undefined;
   }
 
   async connectRepository(params: {
-    tenantId: string; userId: string; name: string; url: string | undefined; localPath: string | undefined;
+    tenantId: string;
+    userId: string;
+    name: string;
+    url: string | undefined;
+    localPath: string | undefined;
   }): Promise<Repository> {
     const localPath = params.localPath ? validateLocalPath(params.localPath) : resolveLocalPath(params.name);
-    if (params.localPath && !fs.existsSync(localPath))
-      throw new Error(`Directory does not exist: ${localPath}`);
+    if (params.localPath && !fs.existsSync(localPath)) throw new Error(`Directory does not exist: ${localPath}`);
 
     const existing = [...repositories.values()].find(
       (r) => r.tenantId === params.tenantId && (r.url === params.url || r.localPath === localPath),
     );
 
-    if (existing) {
-      registerRepositoryPath(existing.id, existing.localPath);
-      let current = existing.currentBranch || "feature/git-agent";
-      try { const status = await executeGitStatus(existing.localPath); current = status.branch; } catch { /* keep current */ }
-      const updated: Repository = { ...existing, defaultBranch: sanitizeDefaultBranch(existing.defaultBranch), currentBranch: current, status: "connected", lastSyncAt: new Date().toISOString() };
-      repositories.set(existing.id, updated);
-      logger.info("Repository already connected, updating status", { operation: "repo-connect", metadata: { repositoryId: existing.id } });
-      return updated;
-    }
+    if (existing) return this.reconnectExisting(existing);
 
-    let branch = "feature/git-agent";
-    try { const status = await executeGitStatus(localPath); branch = status.branch; } catch { /* keep default */ }
-
-    const repository: Repository = {
-      id: generateId("repo-", params.localPath ? params.localPath.toLowerCase() : undefined),
-      tenantId: params.tenantId, userId: params.userId, name: params.name, url: params.url,
-      localPath, defaultBranch: sanitizeDefaultBranch(branch), currentBranch: branch,
-      status: "connected", lastSyncAt: new Date().toISOString(), createdAt: new Date().toISOString(), protectedBranches: [],
-    };
-    repositories.set(repository.id, repository);
-    registerRepositoryPath(repository.id, repository.localPath);
-    logger.info("Repository connected", { operation: "repo-connect", metadata: { repositoryId: repository.id, name: params.name } });
-    return repository;
+    return this.createRepository({ ...params, localPath });
   }
 
   async syncRepository(repositoryId: string, tenantId: string): Promise<SyncResult> {
     const repo = this.getRepository(repositoryId, tenantId);
     if (!repo) throw new Error("Repository not found");
+
     const statusBefore = await executeGitStatus(repo.localPath);
     const result: SyncResult = { repositoryId, status: "success", ahead: statusBefore.ahead, behind: statusBefore.behind, mergedBranches: [], conflicts: [] };
 
@@ -93,15 +80,16 @@ export class RepositoryStore {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     const finalStatus = await executeGitStatus(repo.localPath);
-    const finalRepo: Repository = { ...repo, currentBranch: finalStatus.branch, lastSyncAt: new Date().toISOString(), status: "connected" };
-    repositories.set(repositoryId, finalRepo);
+    repositories.set(repositoryId, { ...repo, currentBranch: finalStatus.branch, lastSyncAt: new Date().toISOString(), status: "connected" });
     logger.info("Repository synced", { operation: "repo-sync", metadata: { repositoryId, ahead: finalStatus.ahead, behind: finalStatus.behind } });
+
     return result;
   }
 
   async disconnectRepository(repositoryId: string, tenantId: string): Promise<Repository> {
     const repo = this.getRepository(repositoryId, tenantId);
     if (!repo) throw new Error("Repository not found");
+
     repositories.delete(repositoryId);
     logger.info("Repository disconnected", { operation: "repo-disconnect", metadata: { repositoryId } });
     return { ...repo, status: "disconnected" };
@@ -110,21 +98,20 @@ export class RepositoryStore {
   async getRepositoryStatus(repositoryId: string, tenantId: string): Promise<Repository> {
     const repo = this.getRepository(repositoryId, tenantId);
     if (!repo) throw new Error("Repository not found");
-    try {
-      const status = await executeGitStatus(repo.localPath);
-      const updated: Repository = { ...repo, currentBranch: status.branch, lastSyncAt: new Date().toISOString(), status: "connected" };
-      repositories.set(repositoryId, updated);
-      return updated;
-    } catch {
-      const updated: Repository = { ...repo, status: "error", lastSyncAt: new Date().toISOString() };
-      repositories.set(repositoryId, updated);
-      return updated;
-    }
+
+    const status = await executeGitStatus(repo.localPath).catch(() => null);
+    const updated: Repository = status
+      ? { ...repo, currentBranch: status.branch, lastSyncAt: new Date().toISOString(), status: "connected" }
+      : { ...repo, status: "error", lastSyncAt: new Date().toISOString() };
+
+    repositories.set(repositoryId, updated);
+    return updated;
   }
 
   listProtectedBranches(repositoryId: string, tenantId: string): readonly ProtectedBranch[] {
     const repo = this.getRepository(repositoryId, tenantId);
     if (!repo) throw new Error("Repository not found");
+
     const key = `${tenantId}:${repositoryId}`;
     const existing = protectedBranches.get(key);
     if (existing) return [...existing];
@@ -141,6 +128,7 @@ export class RepositoryStore {
   addProtectedBranch(repositoryId: string, tenantId: string, branchName: string, config?: Partial<ProtectedBranch>): ProtectedBranch {
     const repo = this.getRepository(repositoryId, tenantId);
     if (!repo) throw new Error("Repository not found");
+
     const key = `${tenantId}:${repositoryId}`;
     const existing = protectedBranches.get(key) ?? [];
     const newBranch: ProtectedBranch = {
@@ -160,12 +148,48 @@ export class RepositoryStore {
   removeProtectedBranch(repositoryId: string, tenantId: string, branchName: string): boolean {
     const repo = this.getRepository(repositoryId, tenantId);
     if (!repo) throw new Error("Repository not found");
+
     const key = `${tenantId}:${repositoryId}`;
     const existing = protectedBranches.get(key);
     if (!existing) return false;
+
     const filtered = existing.filter((b) => b.name !== branchName);
     protectedBranches.set(key, filtered);
     return filtered.length < existing.length;
+  }
+
+  private async reconnectExisting(existing: Repository): Promise<Repository> {
+    registerRepositoryPath(existing.id, existing.localPath);
+    const status = await executeGitStatus(existing.localPath).catch(() => null);
+    const current = status?.branch ?? existing.currentBranch ?? "feature/git-agent";
+    const updated: Repository = { ...existing, defaultBranch: sanitizeDefaultBranch(existing.defaultBranch), currentBranch: current, status: "connected", lastSyncAt: new Date().toISOString() };
+
+    repositories.set(existing.id, updated);
+    logger.info("Repository already connected, updating status", { operation: "repo-connect", metadata: { repositoryId: existing.id } });
+    return updated;
+  }
+
+  private async createRepository(params: {
+    tenantId: string;
+    userId: string;
+    name: string;
+    url: string | undefined;
+    localPath: string;
+  }): Promise<Repository> {
+    const status = await executeGitStatus(params.localPath).catch(() => null);
+    const branch = status?.branch ?? "feature/git-agent";
+
+    const repository: Repository = {
+      id: generateId("repo-", params.localPath ? params.localPath.toLowerCase() : undefined),
+      tenantId: params.tenantId, userId: params.userId, name: params.name, url: params.url,
+      localPath: params.localPath, defaultBranch: sanitizeDefaultBranch(branch), currentBranch: branch,
+      status: "connected", lastSyncAt: new Date().toISOString(), createdAt: new Date().toISOString(), protectedBranches: [],
+    };
+
+    repositories.set(repository.id, repository);
+    registerRepositoryPath(repository.id, repository.localPath);
+    logger.info("Repository connected", { operation: "repo-connect", metadata: { repositoryId: repository.id, name: params.name } });
+    return repository;
   }
 }
 

@@ -4,11 +4,13 @@
  * and orchestrates One-Click 'AI Commit All'.
  */
 
+// Uses window.escapeHtml from app.js
+
 function renderCommitPlanView(plan) {
   const container = document.getElementById("gd-commit-plan-container");
   if (!container) return;
 
-  if (!plan || !plan.groups || plan.groups.length === 0) {
+  if (!plan?.groups?.length) {
     container.innerHTML = `
       <div class="empty-state" style="padding:28px 16px;text-align:center">
         <div class="empty-icon" style="font-size:28px">🤖</div>
@@ -16,7 +18,7 @@ function renderCommitPlanView(plan) {
         <div class="empty-desc" style="font-size:12px;color:var(--c-text-muted);margin:6px 0 14px 0">
           Analyze working tree changes to create semantic Conventional Commit groups.
         </div>
-        <button class="btn btn-primary btn-sm" onclick="triggerAnalyzeChanges()" style="width:100%">⚡ AI Analyze Changes</button>
+        <button class="btn btn-primary btn-sm" data-action="triggerAnalyzeChanges" style="width:100%">⚡ AI Analyze Changes</button>
       </div>
     `;
     return;
@@ -27,9 +29,10 @@ function renderCommitPlanView(plan) {
     const sub = group.suggestedCommit?.subject || group.name;
     const type = group.suggestedCommit?.type || "feat";
     const files = group.files || [];
+    const groupId = window.escapeHtml(group.id);
 
     return `
-      <div class="commit-group-card" id="commit-group-${escapeHtml(group.id)}" style="margin-bottom:12px;padding:12px;border:1px solid var(--c-border);border-radius:var(--radius-md);background:var(--c-surface-card)">
+      <div class="commit-group-card" id="commit-group-${groupId}" style="margin-bottom:12px;padding:12px;border:1px solid var(--c-border);border-radius:var(--radius-md);background:var(--c-surface-card)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
           <div style="display:flex;align-items:center;gap:6px">
             <span class="badge badge-accent" style="font-size:10px">Group ${idx + 1}</span>
@@ -37,21 +40,21 @@ function renderCommitPlanView(plan) {
           </div>
           <span style="font-size:11px;color:var(--c-text-muted)">${files.length} file${files.length > 1 ? "s" : ""}</span>
         </div>
-        
+
         <div style="font-weight:600;font-size:13px;color:var(--c-text);margin-bottom:4px">
-          <code>${escapeHtml(type)}</code>: ${escapeHtml(sub)}
+          <code>${window.escapeHtml(type)}</code>: ${window.escapeHtml(sub)}
         </div>
         <div style="font-size:11px;color:var(--c-text-muted);margin-bottom:8px;line-height:1.4">
-          ${escapeHtml(group.reason || "Logical atomic update")}
+          ${window.escapeHtml(group.reason || "Logical atomic update")}
         </div>
 
         <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
-          ${files.map(f => `<span class="badge badge-secondary" style="font-size:10px;font-family:var(--font-mono)">${escapeHtml(f.split("/").pop())}</span>`).join("")}
+          ${files.map(f => `<span class="badge badge-secondary" style="font-size:10px;font-family:var(--font-mono)">${window.escapeHtml(f.split("/").pop())}</span>`).join("")}
         </div>
 
         <div style="display:flex;gap:6px;justify-content:flex-end">
-          <button class="btn btn-secondary btn-sm" onclick="editGroupCommitMessage('${escapeHtml(group.id)}')" style="font-size:11px;padding:2px 8px">✏️ Edit</button>
-          <button class="btn btn-secondary btn-sm" onclick="previewGroupDiff('${escapeHtml(group.id)}')" style="font-size:11px;padding:2px 8px">🔍 Diff</button>
+          <button class="btn btn-secondary btn-sm" data-action="editGroupCommitMessage" data-value="${groupId}" style="font-size:11px;padding:2px 8px">✏️ Edit</button>
+          <button class="btn btn-secondary btn-sm" data-action="previewGroupDiff" data-value="${groupId}" style="font-size:11px;padding:2px 8px">🔍 Diff</button>
         </div>
       </div>
     `;
@@ -61,7 +64,7 @@ function renderCommitPlanView(plan) {
     <div style="padding:10px 4px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div style="font-size:12px;font-weight:700;color:var(--c-text)">${plan.groups.length} Logical Commits Planned</div>
-        <button class="btn btn-primary btn-sm" id="btn-commit-all" onclick="executeCommitPlanAll()" style="display:flex;align-items:center;gap:6px">
+        <button class="btn btn-primary btn-sm" id="btn-commit-all" data-action="executeCommitPlanAll" style="display:flex;align-items:center;gap:6px">
           ⚡ Commit All (${plan.groups.length})
         </button>
       </div>
@@ -75,7 +78,7 @@ function renderCommitPlanView(plan) {
 async function executeCommitPlanAll() {
   const repo = window.state?.activeRepository;
   const plan = window.state?.gitDesktop?.commitPlan;
-  if (!repo || !plan || !plan.groups || plan.groups.length === 0) {
+  if (!repo || !plan?.groups?.length) {
     showToast("No active commit plan to execute", "warning");
     return;
   }
@@ -97,7 +100,7 @@ async function executeCommitPlanAll() {
 
     if (res.success) {
       showToast(`Successfully created ${res.totalCreated || res.commits?.length || 0} commits!`, "success");
-      window.state.gitDesktop.commitPlan = null;
+      window.setState("gitDesktop.commitPlan", null);
       if (typeof window.loadGitDesktop === "function") {
         await window.loadGitDesktop();
       }
@@ -120,18 +123,17 @@ function editGroupCommitMessage(groupId) {
   if (!group) return;
 
   const newSubject = prompt("Edit Conventional Commit Subject:", group.suggestedCommit?.subject || group.name);
-  if (newSubject && newSubject.trim()) {
-    if (!group.suggestedCommit) group.suggestedCommit = {};
-    group.suggestedCommit.subject = newSubject.trim();
-    renderCommitPlanView(plan);
-    showToast("Updated commit subject for group", "success");
-  }
+  if (!newSubject?.trim()) return;
+
+  window.setState(`gitDesktop.commitPlan.groups.${plan.groups.indexOf(group)}.suggestedCommit.subject`, newSubject.trim());
+  renderCommitPlanView(plan);
+  showToast("Updated commit subject for group", "success");
 }
 
 function previewGroupDiff(groupId) {
   const plan = window.state?.gitDesktop?.commitPlan;
   const group = plan?.groups?.find(g => g.id === groupId);
-  if (!group || !group.files || group.files.length === 0) return;
+  if (!group?.files?.length) return;
 
   if (typeof window.selectDiffFile === "function") {
     window.selectDiffFile(group.files[0]);
