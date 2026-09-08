@@ -27,7 +27,7 @@ const runResourceLimitTests = async () => {
 
   const expectThrow = async (fn: () => unknown, testName: string) => {
     try {
-      fn();
+      await fn();
       assert(false, testName);
     } catch (err) {
       assert(err instanceof ResourceLimitError, testName);

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { AppError } from "../errors/app-error.js";
 import type { GitOperation, GitOperationType, GitOperationRisk, GitStatusOutput, GitStatusEntry, GitLogEntry, GitDiffEntry, GitBranch } from "../types/git.js";
-import { execAsync } from "./utils.js";
+import { execFileAsync } from "./utils.js";
 
 export type { GitOperationType };
 
@@ -118,9 +118,10 @@ export async function executeGitLog(
 ): Promise<GitLogEntry[]> {
   const count = options?.count ?? 20;
   const ref = options?.branch ?? "HEAD";
+  const prettyFormat = "%H|%h|%an|%ae|%ai|%s";
   const output = await runGit(
     getExecutionPath(repoPath),
-    ["log", `--max-count=${count}`, "--pretty=format:%H|%h|%an|%ae|%ai|%s", ref],
+    ["log", `--max-count=${count}`, `--pretty=format:${prettyFormat}`, ref],
   );
 
   if (!output.trim()) return [];
@@ -215,7 +216,7 @@ export { GIT_OPERATION_CATALOG };
 async function runGit(repoPath: string, args: string | readonly string[]): Promise<string> {
   try {
     const argArray = typeof args === "string" ? args.split(" ").filter(Boolean) : [...args];
-    const { stdout } = await execAsync(`git ${argArray.join(" ")}`, {
+    const { stdout } = await execFileAsync("git", argArray, {
       cwd: repoPath,
       maxBuffer: 10 * 1024 * 1024,
       timeout: 60_000,
