@@ -37,6 +37,8 @@ window.state = window.state || {
 // INITIALIZATION & AUTH
 // ============================================================
 
+let googleSignInReady = false;
+
 document.addEventListener("DOMContentLoaded", async () => {
   initNavigation();
   initTabs();
@@ -44,7 +46,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   initUserMenu();
   initMobileMenu();
   initScrollToTop();
-  initGoogleSignIn();
   if (typeof initDragAndDrop === "function") initDragAndDrop();
   if (typeof setupFolderDropZone === "function") setupFolderDropZone();
 
@@ -74,10 +75,27 @@ async function tryDevModeAutoLogin() {
 function showAuth() {
   document.getElementById("auth-page").style.display = "flex";
   document.getElementById("app").style.display = "none";
+  // Render Google button now that auth page is visible (needs real dimensions)
+  initGoogleSignIn();
 }
 
 async function initGoogleSignIn() {
   try {
+    if (googleSignInReady) {
+      // Already initialized — re-render button if container is now visible
+      const container = document.getElementById("google-signin-btn");
+      if (container && container.offsetWidth > 0) {
+        container.innerHTML = "";
+        google.accounts.id.renderButton(container, {
+          theme: "outline",
+          size: "large",
+          width: 320,
+          text: "continue_with",
+        });
+      }
+      return;
+    }
+
     const { clientId } = await api.getGoogleClientId();
     if (!clientId || typeof google === "undefined") return;
 
@@ -103,12 +121,14 @@ async function initGoogleSignIn() {
       },
     });
 
+    googleSignInReady = true;
+
     const container = document.getElementById("google-signin-btn");
     if (container) {
       google.accounts.id.renderButton(container, {
         theme: "outline",
         size: "large",
-        width: container.offsetWidth || 340,
+        width: 320,
         text: "continue_with",
       });
     }
