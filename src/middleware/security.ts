@@ -6,7 +6,7 @@ import { createTenantContext } from "../security/tenant-context.js";
 import { verifySessionToken } from "../security/auth.js";
 import { getPermissionFromPath } from "./permission.js";
 
-const DEFAULT_RATE_LIMIT_MAX = 30;
+const DEFAULT_RATE_LIMIT_MAX = 100;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 
 const WORKSPACE_ALLOWLIST: readonly string[] = (

@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../errors/app-error.js";
 import { query } from "../db/postgres.js";
-import { createSessionToken, findOrCreateGoogleUser, findUserByIdFromDb, userStore } from "../security/auth.js";
+import { createSessionToken, findOrCreateGoogleUser, findUserByIdFromDb, findGoogleUserByIdInMemory, userStore } from "../security/auth.js";
 import { verifyGoogleToken } from "../security/google-auth.js";
 
 type UserRole = "admin" | "developer" | "viewer";
@@ -127,18 +127,17 @@ export async function meHandlerDb(request: Request, response: Response, next: Ne
   try {
     const context = getTenantContext(request);
 
-    // Try in-memory store first
+    // Tier 1: In-memory userStore (email/password users)
     const memUser = userStore.findById(context.userId);
     if (memUser) {
       response.status(200).json({ user: pickUser(memUser) });
       return;
     }
 
-    // Fall back to database lookup for Google-authenticated users
+    // Tier 2: Database lookup for persisted users
     try {
       const dbUser = await findUserByIdFromDb(context.userId);
       if (dbUser) {
-        // Try to get avatar_url from identities table
         let avatarUrl: string | undefined;
         try {
           const identityResult = await query<{ avatar_url: string | null }>(
@@ -151,11 +150,20 @@ export async function meHandlerDb(request: Request, response: Response, next: Ne
         response.status(200).json({ user: { ...dbUser, picture: avatarUrl } });
         return;
       }
-    } catch {
-      // Database unavailable — fall through to dev-mode fallback
+    } catch (dbErr) {
+      console.warn(`[AUTH] me: DB lookup failed for ${context.userId}:`, dbErr instanceof Error ? dbErr.message : dbErr);
     }
 
-    // Dev-mode fallback
+    // Tier 3: In-memory Google user fallback (when DB was unavailable during login)
+    const googleUser = findGoogleUserByIdInMemory(context.userId);
+    if (googleUser) {
+      console.warn(`[AUTH] me: using in-memory fallback for Google user ${context.userId} (${googleUser.email})`);
+      response.status(200).json({ user: googleUser });
+      return;
+    }
+
+    // Tier 4: Dev-mode fallback — no user found anywhere
+    console.warn(`[AUTH] me: no user found for ${context.userId}, returning dev-mode fallback`);
     response.status(200).json({
       user: {
         id: context.userId,

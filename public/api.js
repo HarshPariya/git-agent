@@ -56,8 +56,8 @@ class ApiClient {
     };
     if (this.token) {
       headers["Authorization"] = `Bearer ${this.token}`;
-    } else {
-      // Dev-mode fallback: inject tenant/user identity so security middleware accepts the request
+    } else if (localStorage.getItem("gda_dev_mode") === "true") {
+      // Dev-mode: only send identity headers when explicitly opted in
       headers["x-tenant-id"] = "tenant-default";
       headers["x-user-id"] = "user-default";
       headers["x-user-role"] = "developer";
@@ -418,8 +418,7 @@ class ApiClient {
     let url = `${API_BASE}/api/debug/${sessionId}/stream`;
     if (this.token) {
       url += `?token=${encodeURIComponent(this.token)}`;
-    } else {
-      // Dev mode: pass tenant/user as query params
+    } else if (localStorage.getItem("gda_dev_mode") === "true") {
       url += `?x-tenant-id=tenant-default&x-user-id=user-default`;
     }
     const eventSource = new EventSource(url);

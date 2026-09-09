@@ -173,6 +173,14 @@ export interface GoogleUserResult {
 // In-memory Google user store (fallback when database is unavailable)
 const googleUsersBySub = new Map<string, { id: string; email: string; name: string; tenantId: string; role: User["role"]; picture: string | undefined }>();
 
+/** Find a Google user by their application user ID (searches the in-memory fallback store). */
+export function findGoogleUserByIdInMemory(userId: string): { id: string; email: string; name: string; tenantId: string; role: User["role"]; picture: string | undefined } | undefined {
+  for (const user of googleUsersBySub.values()) {
+    if (user.id === userId) return user;
+  }
+  return undefined;
+}
+
 function findOrCreateGoogleUserInMemory(
   googlePayload: GoogleTokenPayload,
 ): GoogleUserResult {

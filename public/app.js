@@ -49,28 +49,21 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (typeof initDragAndDrop === "function") initDragAndDrop();
   if (typeof setupFolderDropZone === "function") setupFolderDropZone();
 
-  // Check authentication — try JWT token first, then dev-mode headers
+  // Check authentication — verify stored token with the server
   if (api.token) {
     try {
       const { user } = await api.getMe();
       showApp(user);
     } catch {
+      // Token invalid/expired — clear it and show login
       api.clearToken();
-      await tryDevModeAutoLogin();
+      showAuth();
     }
   } else {
-    await tryDevModeAutoLogin();
-  }
-});
-
-async function tryDevModeAutoLogin() {
-  try {
-    const { user } = await api.getMe();
-    showApp(user || { email: "dev@debug.local", name: "Developer" });
-  } catch {
+    // No token → show login page
     showAuth();
   }
-}
+});
 
 function showAuth() {
   document.getElementById("auth-page").style.display = "flex";
@@ -109,7 +102,7 @@ async function initGoogleSignIn() {
           if (loginBtn) { loginBtn.disabled = true; loginBtn.textContent = "Signing In..."; }
           const { user } = await api.googleLogin(response.credential);
           showToast("Signed in with Google!", "success");
-          showApp(user);
+          showApp(user, true);
         } catch (err) {
           if (authError) {
             authError.textContent = err.message || "Google sign-in failed";
@@ -151,7 +144,7 @@ async function initGoogleSignIn() {
   }
 }
 
-function showApp(user) {
+function showApp(user, freshLogin = false) {
   document.getElementById("auth-page").style.display = "none";
   document.getElementById("app").style.display = "block";
 
@@ -181,6 +174,18 @@ function showApp(user) {
   }
 
   loadAll();
+
+  if (freshLogin) {
+    // Fresh login — go to dashboard and clear any saved page
+    localStorage.removeItem("gda_current_page");
+    navigate("dashboard");
+  } else {
+    // Page refresh — restore the page the user was on
+    const savedPage = localStorage.getItem("gda_current_page");
+    if (savedPage && document.getElementById(`page-${savedPage}`)) {
+      navigate(savedPage);
+    }
+  }
 }
 
 async function loadAll() {
@@ -195,6 +200,7 @@ async function loadAll() {
 
 function logout() {
   api.clearToken();
+  localStorage.removeItem("gda_current_page");
   if (typeof google !== "undefined" && google.accounts?.id) {
     google.accounts.id.disableAutoSelect();
   }
@@ -242,6 +248,7 @@ const PAGE_LOADERS = {
 
 function navigate(pageId) {
   window.setState("currentPage", pageId);
+  localStorage.setItem("gda_current_page", pageId);
 
   // Update nav highlighting
   document.querySelectorAll(".header-nav-item").forEach((item) => {
@@ -298,7 +305,7 @@ function initForms() {
       const password = document.getElementById("login-password")?.value;
       const { user } = await api.login(email, password);
       showToast("Welcome back!", "success");
-      showApp(user);
+      showApp(user, true);
     } catch (err) {
       loginError.textContent = err.message || "Failed to sign in";
       loginError.style.display = "block";
@@ -324,7 +331,7 @@ function initForms() {
       const password = document.getElementById("reg-password")?.value;
       const { user } = await api.register(email, password);
       showToast("Account created successfully!", "success");
-      showApp(user);
+      showApp(user, true);
     } catch (err) {
       regError.textContent = err.message || "Failed to register";
       regError.style.display = "block";

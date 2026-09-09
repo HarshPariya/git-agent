@@ -307,7 +307,18 @@ app.use((_req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));
 });
 
-export const startServer = (): void => {
+export const startServer = async (): Promise<void> => {
+  // Auto-run database migrations on startup
+  try {
+    const { runMigrations } = await import("./db/migrate.js");
+    await runMigrations();
+  } catch (error) {
+    logger.warn("Database migration check failed — continuing without migrations", {
+      operation: "startup",
+      metadata: { error: error instanceof Error ? error.message : String(error) },
+    });
+  }
+
   const server = app.listen(env.port, () => {
     logger.info("Git Debugging Agent server started", {
       operation: "startup",
@@ -359,4 +370,4 @@ const isDirectExecution =
   ) ||
   process.argv.some((arg) => arg.includes("app.ts") || arg.includes("app.js"));
 
-if (isDirectExecution) { startServer(); }
+if (isDirectExecution) { startServer().catch((err) => { console.error("Failed to start server:", err); process.exit(1); }); }
