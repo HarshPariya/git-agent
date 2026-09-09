@@ -1457,6 +1457,38 @@ body {
   display: none;
 }
 
+.auth-google-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 12px;
+}
+
+.auth-google-divider::before,
+.auth-google-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--c-border);
+}
+
+.auth-google-divider span {
+  font-size: 12px;
+  color: var(--c-text-muted);
+  white-space: nowrap;
+}
+
+.auth-google-section {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.auth-google-section iframe {
+  width: 100% !important;
+  max-width: 340px;
+}
+
 /* Diff Syntax Highlighting */
 .diff-viewer {
   font-family: var(--font-mono);

@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../errors/app-error.js";
-import { createSessionToken, userStore } from "../security/auth.js";
+import { createSessionToken, findOrCreateGoogleUser, findUserByIdFromDb, userStore } from "../security/auth.js";
+import { verifyGoogleToken } from "../security/google-auth.js";
 
 type UserRole = "admin" | "developer" | "viewer";
 
@@ -66,20 +67,80 @@ export function meHandler(request: Request, response: Response, next: NextFuncti
     const context = getTenantContext(request);
     const user = userStore.findById(context.userId);
 
-    if (!user) {
-      response.status(200).json({
-        user: {
-          id: context.userId,
-          tenantId: context.tenantId,
-          role: "developer",
-          email: `${context.userId}@local.dev`,
-          name: context.userId,
-        },
-      });
+    if (user) {
+      response.status(200).json({ user: pickUser(user) });
       return;
     }
 
-    response.status(200).json({ user: pickUser(user) });
+    // For Google-authenticated users not in the in-memory store, look up in the DB
+    // Use a synchronous fallback here; the async DB call happens in the Google-specific path
+    response.status(200).json({
+      user: {
+        id: context.userId,
+        tenantId: context.tenantId,
+        role: "developer",
+        email: `${context.userId}@local.dev`,
+        name: context.userId,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function googleLoginHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const { credential } = (request.body ?? {}) as Record<string, unknown>;
+
+    if (!credential || typeof credential !== "string") {
+      throw new AppError("Missing Google credential", "VALIDATION_ERROR", 400);
+    }
+
+    const googlePayload = await verifyGoogleToken(credential);
+    const { user, token } = await findOrCreateGoogleUser(googlePayload);
+
+    response.status(200).json({
+      token,
+      user: { id: user.id, email: user.email, name: user.name, tenantId: user.tenantId, role: user.role },
+    });
+  } catch (error) {
+    if (error instanceof AppError) {
+      next(error);
+      return;
+    }
+    console.error("[AUTH] Google login failed:", error instanceof Error ? error.message : error);
+    next(new AppError("Invalid Google credential", "AUTHENTICATION_ERROR", 401));
+  }
+}
+
+export async function meHandlerDb(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const context = getTenantContext(request);
+
+    // Try in-memory store first
+    const memUser = userStore.findById(context.userId);
+    if (memUser) {
+      response.status(200).json({ user: pickUser(memUser) });
+      return;
+    }
+
+    // Fall back to database lookup for Google-authenticated users
+    const dbUser = await findUserByIdFromDb(context.userId);
+    if (dbUser) {
+      response.status(200).json({ user: dbUser });
+      return;
+    }
+
+    // Dev-mode fallback
+    response.status(200).json({
+      user: {
+        id: context.userId,
+        tenantId: context.tenantId,
+        role: "developer",
+        email: `${context.userId}@local.dev`,
+        name: context.userId,
+      },
+    });
   } catch (error) {
     next(error);
   }

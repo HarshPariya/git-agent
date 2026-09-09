@@ -145,6 +145,19 @@ class ApiClient {
     return this.request("/api/auth/me");
   }
 
+  async googleLogin(credential) {
+    const data = await this.request("/api/auth/google", {
+      method: "POST",
+      body: JSON.stringify({ credential }),
+    });
+    this.setToken(data.token, data.user);
+    return data;
+  }
+
+  async getGoogleClientId() {
+    return this.request("/api/auth/google-client-id");
+  }
+
   // Health & Info
   async getHealth() { return this.request("/health"); }
   async getReadiness() { return this.request("/ready"); }

@@ -9,6 +9,7 @@
   <title>Git Debugging Agent</title>
   <link rel="icon" href="/favicon.ico" type="image/svg+xml" />
   <link rel="stylesheet" href="/styles.css" />
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 
 <body>
@@ -45,6 +46,10 @@
         <button type="submit" class="btn btn-primary full-width btn-lg" id="login-btn">
           Sign In
         </button>
+        <div class="auth-google-divider">
+          <span>or</span>
+        </div>
+        <div id="google-signin-btn" class="auth-google-section"></div>
         <div class="auth-divider">
           <div class="auth-divider-line"></div>
           <div class="auth-divider-text">Don't have an account?</div>
@@ -508,8 +513,10 @@
                 <input class="form-input" id="gd-commit-summary" placeholder="Summary (required)"
                   style="font-size:13px;padding:8px 10px;margin-bottom:6px;width:100%" />
                 <textarea class="form-input form-textarea" id="gd-commit-desc" rows="2"
-                  placeholder="Description (optional)" style="font-size:12px;padding:6px 10px;margin-bottom:8px;width:100%;resize:vertical;min-height:48px"></textarea>
-                <button class="btn btn-primary btn-sm full-width" id="gd-btn-commit" data-action="commitFromGitDesktop" style="padding:8px 12px;font-weight:600">
+                  placeholder="Description (optional)"
+                  style="font-size:12px;padding:6px 10px;margin-bottom:8px;width:100%;resize:vertical;min-height:48px"></textarea>
+                <button class="btn btn-primary btn-sm full-width" id="gd-btn-commit" data-action="commitFromGitDesktop"
+                  style="padding:8px 12px;font-weight:600">
                   Commit to <span id="gd-commit-branch-label" style="font-weight:700;margin-left:2px">main</span>
                 </button>
               </div>

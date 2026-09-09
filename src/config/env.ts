@@ -33,4 +33,5 @@ export const env = Object.freeze({
   maxMemoryTokens: Number(process.env.MAX_MEMORY_TOKENS ?? 300),
   maxRetrievedChunks: Number(process.env.MAX_RETRIEVED_CHUNKS ?? 4),
   ragDebugContext: process.env.RAG_DEBUG_CONTEXT === "true",
+  googleClientId: process.env.GOOGLE_CLIENT_ID?.trim() || "",
 });

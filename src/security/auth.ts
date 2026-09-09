@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
 import { AppError } from "../errors/app-error.js";
+import { query, withTransaction } from "../db/postgres.js";
+import type { GoogleTokenPayload } from "./google-auth.js";
 
 export interface User {
   readonly id: string;
@@ -158,3 +160,101 @@ export const verifySessionToken = (token: string): AuthSession => {
     throw INVALID_TOKEN_ERROR("Malformed authentication token payload");
   }
 };
+
+// ---------------------------------------------------------------------------
+// Google Sign-In: database-backed user creation / lookup
+// ---------------------------------------------------------------------------
+
+export interface GoogleUserResult {
+  user: { id: string; email: string; name: string; tenantId: string; role: string };
+  token: string;
+}
+
+export async function findOrCreateGoogleUser(
+  googlePayload: GoogleTokenPayload,
+): Promise<GoogleUserResult> {
+  const { sub, email, name, picture } = googlePayload;
+
+  // 1. Check if a Google identity already exists
+  const existingIdentity = await query<{ id: string; email: string; name: string; tenant_id: string; role: string }>(
+    `SELECT u.id, u.email, u.name, u.tenant_id, u.role
+     FROM identities i JOIN users u ON i.user_id = u.id
+     WHERE i.provider = 'google' AND i.provider_user_id = $1`,
+    [sub],
+  );
+
+  if (existingIdentity.rows.length > 0) {
+    const row = existingIdentity.rows[0]!;
+    console.warn(`[AUTH] Google login: existing user ${row.id} (${row.email})`);
+    const token = createSessionToken({
+      id: row.id, email: row.email, name: row.name,
+      tenantId: row.tenant_id, role: row.role as User["role"],
+      passwordHash: "", salt: "", createdAt: "",
+    });
+    return {
+      user: { id: row.id, email: row.email, name: row.name, tenantId: row.tenant_id, role: row.role },
+      token,
+    };
+  }
+
+  // 2. Check if a user with this email already exists (email/password account)
+  const existingUser = userStore.findByEmail(email);
+  if (existingUser) {
+    console.warn(`[AUTH] Google login: linking to existing account ${existingUser.id} (${email})`);
+    const identityId = `id-${crypto.randomUUID().substring(0, 8)}`;
+    await query(
+      `INSERT INTO identities (id, user_id, provider, provider_user_id, email, name, avatar_url)
+       VALUES ($1, $2, 'google', $3, $4, $5, $6)`,
+      [identityId, existingUser.id, sub, email, name, picture ?? null],
+    );
+    const token = createSessionToken(existingUser);
+    return {
+      user: { id: existingUser.id, email: existingUser.email, name: existingUser.name, tenantId: existingUser.tenantId, role: existingUser.role },
+      token,
+    };
+  }
+
+  // 3. Create a brand-new user + identity in a transaction
+  const userId = `usr-${crypto.randomUUID().substring(0, 8)}`;
+  const tenantId = `t-${crypto.randomUUID().substring(0, 8)}`;
+  const identityId = `id-${crypto.randomUUID().substring(0, 8)}`;
+  const displayName = name || email.split("@")[0] || "User";
+
+  await withTransaction(async (client) => {
+    await client.query(
+      `INSERT INTO users (id, email, name, tenant_id, role) VALUES ($1, $2, $3, $4, 'developer')`,
+      [userId, email, displayName, tenantId],
+    );
+    await client.query(
+      `INSERT INTO identities (id, user_id, provider, provider_user_id, email, name, avatar_url)
+       VALUES ($1, $2, 'google', $3, $4, $5, $6)`,
+      [identityId, userId, sub, email, displayName, picture ?? null],
+    );
+  });
+
+  console.warn(`[AUTH] Google login: created new user ${userId} (${email})`);
+
+  const sessionUser: User = {
+    id: userId, email, name: displayName,
+    tenantId, role: "developer", passwordHash: "", salt: "", createdAt: new Date().toISOString(),
+  };
+  const token = createSessionToken(sessionUser);
+  return {
+    user: { id: userId, email, name: displayName, tenantId, role: "developer" },
+    token,
+  };
+}
+
+export async function findUserByIdFromDb(userId: string): Promise<{
+  id: string; email: string; name: string; tenantId: string; role: string; createdAt: string;
+} | null> {
+  const result = await query<{
+    id: string; email: string; name: string; tenant_id: string; role: string; created_at: string;
+  }>(
+    `SELECT id, email, name, tenant_id, role, created_at FROM users WHERE id = $1`,
+    [userId],
+  );
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0]!;
+  return { id: row.id, email: row.email, name: row.name, tenantId: row.tenant_id, role: row.role, createdAt: row.created_at };
+}

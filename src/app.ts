@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { healthHandler, readinessHandler } from "./api/health.js";
-import { registerHandler, loginHandler, meHandler } from "./api/auth.js";
+import { registerHandler, loginHandler, meHandlerDb, googleLoginHandler } from "./api/auth.js";
 import {
   gitStatusHandler,
   gitLogHandler,
@@ -186,7 +186,11 @@ app.get("/info", (_req, res) => res.json({ service: "Git Debugging Agent", versi
 // Authentication
 app.post("/api/auth/register", registerHandler);
 app.post("/api/auth/login", loginHandler);
-app.get("/api/auth/me", securityMiddleware, meHandler);
+app.post("/api/auth/google", googleLoginHandler);
+app.get("/api/auth/me", securityMiddleware, meHandlerDb);
+app.get("/api/auth/google-client-id", (_req, res) => {
+  res.json({ clientId: process.env.GOOGLE_CLIENT_ID?.trim() || "" });
+});
 
 // Git repositories
 app.get("/api/repositories", securityMiddleware, listRepositoriesHandler);

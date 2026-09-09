@@ -44,6 +44,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   initUserMenu();
   initMobileMenu();
   initScrollToTop();
+  initGoogleSignIn();
   if (typeof initDragAndDrop === "function") initDragAndDrop();
   if (typeof setupFolderDropZone === "function") setupFolderDropZone();
 
@@ -75,6 +76,47 @@ function showAuth() {
   document.getElementById("app").style.display = "none";
 }
 
+async function initGoogleSignIn() {
+  try {
+    const { clientId } = await api.getGoogleClientId();
+    if (!clientId || typeof google === "undefined") return;
+
+    google.accounts.id.initialize({
+      client_id: clientId,
+      callback: async (response) => {
+        const authError = document.getElementById("auth-error");
+        const loginBtn = document.getElementById("login-btn");
+        try {
+          if (authError) authError.style.display = "none";
+          if (loginBtn) { loginBtn.disabled = true; loginBtn.textContent = "Signing In..."; }
+          const { user } = await api.googleLogin(response.credential);
+          showToast("Signed in with Google!", "success");
+          showApp(user);
+        } catch (err) {
+          if (authError) {
+            authError.textContent = err.message || "Google sign-in failed";
+            authError.style.display = "block";
+          }
+        } finally {
+          if (loginBtn) { loginBtn.disabled = false; loginBtn.textContent = "Sign In"; }
+        }
+      },
+    });
+
+    const container = document.getElementById("google-signin-btn");
+    if (container) {
+      google.accounts.id.renderButton(container, {
+        theme: "outline",
+        size: "large",
+        width: container.offsetWidth || 340,
+        text: "continue_with",
+      });
+    }
+  } catch {
+    // Google Sign-In not configured or unavailable — silently skip
+  }
+}
+
 function showApp(user) {
   document.getElementById("auth-page").style.display = "none";
   document.getElementById("app").style.display = "block";
@@ -97,6 +139,9 @@ async function loadAll() {
 
 function logout() {
   api.clearToken();
+  if (typeof google !== "undefined" && google.accounts?.id) {
+    google.accounts.id.disableAutoSelect();
+  }
   showAuth();
   showToast("Signed out successfully", "info");
 }
