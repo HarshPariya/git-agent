@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../errors/app-error.js";
+import { query } from "../db/postgres.js";
 import { createSessionToken, findOrCreateGoogleUser, findUserByIdFromDb, userStore } from "../security/auth.js";
 import { verifyGoogleToken } from "../security/google-auth.js";
 
@@ -96,12 +97,21 @@ export async function googleLoginHandler(request: Request, response: Response, n
       throw new AppError("Missing Google credential", "VALIDATION_ERROR", 400);
     }
 
-    const googlePayload = await verifyGoogleToken(credential);
+    // Verify the Google ID token — if this fails, it's a real auth error
+    let googlePayload;
+    try {
+      googlePayload = await verifyGoogleToken(credential);
+    } catch (tokenError) {
+      console.error("[AUTH] Google token verification failed:", tokenError instanceof Error ? tokenError.message : tokenError);
+      throw new AppError("Invalid Google credential", "AUTHENTICATION_ERROR", 401);
+    }
+
+    // Find or create the user and get a session token
     const { user, token } = await findOrCreateGoogleUser(googlePayload);
 
     response.status(200).json({
       token,
-      user: { id: user.id, email: user.email, name: user.name, tenantId: user.tenantId, role: user.role },
+      user: { id: user.id, email: user.email, name: user.name, tenantId: user.tenantId, role: user.role, picture: user.picture },
     });
   } catch (error) {
     if (error instanceof AppError) {
@@ -109,7 +119,7 @@ export async function googleLoginHandler(request: Request, response: Response, n
       return;
     }
     console.error("[AUTH] Google login failed:", error instanceof Error ? error.message : error);
-    next(new AppError("Invalid Google credential", "AUTHENTICATION_ERROR", 401));
+    next(new AppError("Google sign-in failed. Please try again.", "AUTHENTICATION_ERROR", 500));
   }
 }
 
@@ -125,10 +135,24 @@ export async function meHandlerDb(request: Request, response: Response, next: Ne
     }
 
     // Fall back to database lookup for Google-authenticated users
-    const dbUser = await findUserByIdFromDb(context.userId);
-    if (dbUser) {
-      response.status(200).json({ user: dbUser });
-      return;
+    try {
+      const dbUser = await findUserByIdFromDb(context.userId);
+      if (dbUser) {
+        // Try to get avatar_url from identities table
+        let avatarUrl: string | undefined;
+        try {
+          const identityResult = await query<{ avatar_url: string | null }>(
+            `SELECT avatar_url FROM identities WHERE user_id = $1 AND provider = 'google' LIMIT 1`,
+            [context.userId],
+          );
+          avatarUrl = identityResult.rows[0]?.avatar_url ?? undefined;
+        } catch { /* ignore — table may not exist */ }
+
+        response.status(200).json({ user: { ...dbUser, picture: avatarUrl } });
+        return;
+      }
+    } catch {
+      // Database unavailable — fall through to dev-mode fallback
     }
 
     // Dev-mode fallback

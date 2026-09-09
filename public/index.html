@@ -130,8 +130,10 @@
           Connect GitHub
         </button>
 
-        <button class="btn btn-secondary btn-sm btn-icon" id="user-menu-btn" title="Settings & Account">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button class="btn btn-secondary btn-sm btn-icon user-menu-btn" id="user-menu-btn" title="Settings & Account">
+          <img id="header-avatar" class="header-avatar" src="" alt="" style="display:none" />
+          <svg id="header-avatar-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
             <circle cx="12" cy="7" r="4" />
           </svg>
@@ -1078,9 +1080,12 @@
               <div class="card-title">User Account</div>
             </div>
             <div style="display:flex;flex-direction:column;gap:14px">
-              <div>
-                <div class="form-label">Signed in as</div>
-                <div style="font-size:14px;font-weight:600;margin-top:4px" id="settings-email">—</div>
+              <div style="display:flex;align-items:center;gap:12px">
+                <img id="settings-avatar" class="settings-avatar" src="" alt="" style="display:none" />
+                <div>
+                  <div class="form-label">Signed in as</div>
+                  <div style="font-size:14px;font-weight:600;margin-top:4px" id="settings-email">—</div>
+                </div>
               </div>
               <button class="btn btn-danger btn-sm" data-action="logout" style="width:fit-content">Sign Out</button>
             </div>

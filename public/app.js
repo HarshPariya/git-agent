@@ -119,6 +119,20 @@ async function initGoogleSignIn() {
           if (loginBtn) { loginBtn.disabled = false; loginBtn.textContent = "Sign In"; }
         }
       },
+      // Catch Google Sign-In flow errors (e.g., popup blocked, invalid_client)
+      error_callback: (err) => {
+        const authError = document.getElementById("auth-error");
+        if (authError) {
+          const messages = {
+            popup_closed: "Sign-in popup was closed. Please try again.",
+            popup_failed_to_open: "Could not open sign-in popup. Check your popup blocker settings.",
+            cancelled: "Sign-in was cancelled.",
+          };
+          const msg = messages[err.type] || "Google Sign-In failed: " + (err.message || err.type || "Unknown error. Ensure GOOGLE_CLIENT_ID is configured correctly in Google Cloud Console.");
+          authError.textContent = msg;
+          authError.style.display = "block";
+        }
+      },
     });
 
     googleSignInReady = true;
@@ -143,6 +157,28 @@ function showApp(user) {
 
   const emailEl = document.getElementById("settings-email");
   if (emailEl) emailEl.textContent = user?.email || user?.name || "Developer (Dev Mode)";
+
+  // Show profile picture if available
+  const avatarUrl = user?.picture || null;
+  const headerAvatar = document.getElementById("header-avatar");
+  const headerAvatarIcon = document.getElementById("header-avatar-icon");
+  const settingsAvatar = document.getElementById("settings-avatar");
+
+  if (avatarUrl) {
+    if (headerAvatar) {
+      headerAvatar.src = avatarUrl;
+      headerAvatar.style.display = "block";
+    }
+    if (headerAvatarIcon) headerAvatarIcon.style.display = "none";
+    if (settingsAvatar) {
+      settingsAvatar.src = avatarUrl;
+      settingsAvatar.style.display = "block";
+    }
+  } else {
+    if (headerAvatar) headerAvatar.style.display = "none";
+    if (headerAvatarIcon) headerAvatarIcon.style.display = "block";
+    if (settingsAvatar) settingsAvatar.style.display = "none";
+  }
 
   loadAll();
 }
