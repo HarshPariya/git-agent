@@ -66,13 +66,13 @@ const GROUP_RULES: ReadonlyArray<{
   scope: string;
   reason: string;
 }> = [
-  { match: (p) => p.startsWith("test") || p.includes(".test.") || p.includes(".spec."), key: "tests", name: "Automated Tests", type: "test", scope: "tests", reason: "Unit and integration test suites coverage" },
-  { match: (p) => p.startsWith("doc") || p.endsWith(".md") || p.endsWith(".txt"), key: "docs", name: "Documentation", type: "docs", scope: "docs", reason: "Documentation, guide, and specifications updates" },
-  { match: (p) => p.includes("auth") || p.includes("security") || p.includes("guardrail"), key: "security", name: "Authentication & Security", type: "fix", scope: "auth", reason: "Security, guardrail, or authentication controls" },
-  { match: (p) => p.includes("git") || p.includes("branch") || p.includes("commit") || p.includes("push"), key: "git", name: "Git Operations", type: "feat", scope: "git", reason: "Git engine, conflict resolution, or repository management" },
-  { match: (p) => p.includes("api") || p.includes("route") || p.includes("server") || p.includes("app.ts"), key: "api", name: "API & Routing", type: "feat", scope: "api", reason: "API endpoint routing and service interface updates" },
-  { match: (p) => p.includes("public") || p.endsWith(".html") || p.endsWith(".css") || p.includes("ui"), key: "ui", name: "User Interface", type: "feat", scope: "ui", reason: "Frontend UI components, styling, and client views" },
-];
+    { match: (p) => p.startsWith("test") || p.includes(".test.") || p.includes(".spec."), key: "tests", name: "Automated Tests", type: "test", scope: "tests", reason: "Unit and integration test suites coverage" },
+    { match: (p) => p.startsWith("doc") || p.endsWith(".md") || p.endsWith(".txt"), key: "docs", name: "Documentation", type: "docs", scope: "docs", reason: "Documentation, guide, and specifications updates" },
+    { match: (p) => p.includes("auth") || p.includes("security") || p.includes("guardrail"), key: "security", name: "Authentication & Security", type: "fix", scope: "auth", reason: "Security, guardrail, or authentication controls" },
+    { match: (p) => p.includes("git") || p.includes("branch") || p.includes("commit") || p.includes("push"), key: "git", name: "Git Operations", type: "feat", scope: "git", reason: "Git engine, conflict resolution, or repository management" },
+    { match: (p) => p.includes("api") || p.includes("route") || p.includes("server") || p.includes("app.ts"), key: "api", name: "API & Routing", type: "feat", scope: "api", reason: "API endpoint routing and service interface updates" },
+    { match: (p) => p.includes("public") || p.endsWith(".html") || p.endsWith(".css") || p.includes("ui"), key: "ui", name: "User Interface", type: "feat", scope: "ui", reason: "Frontend UI components, styling, and client views" },
+  ];
 
 function parseNumstat(output: string): Map<string, { additions: number; deletions: number }> {
   const map = new Map<string, { additions: number; deletions: number }>();
@@ -189,7 +189,7 @@ export async function analyzeAndPlanCommits(repoPath: string): Promise<CommitPla
   const changedFiles = await getDetailedChangedFiles(targetPath);
   if (!changedFiles.length) return { summary: "Working tree is clean. No changed files to analyze.", totalFiles: 0, totalCommits: 0, groups: [], changedFiles: [] };
 
-  if (await isLlmAvailable()) {
+  if (isLlmAvailable()) {
     try {
       const result = await planWithLlm(changedFiles);
       if (result) {
@@ -212,6 +212,24 @@ export async function analyzeAndPlanCommits(repoPath: string): Promise<CommitPla
   };
 }
 
+interface LlmGroup {
+  id?: string;
+  name?: string;
+  reason?: string;
+  risk?: string;
+  files?: string[];
+  commitType?: string;
+  commitScope?: string;
+  commitSubject?: string;
+  commitBody?: string;
+  testCount?: number;
+}
+
+interface LlmResponse {
+  summary?: string;
+  groups: LlmGroup[];
+}
+
 async function planWithLlm(changedFiles: ChangedFileDetail[]): Promise<{ summary: string; groups: LogicalChangeGroup[] } | null> {
   const fileListSummary = changedFiles.map((f) => `- ${f.filePath} (${f.status}, +${f.additions}/-${f.deletions}, risk: ${f.risk})`).join("\n");
   const response = await callLlm([
@@ -225,7 +243,7 @@ async function planWithLlm(changedFiles: ChangedFileDetail[]): Promise<{ summary
   const jsonMatch = /\{[\s\S]*\}/.exec(response.content);
   if (!jsonMatch) return null;
 
-  const parsed = JSON.parse(jsonMatch[0]);
+  const parsed = JSON.parse(jsonMatch[0]) as LlmResponse;
   if (!Array.isArray(parsed.groups) || !parsed.groups.length) return null;
 
   const validPathSet = new Set(changedFiles.map((f) => f.filePath));
@@ -233,7 +251,7 @@ async function planWithLlm(changedFiles: ChangedFileDetail[]): Promise<{ summary
   const validGroups: LogicalChangeGroup[] = [];
 
   for (let idx = 0; idx < parsed.groups.length; idx++) {
-    const g = parsed.groups[idx];
+    const g = parsed.groups[idx]!;
     if (!Array.isArray(g.files)) continue;
 
     const groupFiles = g.files.filter((fp: string) => {
@@ -251,10 +269,10 @@ async function planWithLlm(changedFiles: ChangedFileDetail[]): Promise<{ summary
         files: groupFiles,
         testCount: typeof g.testCount === "number" ? g.testCount : 1,
         suggestedCommit: {
-          type: g.commitType ?? "fix",
-          scope: g.commitScope ?? undefined,
+          type: (g.commitType ?? "fix") as ConventionalCommit["type"],
+          scope: g.commitScope ?? "",
           subject: (g.commitSubject ?? "apply updates").slice(0, 72),
-          body: g.commitBody ?? undefined,
+          body: g.commitBody ?? "",
           breakingChange: false,
         },
       });
@@ -278,7 +296,7 @@ export async function executeCommitPlan(
   if (!initialStatus.trim()) return { success: false, commits: [], totalCreated: 0, branch: "unknown", message: "Nothing to commit — working tree is clean." };
 
   const currentBranch = await resolveCurrentBranch(targetPath);
-  await safeExec("git reset HEAD", targetPath).catch(() => {});
+  await safeExec("git reset HEAD", targetPath).catch(() => { });
 
   const executedCommits: ExecutedCommitResult[] = [];
 

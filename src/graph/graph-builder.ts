@@ -46,8 +46,10 @@ export const buildGraph = (entities: GraphEntity[], relationships: GraphRelation
 
   entities.forEach((e) => nodes.set(e.id, e));
   relationships.forEach((r) => {
-    outgoing.get(r.sourceId)?.push(r) ?? outgoing.set(r.sourceId, [r]);
-    incoming.get(r.targetId)?.push(r) ?? incoming.set(r.targetId, [r]);
+    const outgoingList = outgoing.get(r.sourceId);
+    if (outgoingList) { outgoingList.push(r); } else { outgoing.set(r.sourceId, [r]); }
+    const incomingList = incoming.get(r.targetId);
+    if (incomingList) { incomingList.push(r); } else { incoming.set(r.targetId, [r]); }
   });
 
   return { nodes, edges: relationships, outgoing, incoming };

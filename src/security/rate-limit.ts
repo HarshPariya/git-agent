@@ -39,7 +39,7 @@ export class InMemoryRateLimiter {
   }
 
   reset = (key?: string): void => {
-    key ? this.states.delete(key) : this.states.clear();
+    if (key) { this.states.delete(key); } else { this.states.clear(); }
   };
 
   cleanupExpired = (now = Date.now()): number => {

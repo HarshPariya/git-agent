@@ -29,14 +29,14 @@ const cosineSimilarity = (a: number[], b: number[]): number => {
   return magA === 0 || magB === 0 ? 0 : dot / (Math.sqrt(magA) * Math.sqrt(magB));
 };
 
-export const buildVectorIndex = async (chunks: CodeChunk[]): Promise<VectorDocument[]> => {
+export const buildVectorIndex = (chunks: CodeChunk[]): VectorDocument[] => {
   const documents: VectorDocument[] = [];
 
   for (const chunk of chunks) {
     if (!chunk.content.trim()) continue;
 
     try {
-      const embedding = await embedText([
+      const embedding = embedText([
         `Type: ${chunk.type}`,
         `Name: ${chunk.name ?? ""}`,
         `File: ${chunk.filePath}`,
@@ -52,12 +52,12 @@ export const buildVectorIndex = async (chunks: CodeChunk[]): Promise<VectorDocum
   return documents;
 };
 
-export const vectorSearch = async (
+export const vectorSearch = (
   query: string,
   index: VectorDocument[],
   limit = 10
-): Promise<VectorSearchResult[]> => {
-  const queryEmbedding = await embedText(query);
+): VectorSearchResult[] => {
+  const queryEmbedding = embedText(query);
 
   return index
     .map((document) => ({

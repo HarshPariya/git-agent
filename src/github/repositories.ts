@@ -69,7 +69,7 @@ export const listGitHubRepos = async (
     return repos.map(mapRepo);
   } catch (error) {
     if (error instanceof Error) throw error;
-    throw new Error("Failed to list GitHub repositories");
+    throw new Error("Failed to list GitHub repositories", { cause: error });
   }
 };
 
@@ -79,7 +79,7 @@ export const getGitHubRepo = async (userId: string, owner: string, repo: string)
     return mapRepo(repoData);
   } catch (error) {
     if (error instanceof Error) throw error;
-    throw new Error("Failed to get GitHub repository");
+    throw new Error("Failed to get GitHub repository", { cause: error });
   }
 };
 
@@ -88,7 +88,7 @@ export const listGitHubBranches = async (userId: string, owner: string, repo: st
     return await makeGitHubRequest<GitHubBranch[]>(userId, `/repos/${owner}/${repo}/branches?per_page=100`);
   } catch (error) {
     if (error instanceof Error) throw error;
-    throw new Error("Failed to list GitHub branches");
+    throw new Error("Failed to list GitHub branches", { cause: error });
   }
 };
 
@@ -97,6 +97,6 @@ export const getGitHubCommit = async (userId: string, owner: string, repo: strin
     return await makeGitHubRequest(userId, `/repos/${owner}/${repo}/commits/${sha}`);
   } catch (error) {
     if (error instanceof Error) throw error;
-    throw new Error("Failed to get GitHub commit");
+    throw new Error("Failed to get GitHub commit", { cause: error });
   }
 };

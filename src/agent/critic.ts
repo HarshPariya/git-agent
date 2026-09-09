@@ -51,7 +51,7 @@ export class CriticAgent {
     ctx: DebugContext,
     testsPassed: boolean
   ): Promise<CriticReview> {
-    const useLlm = await isLlmAvailable();
+    const useLlm = isLlmAvailable();
     return useLlm
       ? this.reviewWithLlm(plan, ctx, testsPassed)
       : this.reviewDeterministic(plan, ctx, testsPassed);

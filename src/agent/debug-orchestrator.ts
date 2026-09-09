@@ -67,11 +67,11 @@ const monitorCI = async (ctx: OrchestratorContext): Promise<string> => {
   return `CI status for repository ${ctx.repositoryId}: Local git verification complete. All checks passed.`;
 };
 
-const analyzeCIFailures = async (): Promise<string> =>
-  "Analyzed CI failure patterns. No critical pipeline failures detected.";
+const analyzeCIFailures = (): Promise<string> =>
+  Promise.resolve("Analyzed CI failure patterns. No critical pipeline failures detected.");
 
-const fixCIFailures = async (): Promise<string> =>
-  "Generated CI configuration and workflow recommendations.";
+const fixCIFailures = (): Promise<string> =>
+  Promise.resolve("Generated CI configuration and workflow recommendations.");
 
 const browseHistory = async (ctx: OrchestratorContext): Promise<string> => {
   const log = await executeGitLog(ctx.repositoryId, { count: 20 });
@@ -111,7 +111,7 @@ const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
     const repoPath = getExecutionPath(ctx.repositoryId);
 
     debugAgentPipeline.transitionState(session.id, "SCANNING_REPOSITORY", "Analyzing query and git state");
-    const investigationPlan = await generateInvestigationPlan(ctx.query, repoPath);
+    const investigationPlan = generateInvestigationPlan(ctx.query, repoPath);
     debugAgentPipeline.setExtendedData(session.id, { investigationPlan });
     debugAgentPipeline.emitEvent(session.id, { type: "state", sessionId: session.id, state: "SCANNING_REPOSITORY", data: { plan: investigationPlan }, timestamp: new Date().toISOString() });
 
@@ -129,8 +129,8 @@ const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
     debugAgentPipeline.setExtendedData(session.id, { context: multiContext });
 
     debugAgentPipeline.transitionState(session.id, "REPRODUCING_BEHAVIOR", "Validating issue triggers");
-    await debugAgentPipeline.executeStep(dc, "reproduce", "Reproduce the issue with focused diagnostic checks", async () =>
-      `Context aggregated from Git (${multiContext.git.changedFiles.length} files changed), Code Graph, and AST symbols. Issue reproduced against current workspace.`
+    await debugAgentPipeline.executeStep(dc, "reproduce", "Reproduce the issue with focused diagnostic checks", () =>
+      Promise.resolve(`Context aggregated from Git (${multiContext.git.changedFiles.length} files changed), Code Graph, and AST symbols. Issue reproduced against current workspace.`)
     );
 
     if (hasFailedStep(session)) return;
@@ -147,7 +147,7 @@ const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
       ? `${topHypothesis.title}: ${topHypothesis.description}`
       : `Identified issue from query: "${ctx.query}" based on working tree inspection.`;
 
-    await debugAgentPipeline.executeStep(dc, "diagnose", "Trace code and diagnose root cause", async () => {
+    await debugAgentPipeline.executeStep(dc, "diagnose", "Trace code and diagnose root cause", () => {
       const finding: DebugFinding = {
         id: `finding-${Date.now()}`,
         step: 3,
@@ -158,7 +158,7 @@ const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
         confidence: topHypothesis?.confidence ?? 0.8,
       };
       debugAgentPipeline.addFindingToSession(session.id, finding);
-      return `Root Cause Diagnosed: ${rootCauseDesc}\nHypotheses evaluated: ${hypotheses.length} (Confidence: ${Math.round((topHypothesis?.confidence ?? 0.8) * 100)}%)`;
+      return Promise.resolve(`Root Cause Diagnosed: ${rootCauseDesc}\nHypotheses evaluated: ${hypotheses.length} (Confidence: ${Math.round((topHypothesis?.confidence ?? 0.8) * 100)}%)`);
     });
 
     if (hasFailedStep(session)) return;
@@ -168,8 +168,8 @@ const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
     debugAgentPipeline.setExtendedData(session.id, { fixPlan });
     debugAgentPipeline.emitEvent(session.id, { type: "fix_plan", sessionId: session.id, data: fixPlan, timestamp: new Date().toISOString() });
 
-    await debugAgentPipeline.executeStep(dc, "fix", "Propose evidence-based fix plan with safety gate", async () =>
-      `Fix Plan Generated [${fixPlan.id}]:\n- Risk Level: ${fixPlan.riskLevel}\n- Files to change: ${fixPlan.filesToChange.map((f) => f.filePath).join(", ") || "None"}\n- Requires Approval: ${fixPlan.requiresApproval ? "YES" : "NO"}\n- Rollback Strategy: ${fixPlan.rollbackStrategy}`
+    await debugAgentPipeline.executeStep(dc, "fix", "Propose evidence-based fix plan with safety gate", () =>
+      Promise.resolve(`Fix Plan Generated [${fixPlan.id}]:\n- Risk Level: ${fixPlan.riskLevel}\n- Files to change: ${fixPlan.filesToChange.map((f) => f.filePath).join(", ") || "None"}\n- Requires Approval: ${fixPlan.requiresApproval ? "YES" : "NO"}\n- Rollback Strategy: ${fixPlan.rollbackStrategy}`)
     );
 
     if (hasFailedStep(session)) return;
@@ -179,8 +179,8 @@ const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
     debugAgentPipeline.setExtendedData(session.id, { criticReview });
     debugAgentPipeline.emitEvent(session.id, { type: "critic", sessionId: session.id, data: criticReview, timestamp: new Date().toISOString() });
 
-    await debugAgentPipeline.executeStep(dc, "verify", "Critic safety and correctness validation", async () =>
-      `Critic Review: ${criticReview.verdict} (Score: ${criticReview.score}/100)\n${criticReview.summary}\nFindings: ${criticReview.findings.length === 0 ? "None - fix is clean" : criticReview.findings.map((f) => `[${f.severity}] ${f.description}`).join("; ")}`
+    await debugAgentPipeline.executeStep(dc, "verify", "Critic safety and correctness validation", () =>
+      Promise.resolve(`Critic Review: ${criticReview.verdict} (Score: ${criticReview.score}/100)\n${criticReview.summary}\nFindings: ${criticReview.findings.length === 0 ? "None - fix is clean" : criticReview.findings.map((f) => `[${f.severity}] ${f.description}`).join("; ")}`)
     );
 
     debugAgentPipeline.transitionState(session.id, "COMPLETED", "Debug lifecycle concluded");
@@ -274,14 +274,14 @@ export class DebugOrchestrator {
     this.handlers = createModeHandlers();
   }
 
-  async startAsync(ctx: OrchestratorContext): Promise<DebugSession> {
+  startAsync(ctx: OrchestratorContext): Promise<DebugSession> {
     const { query } = ctx;
     const mode = ctx.mode ?? this.routeMode(query);
     this.ensureRepositoryPath(ctx.repositoryId);
 
-    const session = await debugAgentPipeline.startSession(ctx.repositoryId, ctx.tenantId, ctx.userId, mode, query);
+    const session = debugAgentPipeline.startSession(ctx.repositoryId, ctx.tenantId, ctx.userId, mode, query);
 
-    setImmediate(async () => {
+    setImmediate(() => void (async () => {
       try {
         await executeGitStatus(ctx.repositoryId).catch((err: unknown) => {
           logger.warn("Git status check failed during async debug execution", {
@@ -328,9 +328,9 @@ export class DebugOrchestrator {
           metadata: { error: err instanceof Error ? err.message : String(err), mode, repositoryId: ctx.repositoryId },
         });
       }
-    });
+    })())
 
-    return session;
+    return Promise.resolve(session);
   }
 
   async execute(ctx: OrchestratorContext): Promise<DebugOrchestratorResult> {
@@ -338,7 +338,7 @@ export class DebugOrchestrator {
     const mode = ctx.mode ?? this.routeMode(query);
     this.ensureRepositoryPath(ctx.repositoryId);
 
-    const session = await debugAgentPipeline.startSession(ctx.repositoryId, ctx.tenantId, ctx.userId, mode, query);
+    const session = debugAgentPipeline.startSession(ctx.repositoryId, ctx.tenantId, ctx.userId, mode, query);
     await executeGitStatus(ctx.repositoryId);
 
     try {

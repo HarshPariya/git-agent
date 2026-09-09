@@ -145,7 +145,7 @@ export class ConflictAnalyzer {
   }
 
   async resolveFile(cf: ConflictFile): Promise<ConflictResolution> {
-    return (await isLlmAvailable())
+    return isLlmAvailable()
       ? this.resolveWithLlm(cf)
       : this.resolveDeterministic(cf);
   }

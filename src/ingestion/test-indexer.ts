@@ -28,7 +28,7 @@ const runIndexerLifecycleTest = async () => {
   let failed = 0;
   const assert = (ok: boolean, name: string) => {
     console.log(ok ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`);
-    ok ? passed++ : failed++;
+    if (ok) { passed++; } else { failed++; }
   };
 
   try {

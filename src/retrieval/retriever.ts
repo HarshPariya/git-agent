@@ -322,7 +322,7 @@ export class CodeRetriever {
         ...(options.graphWeight !== undefined && { graphWeight: options.graphWeight }),
         ...(options.graphMaxDepth !== undefined && { graphMaxDepth: options.graphMaxDepth }),
       };
-      const hybridResults = await hybridSearch(sanitizedQuery, this.graph!, this.chunks, vectorResults, hybridOptions);
+      const hybridResults = hybridSearch(sanitizedQuery, this.graph!, this.chunks, vectorResults, hybridOptions);
       const graphMs = Date.now() - startGraph;
 
       const startRerank = Date.now();
@@ -425,7 +425,7 @@ export class CodeRetriever {
       });
   }
 
-  async findSymbolReferences(symbol: string): Promise<SymbolReferenceReport> {
+  findSymbolReferences(symbol: string): SymbolReferenceReport {
     if (!this.initialized) {
       throw new Error("Retriever is not initialized. Call initialize() first.");
     }

@@ -182,7 +182,6 @@ app.get("/health", healthHandler);
 app.get("/ready", readinessHandler);
 app.get("/readiness", readinessHandler);
 app.get("/info", (_req, res) => res.json({ service: "Git Debugging Agent", version: "2.0.0", environment: process.env.NODE_ENV || "development", status: "operational" }));
-app.get("/api/info", (_req, res) => res.json({ service: "Git Debugging Agent", version: "2.0.0", environment: process.env.NODE_ENV || "development", status: "operational" }));
 
 // Authentication
 app.post("/api/auth/register", registerHandler);
@@ -315,7 +314,7 @@ export const startServer = (): void => {
     });
   });
 
-  const gracefulShutdown = async (signal: string) => {
+  const gracefulShutdown = (signal: string) => {
     logger.info(`Received ${signal}. Starting graceful shutdown...`);
 
     const shutdownTimeout = setTimeout(() => {
@@ -323,7 +322,7 @@ export const startServer = (): void => {
       process.exit(1);
     }, 10000);
 
-    server.close(async () => {
+    server.close(() => void (async () => {
       logger.info("HTTP server closed.");
       try {
         const { closeDatabase } = await import("./db/postgres.js");
@@ -339,7 +338,7 @@ export const startServer = (): void => {
         clearTimeout(shutdownTimeout);
         process.exit(1);
       }
-    });
+    })())
   };
 
   process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
@@ -356,4 +355,4 @@ const isDirectExecution =
   ) ||
   process.argv.some((arg) => arg.includes("app.ts") || arg.includes("app.js"));
 
-isDirectExecution && startServer();
+if (isDirectExecution) { startServer(); }

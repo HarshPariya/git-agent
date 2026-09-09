@@ -8,7 +8,7 @@ const getTenantContext = (request: Request) => {
   return context;
 };
 
-export const getRepositoryHandler = async (request: Request, response: Response, next: NextFunction): Promise<void> => {
+export const getRepositoryHandler = (request: Request, response: Response, next: NextFunction): void => {
   try {
     const context = getTenantContext(request);
     const repo = repositoryStore.getRepository(request.params.id as string, context.tenantId);

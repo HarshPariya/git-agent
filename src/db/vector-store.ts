@@ -146,9 +146,9 @@ export const upsertChunks = async (
 
     if (storedHash === currentHash) { skipped++; continue; }
 
-    const embedding = await embedText(buildEmbeddingText(chunk));
+    const embedding = embedText(buildEmbeddingText(chunk));
     await query(UPSERT_CHUNK_SQL, buildChunkParams(chunk, embedding, currentHash, repository));
-    storedHash !== undefined ? updated++ : inserted++;
+    if (storedHash !== undefined) { updated++; } else { inserted++; }
   }
 
   await updateRepositoryStatus(repository, repositoryHash, totalFiles, chunks.length);
@@ -203,7 +203,7 @@ export const pgVectorSearch = async (
     throw new Error("Security Error: Repository scope is required for vector search.");
   }
 
-  const queryEmbedding = await embedText(queryText);
+  const queryEmbedding = embedText(queryText);
   const vectorString = formatEmbedding(queryEmbedding);
   const limit = options.limit ?? 10;
 

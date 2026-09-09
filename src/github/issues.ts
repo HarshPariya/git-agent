@@ -60,7 +60,7 @@ export const listGitHubIssues = async (
     return issues.filter((issue) => !issue.pull_request).map(mapIssue);
   } catch (error) {
     if (error instanceof Error) throw error;
-    throw new Error("Failed to list GitHub issues");
+    throw new Error("Failed to list GitHub issues", { cause: error });
   }
 };
 
@@ -70,7 +70,7 @@ export const getGitHubIssue = async (userId: string, owner: string, repo: string
     return mapIssue(issue);
   } catch (error) {
     if (error instanceof Error) throw error;
-    throw new Error("Failed to get GitHub issue");
+    throw new Error("Failed to get GitHub issue", { cause: error });
   }
 };
 
@@ -93,6 +93,6 @@ export const listGitHubIssueComments = async (
     }));
   } catch (error) {
     if (error instanceof Error) throw error;
-    throw new Error("Failed to list GitHub issue comments");
+    throw new Error("Failed to list GitHub issue comments", { cause: error });
   }
 };

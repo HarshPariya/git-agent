@@ -139,7 +139,7 @@ export class ContextBuilder {
     try {
       const graph = await repositoryIndexer.getGraph(repositoryId, tenantId);
       return {
-        symbols: graph.symbols.slice(0, 20).map((s) => s.name ?? String(s)),
+        symbols: graph.symbols.slice(0, 20).map((s) => typeof s.name === "string" ? s.name : ""),
         graphNodes: graph.nodes.length,
         graphEdges: graph.edges.length,
         relevantFiles: [...new Set(graph.nodes.slice(0, 10).map((n) => n.filePath || n.name))],

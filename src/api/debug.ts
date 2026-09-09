@@ -39,7 +39,7 @@ type StepType = "isolate" | "reproduce" | "diagnose" | "fix" | "verify" | "obser
 const isValidStepType = (value: unknown): value is StepType =>
   value === "isolate" || value === "reproduce" || value === "diagnose" || value === "fix" || value === "verify" || value === "observe";
 
-export async function startDebugSessionHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export function startDebugSessionHandler(request: Request, response: Response, next: NextFunction): void {
   try {
     const context = getTenantContext(request);
     const body = getRequestBody(request);
@@ -47,7 +47,7 @@ export async function startDebugSessionHandler(request: Request, response: Respo
     const query = requireString(body, "query");
     const mode = optionalMode(body) ?? "debug";
 
-    const session = await debugAgentPipeline.startSession(repoId, context.tenantId, context.userId, mode, query);
+    const session = debugAgentPipeline.startSession(repoId, context.tenantId, context.userId, mode, query);
     response.status(201).json(session);
   } catch (error) {
     next(error);
@@ -70,7 +70,7 @@ export async function executeDebugStepHandler(request: Request, response: Respon
       { repositoryId: session.repositoryId, tenantId: context.tenantId, userId: context.userId, sessionId: session.id, mode: session.mode, query },
       stepType,
       description,
-      async () => "Step completed"
+      () => Promise.resolve("Step completed")
     );
 
     response.status(200).json(result);
@@ -131,7 +131,7 @@ export async function runDebugAsyncHandler(request: Request, response: Response,
   }
 }
 
-export async function getDebugSessionHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export function getDebugSessionHandler(request: Request, response: Response, next: NextFunction): void {
   try {
     const context = getTenantContext(request);
     const sessionId = getSessionId(request);
@@ -150,7 +150,7 @@ export async function getDebugSessionHandler(request: Request, response: Respons
   }
 }
 
-export async function listDebugSessionsHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export function listDebugSessionsHandler(request: Request, response: Response, next: NextFunction): void {
   try {
     const context = getTenantContext(request);
     response.status(200).json({ sessions: debugAgentPipeline.listSessions(context.tenantId) });
@@ -159,7 +159,7 @@ export async function listDebugSessionsHandler(request: Request, response: Respo
   }
 }
 
-export async function listAgentRunsHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export function listAgentRunsHandler(request: Request, response: Response, next: NextFunction): void {
   try {
     const context = getTenantContext(request);
     response.status(200).json({ runs: debugAgentPipeline.listSessions(context.tenantId) });
@@ -168,7 +168,7 @@ export async function listAgentRunsHandler(request: Request, response: Response,
   }
 }
 
-export async function getSessionFindingsHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export function getSessionFindingsHandler(request: Request, response: Response, next: NextFunction): void {
   try {
     const context = getTenantContext(request);
     const sessionId = getSessionId(request);
@@ -179,7 +179,7 @@ export async function getSessionFindingsHandler(request: Request, response: Resp
   }
 }
 
-export async function completeDebugSessionHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export function completeDebugSessionHandler(request: Request, response: Response, next: NextFunction): void {
   try {
     const context = getTenantContext(request);
     const sessionId = getSessionId(request);
@@ -191,7 +191,7 @@ export async function completeDebugSessionHandler(request: Request, response: Re
   }
 }
 
-export async function abortDebugSessionHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export function abortDebugSessionHandler(request: Request, response: Response, next: NextFunction): void {
   try {
     const context = getTenantContext(request);
     const sessionId = getSessionId(request);
@@ -203,7 +203,7 @@ export async function abortDebugSessionHandler(request: Request, response: Respo
   }
 }
 
-export async function streamSessionHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export function streamSessionHandler(request: Request, response: Response, next: NextFunction): void {
   try {
     const context = getTenantContext(request);
     const sessionId = getSessionId(request);
@@ -237,24 +237,24 @@ export async function streamSessionHandler(request: Request, response: Response,
   }
 }
 
-export async function classifyTaskHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export function classifyTaskHandler(request: Request, response: Response, next: NextFunction): void {
   try {
     const body = getRequestBody(request);
     const query = requireString(body, "query");
-    const result = await classifyTask(query);
+    const result = classifyTask(query);
     response.status(200).json(result);
   } catch (error) {
     next(error);
   }
 }
 
-export async function planTaskHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export function planTaskHandler(request: Request, response: Response, next: NextFunction): void {
   try {
     const body = getRequestBody(request);
     const query = requireString(body, "query");
     const repositoryId = optionalString(body, "repositoryId");
     const executionPath = repositoryId ? getExecutionPath(repositoryId) : undefined;
-    const plan = await generateInvestigationPlan(query, executionPath);
+    const plan = generateInvestigationPlan(query, executionPath);
     response.status(200).json(plan);
   } catch (error) {
     next(error);

@@ -24,7 +24,7 @@ export const healthHandler = async (_request: Request, response: Response): Prom
   });
 };
 
-export const readinessHandler = async (_request: Request, response: Response): Promise<void> => {
+export const readinessHandler = (_request: Request, response: Response): void => {
   const retrieval = getRetrievalRuntimeStatus();
   const ready = retrieval.graph === "ready";
   response.status(ready ? 200 : 503).json({ status: ready ? "ready" : "not-ready", retrieval });

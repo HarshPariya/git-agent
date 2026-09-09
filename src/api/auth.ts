@@ -22,9 +22,9 @@ const getTenantContext = (request: Request) => {
   return context;
 };
 
-export async function registerHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export function registerHandler(request: Request, response: Response, next: NextFunction): void {
   try {
-    const { email, password, name, tenantId, role } = request.body ?? {};
+    const { email, password, name, tenantId, role } = (request.body ?? {}) as Record<string, unknown>;
 
     if (!isValidEmail(email)) throw new AppError("A valid email address is required", "VALIDATION_ERROR", 400);
     if (!isValidPassword(password)) throw new AppError("Password must be at least 6 characters", "VALIDATION_ERROR", 400);
@@ -43,9 +43,9 @@ export async function registerHandler(request: Request, response: Response, next
   }
 }
 
-export async function loginHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export function loginHandler(request: Request, response: Response, next: NextFunction): void {
   try {
-    const { email, password } = request.body ?? {};
+    const { email, password } = (request.body ?? {}) as Record<string, unknown>;
 
     if (!isValidEmail(email)) throw new AppError("Email is required", "VALIDATION_ERROR", 400);
     if (!password || typeof password !== "string") throw new AppError("Password is required", "VALIDATION_ERROR", 400);
@@ -61,7 +61,7 @@ export async function loginHandler(request: Request, response: Response, next: N
   }
 }
 
-export async function meHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export function meHandler(request: Request, response: Response, next: NextFunction): void {
   try {
     const context = getTenantContext(request);
     const user = userStore.findById(context.userId);

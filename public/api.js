@@ -363,9 +363,6 @@ class ApiClient {
   async revertFix(sessionId, backupId) {
     return this.request(`/api/debug/${sessionId}/fix/revert`, { method: "POST", body: JSON.stringify({ backupId }) });
   }
-  async commitChanges(repositoryId, message, stageAll = true) {
-    return this.request("/api/git/commit", { method: "POST", body: JSON.stringify({ repositoryId, message, stageAll }) });
-  }
   async pushChanges(repositoryId, options = {}) {
     return this.request("/api/git/push", { method: "POST", body: JSON.stringify({ repositoryId, ...options }) });
   }

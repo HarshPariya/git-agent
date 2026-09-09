@@ -44,7 +44,7 @@ export class FixPlanner {
     hypotheses?: string[]
   ): Promise<FixPlan> {
     const id = `fix-${crypto.randomUUID().slice(0, 8)}`;
-    const useLlm = await isLlmAvailable();
+    const useLlm = isLlmAvailable();
     const plan = useLlm
       ? await this.generateWithLlm(id, ctx, rootCause, evidence, hypotheses ?? [])
       : this.generateFallback(id, ctx, rootCause, evidence);

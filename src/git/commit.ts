@@ -35,7 +35,7 @@ export async function generateCommitMessage(
   filesChanged: string[],
   query: string,
 ): Promise<ConventionalCommit> {
-  if (await isLlmAvailable()) {
+  if (isLlmAvailable()) {
     try {
       const response = await callLlm([
         {
@@ -139,7 +139,7 @@ export async function safePush(
     const { stdout: statusOut } = await safeExec("git status --porcelain", repoPath);
     if (statusOut.trim()) return { success: false, message: "Working tree has uncommitted changes. Commit or stash them before pushing.", error: "UNCOMMITTED_CHANGES" };
 
-    const branchArg = branch ? `HEAD:${branch.replace(/[^a-zA-Z0-9._/\-]/g, "_")}` : "";
+    const branchArg = branch ? `HEAD:${branch.replace(/[^a-zA-Z0-9._/-]/g, "_")}` : "";
     const dryRunFlag = options.dryRun ? "--dry-run" : "";
     const cmd = `git push origin ${branchArg} ${dryRunFlag}`.trim();
     const { stdout } = await safeExec(cmd, repoPath);

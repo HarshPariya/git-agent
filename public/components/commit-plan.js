@@ -18,7 +18,7 @@ function renderCommitPlanView(plan) {
         <div class="empty-desc" style="font-size:12px;color:var(--c-text-muted);margin:6px 0 14px 0">
           Analyze working tree changes to create semantic Conventional Commit groups.
         </div>
-        <button class="btn btn-primary btn-sm" data-action="triggerAnalyzeChanges" style="width:100%">⚡ AI Analyze Changes</button>
+        <button class="btn btn-primary btn-sm" data-action="triggerAIAnalyzeChanges" style="width:100%">⚡ AI Analyze Changes</button>
       </div>
     `;
     return;
@@ -100,7 +100,8 @@ async function executeCommitPlanAll() {
 
     if (res.success) {
       showToast(`Successfully created ${res.totalCreated || res.commits?.length || 0} commits!`, "success");
-      window.setState("gitDesktop.commitPlan", null);
+      window.state.gitDesktop.commitPlan = null;
+      window.notifyStateChange("gitDesktop.commitPlan", null);
       if (typeof window.loadGitDesktop === "function") {
         await window.loadGitDesktop();
       }
@@ -125,7 +126,11 @@ function editGroupCommitMessage(groupId) {
   const newSubject = prompt("Edit Conventional Commit Subject:", group.suggestedCommit?.subject || group.name);
   if (!newSubject?.trim()) return;
 
-  window.setState(`gitDesktop.commitPlan.groups.${plan.groups.indexOf(group)}.suggestedCommit.subject`, newSubject.trim());
+  const idx = plan.groups.indexOf(group);
+  if (plan.groups[idx]?.suggestedCommit) {
+    plan.groups[idx].suggestedCommit.subject = newSubject.trim();
+  }
+  window.notifyStateChange("gitDesktop.commitPlan", plan);
   renderCommitPlanView(plan);
   showToast("Updated commit subject for group", "success");
 }
@@ -135,8 +140,9 @@ function previewGroupDiff(groupId) {
   const group = plan?.groups?.find(g => g.id === groupId);
   if (!group?.files?.length) return;
 
-  if (typeof window.selectDiffFile === "function") {
-    window.selectDiffFile(group.files[0]);
+  const repo = window.state?.activeRepository;
+  if (repo && typeof window.switchGitDesktopTab === "function") {
+    window.switchGitDesktopTab("diff");
   }
 }
 

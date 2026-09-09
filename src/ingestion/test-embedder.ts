@@ -1,28 +1,28 @@
 import { embedText, getEmbeddingMetrics } from "./embedder.js";
 
-const runEmbedderTests = async () => {
+const runEmbedderTests = () => {
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nEMBEDDING RESILIENCE & METRICS TESTS\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
   let passed = 0;
   let failed = 0;
   const assert = (ok: boolean, name: string) => {
     console.log(ok ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`);
-    ok ? passed++ : failed++;
+    if (ok) { passed++; } else { failed++; }
   };
 
   try {
     // 1. Single Embedding
     console.log("1. Testing single text embedding...");
-    const vector = await embedText("function normalizeId() {}");
+    const vector = embedText("function normalizeId() {}");
     assert(Array.isArray(vector) && vector.length === 384, "Generated valid 384-dimensional vector");
 
     // 2. Concurrent Deduplication
     console.log("2. Testing concurrent embedding requests (promise locking)...");
-    const results = await Promise.all([
+    const results = [
       embedText("const x = 1;"),
       embedText("class CodeRetriever {}"),
       embedText("export async function search() {}"),
-    ]);
+    ];
     assert(
       results.length === 3 && results.every((v) => v.length === 384),
       "Concurrent embedding promises resolved successfully",
@@ -43,7 +43,4 @@ const runEmbedderTests = async () => {
   }
 };
 
-runEmbedderTests().catch((err) => {
-  console.error("Embedder test failed:", err);
-  process.exitCode = 1;
-});
+runEmbedderTests();

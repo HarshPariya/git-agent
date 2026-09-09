@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import fsSync from "node:fs";
+import fsSync, { type Stats } from "node:fs";
 import path from "node:path";
 import { parseFile } from "./parser.js";
 import { chunkFile, type CodeChunk } from "./chunker.js";
@@ -42,7 +42,7 @@ export class RepositoryIndexer {
     if (isIgnoredFile(path.basename(absolutePath)))
       return skipResult(filePath, "Secret or ignored file");
 
-    let stat: import("node:fs").Stats | null = null;
+    let stat: Stats;
     try {
       stat = await fs.stat(absolutePath);
     } catch {
@@ -88,14 +88,16 @@ export class RepositoryIndexer {
       const existing = this.debounceMap.get(fullPath);
       if (existing) clearTimeout(existing);
 
-      const timer = setTimeout(async () => {
-        this.debounceMap.delete(fullPath);
-        try {
-          const stats = await this.indexSingleFile(fullPath);
-          onChange?.(stats);
-        } catch (err) {
-          console.error(`❌ Error auto-indexing ${filename}:`, err instanceof Error ? err.message : err);
-        }
+      const timer = setTimeout(() => {
+        void (async () => {
+          this.debounceMap.delete(fullPath);
+          try {
+            const stats = await this.indexSingleFile(fullPath);
+            onChange?.(stats);
+          } catch (err) {
+            console.error(`❌ Error auto-indexing ${filename}:`, err instanceof Error ? err.message : err);
+          }
+        })();
       }, debounceMs);
 
       this.debounceMap.set(fullPath, timer);

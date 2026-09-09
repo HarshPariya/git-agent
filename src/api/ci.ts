@@ -45,8 +45,8 @@ const isValidTriggerType = (value: unknown): value is "push" | "pull_request" | 
 export async function listCiBuildsHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
   try {
     getTenantContext(request);
-    const body = getRequestBody(request);
-    const repoId = optionalString(body, "repositoryId");
+    const query = request.query as Record<string, unknown>;
+    const repoId = typeof query.repositoryId === "string" && query.repositoryId.trim() ? query.repositoryId.trim() : optionalString(getRequestBody(request), "repositoryId");
 
     await tryAccessRepository(repoId);
 

@@ -111,9 +111,8 @@ function renderAllChangesContinuousDiff(files) {
             <span style="font-size:11px;font-weight:600;color:var(--c-danger)">-${dels}</span>
           </div>
           <div style="display:flex;gap:6px">
-            <button class="btn btn-secondary btn-sm" data-action="openInHostOs" data-value="${filePath}" data-type="reveal" title="Reveal in File Explorer">📂 Reveal</button>
-            <button class="btn btn-secondary btn-sm" data-action="openInHostOs" data-value="${filePath}" data-type="edit" title="Open in VS Code">📝 Open</button>
-            <button class="btn btn-secondary btn-sm" data-action="selectDiffFile" data-value="${filePath}" title="Focus Single File Diff">🔍 Inspect</button>
+            <button class="btn btn-secondary btn-sm" data-action="openCurrentFileInOs" data-value="${filePath}" data-type="reveal" title="Reveal in File Explorer">📂 Reveal</button>
+            <button class="btn btn-secondary btn-sm" data-action="openCurrentFileInOs" data-value="${filePath}" data-type="edit" title="Open in VS Code">📝 Open</button>
           </div>
         </div>
         <div class="gd-diff-code-container" style="max-height:360px;overflow-y:auto;background:var(--c-surface-card)">
@@ -143,7 +142,7 @@ async function renderPushSummaryView(remote, targetBranch, rawOutput = "") {
 
   let commits = [];
   try {
-    const logRes = await api.gitLog(repo?.id || "", { count: 5 });
+    const logRes = await api.getGitLog(repo?.id || "", 5);
     commits = logRes?.commits || (Array.isArray(logRes) ? logRes : []);
   } catch { }
 

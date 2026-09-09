@@ -50,13 +50,13 @@ const buildModes = (retriever: CodeRetriever, internals: RetrieverInternals): Mo
   },
   {
     name: "Graph Only",
-    run: async (q) => graphSearch(internals.graph, q, { limit: 10 }).map((r) => r.entity.name),
+    run: (q) => Promise.resolve(graphSearch(internals.graph, q, { limit: 10 }).map((r) => r.entity.name)),
   },
   {
     name: "Hybrid",
     run: async (q) => {
       const v = await pgVectorSearch(q, { repository: "ai-chatbot", limit: 15 });
-      return (await hybridSearch(q, internals.graph, internals.chunks, v, { limit: 10 })).map((r) => r.name);
+      return hybridSearch(q, internals.graph, internals.chunks, v, { limit: 10 }).map((r) => r.name);
     },
   },
   {
@@ -100,16 +100,16 @@ const evaluateMode = async (mode: ModeConfig): Promise<ModeMetrics> => {
 const printResults = (metrics: ModeMetrics[]): void => {
   console.log(
     "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-      "ABLATION COMPARISON MATRIX\n" +
-      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+    "ABLATION COMPARISON MATRIX\n" +
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
   );
   console.log(
     "Mode".padEnd(20) +
-      "Recall@1".padEnd(12) +
-      "Recall@5".padEnd(12) +
-      "MRR".padEnd(10) +
-      "Mean Latency".padEnd(15) +
-      "P95 Latency",
+    "Recall@1".padEnd(12) +
+    "Recall@5".padEnd(12) +
+    "MRR".padEnd(10) +
+    "Mean Latency".padEnd(15) +
+    "P95 Latency",
   );
   console.log("-".repeat(80));
 
@@ -126,8 +126,8 @@ const printResults = (metrics: ModeMetrics[]): void => {
 const main = async (): Promise<void> => {
   console.log(
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nRETRIEVAL ABLATION BENCHMARK\n" +
-      "Comparing: Vector Only | Graph Only | Hybrid | Hybrid + Reranker\n" +
-      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+    "Comparing: Vector Only | Graph Only | Hybrid | Hybrid + Reranker\n" +
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
   );
 
   const retriever = new CodeRetriever(process.cwd());

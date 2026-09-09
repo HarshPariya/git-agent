@@ -25,7 +25,7 @@ export async function connectGitHubHandler(req: Request, res: Response, next: Ne
   } catch (err) { next(err); }
 }
 
-export async function disconnectGitHubHandler(req: Request, res: Response, next: NextFunction): Promise<void> {
+export function disconnectGitHubHandler(req: Request, res: Response, next: NextFunction): void {
   try {
     revokeGitHubConnection(getUserId(req));
     res.status(200).json({ disconnected: true });
@@ -45,8 +45,10 @@ export async function githubStatusHandler(req: Request, res: Response, next: Nex
 
 export async function listGitHubReposHandler(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const page = parseInt(String(req.query["page"] ?? "1"), 10);
-    const per_page = parseInt(String(req.query["per_page"] ?? "30"), 10);
+    const pageParam = typeof req.query["page"] === "string" ? req.query["page"] : "1";
+    const perPageParam = typeof req.query["per_page"] === "string" ? req.query["per_page"] : "30";
+    const page = parseInt(pageParam, 10);
+    const per_page = parseInt(perPageParam, 10);
     const repos = await listGitHubRepos(getUserId(req), { page, per_page });
     res.status(200).json({ repositories: repos });
   } catch (err) { next(err); }

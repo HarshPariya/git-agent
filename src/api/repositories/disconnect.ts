@@ -14,11 +14,11 @@ const requireString = (body: unknown, key: string): string => {
   return value.trim();
 };
 
-export const disconnectRepositoryHandler = async (request: Request, response: Response, next: NextFunction): Promise<void> => {
+export const disconnectRepositoryHandler = (request: Request, response: Response, next: NextFunction): void => {
   try {
     const context = getTenantContext(request);
     const repositoryId = requireString(request.body, "repositoryId");
-    await repositoryStore.disconnectRepository(repositoryId, context.tenantId);
+    repositoryStore.disconnectRepository(repositoryId, context.tenantId);
     response.status(200).json({ success: true });
   } catch (error) {
     next(error);

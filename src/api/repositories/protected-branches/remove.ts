@@ -14,7 +14,7 @@ const requireString = (body: unknown, key: string): string => {
   return value.trim();
 };
 
-export const removeProtectedBranchHandler = async (request: Request, response: Response, next: NextFunction): Promise<void> => {
+export const removeProtectedBranchHandler = (request: Request, response: Response, next: NextFunction): void => {
   try {
     const context = getTenantContext(request);
     const repositoryId = request.params.id as string;

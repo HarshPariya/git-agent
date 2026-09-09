@@ -22,7 +22,7 @@ const runResourceLimitTests = async () => {
 
   const assert = (condition: boolean, testName: string) => {
     console.log(condition ? `[PASS] ${testName}` : `[FAIL] ${testName}`);
-    condition ? passed++ : failed++;
+    if (condition) { passed++; } else { failed++; }
   };
 
   const expectThrow = async (fn: () => unknown, testName: string) => {

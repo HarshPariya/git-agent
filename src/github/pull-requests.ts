@@ -75,7 +75,7 @@ export const listGitHubPRs = async (
     return prs.map(mapPR);
   } catch (error) {
     if (error instanceof Error) throw error;
-    throw new Error("Failed to list GitHub pull requests");
+    throw new Error("Failed to list GitHub pull requests", { cause: error });
   }
 };
 
@@ -85,7 +85,7 @@ export const getGitHubPR = async (userId: string, owner: string, repo: string, p
     return mapPR(pr);
   } catch (error) {
     if (error instanceof Error) throw error;
-    throw new Error("Failed to get GitHub pull request");
+    throw new Error("Failed to get GitHub pull request", { cause: error });
   }
 };
 
@@ -103,7 +103,7 @@ export const createGitHubPR = async (
     return mapPR(pr);
   } catch (error) {
     if (error instanceof Error) throw error;
-    throw new Error("Failed to create GitHub pull request");
+    throw new Error("Failed to create GitHub pull request", { cause: error });
   }
 };
 
@@ -117,6 +117,6 @@ export const getPRFiles = async (
     return await makeGitHubRequest(userId, `/repos/${owner}/${repo}/pulls/${prNumber}/files`);
   } catch (error) {
     if (error instanceof Error) throw error;
-    throw new Error("Failed to get pull request files");
+    throw new Error("Failed to get pull request files", { cause: error });
   }
 };

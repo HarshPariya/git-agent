@@ -124,7 +124,7 @@ export async function browseFilesystemHandler(request: Request, response: Respon
     if (fs.existsSync(cwd)) shortcuts.push({ name: `Current Project (${path.basename(cwd)})`, path: cwd });
     if (fs.existsSync(workspaceParent)) shortcuts.push({ name: `Workspace (${path.basename(workspaceParent)})`, path: workspaceParent });
 
-    response.status(200).json({ currentPath: targetPath, parentPath, isGitRepo: currentIsGit, directories, files, shortcuts } as BrowseResult);
+    response.status(200).json({ currentPath: targetPath, parentPath, isGitRepo: currentIsGit, directories, files, shortcuts });
   } catch (error) {
     next(error);
   }
@@ -178,7 +178,7 @@ export async function resolveFolderHandler(request: Request, response: Response,
       exists: Boolean(best && fs.existsSync(best)),
       isGitRepo: Boolean(best && fs.existsSync(path.join(best, ".git"))),
       candidates: scoredCandidates.map((c) => c.path),
-    } as ResolveFolderResult);
+    });
   } catch (error) {
     next(error);
   }
@@ -188,7 +188,7 @@ export async function pickNativeDialogHandler(_request: Request, response: Respo
   try {
     const selectedPath = await showNativeFolderDialog();
     if (!selectedPath) {
-      response.status(200).json({ cancelled: true } as PickNativeDialogResult);
+      response.status(200).json({ cancelled: true });
       return;
     }
     const exists = fs.existsSync(selectedPath);
@@ -197,7 +197,7 @@ export async function pickNativeDialogHandler(_request: Request, response: Respo
       folderName: path.basename(selectedPath) || selectedPath,
       isGitRepo: exists && fs.existsSync(path.join(selectedPath, ".git")),
       cancelled: false,
-    } as PickNativeDialogResult);
+    });
   } catch (error) {
     next(error);
   }

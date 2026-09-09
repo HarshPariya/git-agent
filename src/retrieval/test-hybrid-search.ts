@@ -40,7 +40,7 @@ const main = async (): Promise<void> => {
     vectorResults = await pgVectorSearch(query, { repository: "ai-chatbot", limit: 15 });
   }
 
-  const results = await hybridSearch(query, graph, chunks, vectorResults, { limit: 10 });
+  const results = hybridSearch(query, graph, chunks, vectorResults, { limit: 10 });
 
   for (const [index, result] of results.entries()) {
     const { name, hybridScore, vectorScore, graphScore, sources, filePath, graphDepth } = result;

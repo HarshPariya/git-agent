@@ -39,10 +39,10 @@ const backupStore = new Map<string, PatchBackup>();
 const generateId = (): string =>
   `patch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-export async function validatePrePatch(
+export function validatePrePatch(
   repoPath: string,
   changes: readonly { filePath: string }[]
-): Promise<{ valid: boolean; errors: string[] }> {
+): { valid: boolean; errors: string[] } {
   const resolvedRepo = path.resolve(repoPath);
   const errors = changes
     .map((change) => {
@@ -94,7 +94,7 @@ export async function applyPatch(
   changes: readonly PatchFileChange[],
   description = "Agent Fix Patch"
 ): Promise<PatchResult> {
-  const validation = await validatePrePatch(repoPath, changes);
+  const validation = validatePrePatch(repoPath, changes);
   if (!validation.valid) {
     return {
       success: false,

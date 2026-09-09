@@ -148,7 +148,7 @@ const extractPythonClasses = (lines: string[]): ParsedClass[] =>
     return [{ name: match[2], startLine: index + 1, endLine: end + 1, content: lines.slice(index, end + 1).join("\n") }];
   });
 
-const parseByLanguage = async (filePath: string, language: SupportedLanguage, content: string): Promise<{ imports: ParsedImport[]; functions: ParsedFunction[]; classes: ParsedClass[] }> => {
+const parseByLanguage = (filePath: string, language: SupportedLanguage, content: string): { imports: ParsedImport[]; functions: ParsedFunction[]; classes: ParsedClass[] } => {
   if (language === "typescript" || language === "javascript") return parseTypeScriptAST(content, filePath);
   if (language === "python") {
     const lines = content.split(/\r?\n/);
@@ -166,7 +166,7 @@ export const parseFile = async (filePath: string): Promise<ParsedFile> => {
   const absolutePath = path.resolve(filePath);
   const content = await fs.readFile(absolutePath, "utf8");
   const language = detectLanguage(filePath);
-  const { imports, functions, classes } = await parseByLanguage(filePath, language, content);
+  const { imports, functions, classes } = parseByLanguage(filePath, language, content);
   return { filePath: path.normalize(filePath), language, content, imports, functions, classes };
 };
 

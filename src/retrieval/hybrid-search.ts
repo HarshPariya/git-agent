@@ -54,13 +54,13 @@ const findChunkForGraphEntity = (
 ): CodeChunk | undefined =>
   filePath ? chunks.find((c) => c.filePath === filePath && c.name === name) : undefined;
 
-export const hybridSearch = async (
+export const hybridSearch = (
   query: string,
   graph: CodeGraph,
   chunks: CodeChunk[],
   vectorResults: VectorSearchResult[],
   options: HybridSearchOptions = {}
-): Promise<HybridSearchResult[]> => {
+): HybridSearchResult[] => {
   const limit = options.limit ?? 10;
   const graphLimit = options.graphLimit ?? 15;
   const inferredWeights = inferHybridWeights(query);

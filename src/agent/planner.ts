@@ -116,7 +116,7 @@ const DEFAULT_STEPS: readonly InvestigationStep[] = [
 ];
 
 export class TaskPlanner {
-  async classify(query: string): Promise<InvestigationPlan> {
+  classify(query: string): InvestigationPlan {
     const normalizedQuery = query.toLowerCase();
     const classification = this.matchClassification(normalizedQuery);
 
@@ -150,8 +150,8 @@ export class TaskPlanner {
 
 export const taskPlanner = new TaskPlanner();
 
-export async function classifyTask(query: string) {
-  const plan = await taskPlanner.classify(query);
+export function classifyTask(query: string) {
+  const plan = taskPlanner.classify(query);
   return {
     taskClass: plan.taskClass,
     category: plan.taskClass,
@@ -163,9 +163,9 @@ export async function classifyTask(query: string) {
   };
 }
 
-export async function generateInvestigationPlan(
+export function generateInvestigationPlan(
   query: string,
   _repoPath?: string
-): Promise<InvestigationPlan> {
+): InvestigationPlan {
   return taskPlanner.classify(query);
 }

@@ -29,12 +29,12 @@ export function recordAuditEntry(entry: Omit<AuditEntry, "id" | "timestamp">): v
   });
 }
 
-export async function getAuditLogHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export function getAuditLogHandler(request: Request, response: Response, next: NextFunction): void {
   try {
     const context = getTenantContext(request);
     const { repoId, category, limit } = parseQueryParams(request.url ?? "");
 
-    let entries = auditLog
+    const entries = auditLog
       .filter((e) => e.tenantId === context.tenantId)
       .filter((e) => !repoId || e.repositoryId === repoId)
       .filter((e) => !category || e.category === category)
@@ -47,7 +47,7 @@ export async function getAuditLogHandler(request: Request, response: Response, n
   }
 }
 
-export async function getAuditEntryHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export function getAuditEntryHandler(request: Request, response: Response, next: NextFunction): void {
   try {
     const context = getTenantContext(request);
     const { id } = request.params;

@@ -43,8 +43,8 @@ const isTransientLlmError = (err: unknown): boolean => {
 
   const e = err as Record<string, unknown>;
   const status = Number(e.status ?? (e as { error?: { status?: number } }).error?.status);
-  const msg = String(e.message || e.error || "");
-  const name = String(e.name || "");
+  const msg = String(typeof e.message === "string" ? e.message : typeof e.error === "string" ? e.error : "");
+  const name = String(typeof e.name === "string" ? e.name : "");
 
   return (
     TRANSIENT_STATUSES.has(status) ||
@@ -147,7 +147,7 @@ const extractFailedGeneration = (err: unknown): string | null => {
   const match = /"failed_generation":\s*"([\s\S]*?)"\s*[,}]/.exec(String(err));
   if (!match?.[1]) return null;
 
-  try { return JSON.parse(`"${match[1]}"`); } catch { return match[1]; }
+  try { return JSON.parse(`"${match[1]}"`) as string; } catch { return match[1]; }
 };
 
 const recoverToolCallsFromFailedGeneration = (
@@ -245,7 +245,7 @@ const handleToolCallResponse = async (
           function: {
             name: t.name,
             description: t.description,
-            parameters: t.parameters as Record<string, unknown>,
+            parameters: t.parameters,
           },
         })),
         tool_choice: "auto",
@@ -289,13 +289,13 @@ export const generateText = async ({ instructions, input }: LlmRequest): Promise
     });
   } catch (error) {
     if (error instanceof Error) throw error;
-    throw new Error("Groq text generation failed");
+    throw new Error("Groq text generation failed", { cause: error });
   }
 };
 
 export const groqProvider: LlmProvider = { generate: generateText };
 
-export const isLlmAvailable = async (): Promise<boolean> => Boolean(env.groqApiKey);
+export const isLlmAvailable = (): boolean => Boolean(env.groqApiKey);
 
 export const callLlm = async (
   messages: readonly LlmMessage[],

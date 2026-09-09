@@ -14,7 +14,7 @@ const runBackupRestoreTest = async () => {
 
   const assert = (condition: boolean, testName: string) => {
     console.log(condition ? `[PASS] ${testName}` : `[FAIL] ${testName}`);
-    condition ? passed++ : failed++;
+    if (condition) { passed++; } else { failed++; }
   };
 
   const backupPath = path.join(process.cwd(), "scratch", "test_backup.json");

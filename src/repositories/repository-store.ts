@@ -86,7 +86,7 @@ export class RepositoryStore {
     return result;
   }
 
-  async disconnectRepository(repositoryId: string, tenantId: string): Promise<Repository> {
+  disconnectRepository(repositoryId: string, tenantId: string): Repository {
     const repo = this.getRepository(repositoryId, tenantId);
     if (!repo) throw new Error("Repository not found");
 

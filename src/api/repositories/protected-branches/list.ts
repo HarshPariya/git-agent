@@ -8,7 +8,7 @@ const getTenantContext = (request: Request) => {
   return context;
 };
 
-export const listProtectedBranchesHandler = async (request: Request, response: Response, next: NextFunction): Promise<void> => {
+export const listProtectedBranchesHandler = (request: Request, response: Response, next: NextFunction): void => {
   try {
     const context = getTenantContext(request);
     const branches = repositoryStore.listProtectedBranches(request.params.id as string, context.tenantId);

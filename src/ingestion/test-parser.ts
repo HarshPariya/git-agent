@@ -64,7 +64,7 @@ const main = async () => {
 
   const graph = buildGraph(entities, relationships);
   const stats = getGraphStats(graph);
-  console.log(`Graph nodes: ${stats.totalNodes}\nGraph edges: ${stats.totalEdges}\n\nEntity breakdown:\n${stats.entityCounts}\n\nRelationship breakdown:\n${stats.relationshipCounts}`);
+  console.log(`Graph nodes: ${stats.totalNodes}\nGraph edges: ${stats.totalEdges}\n\nEntity breakdown:\n${JSON.stringify(stats.entityCounts)}\n\nRelationship breakdown:\n${JSON.stringify(stats.relationshipCounts)}`);
 
   const [firstMatch] = findEntitiesByName(graph, "normalizeId");
   if (firstMatch) {

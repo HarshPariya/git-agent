@@ -161,7 +161,7 @@ class MetricsCollector {
   };
 
   recordCacheHit = (hit: boolean): void => {
-    hit ? this.cacheHits++ : this.cacheMisses++;
+    if (hit) { this.cacheHits++; } else { this.cacheMisses++; }
   };
 
   recordRagMetrics(metrics: {

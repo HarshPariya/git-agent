@@ -10,13 +10,13 @@ const main = async (): Promise<void> => {
     const chunks = chunkRepository(parsedFiles);
     console.log(`Chunks: ${chunks.length}\nGenerating embeddings...`);
 
-    const index = await buildVectorIndex(chunks);
+    const index = buildVectorIndex(chunks);
     console.log(`Embedded chunks: ${index.length}`);
 
     const query = process.argv.slice(2).join(" ") || "Where is normalizeId used?";
     console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nQuery: "${query}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 
-    const results = await vectorSearch(query, index, 10);
+    const results = vectorSearch(query, index, 10);
 
     for (const [i, result] of results.entries()) {
       console.log(
@@ -32,4 +32,4 @@ const main = async (): Promise<void> => {
   }
 };
 
-main();
+void main();

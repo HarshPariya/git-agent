@@ -67,13 +67,13 @@ const extendedDataMap = new Map<string, ExtendedSessionData>();
 const sseListeners = new Map<string, Set<(event: SessionStreamEvent) => void>>();
 
 export class DebugAgentPipeline {
-  async startSession(
+  startSession(
     repositoryId: string,
     tenantId: string,
     userId: string,
     mode: DebugMode,
     query: string
-  ): Promise<DebugSession> {
+  ): DebugSession {
     const sessionId = `debug-${crypto.randomUUID().slice(0, 8)}`;
     const now = new Date().toISOString();
 
@@ -213,7 +213,7 @@ export class DebugAgentPipeline {
   ): DebugStepResult {
     const completedAt = new Date().toISOString();
     const durationMs = Date.now() - startTime;
-    const errorMessage = error instanceof Error ? error.message : error !== undefined ? String(error) : undefined;
+    const errorMessage = error instanceof Error ? error.message : typeof error === "string" ? error : error !== undefined ? JSON.stringify(error) : undefined;
 
     const completedStep: DebugStep = {
       ...step,
@@ -247,7 +247,7 @@ export class DebugAgentPipeline {
   ): Promise<PatchCandidate[]> {
     logger.info("Generating LLM patch candidates", { operation: "debug-patch-gen", metadata: { sessionId: context.sessionId, repositoryId: context.repositoryId, affectedFiles: affectedFiles.length } });
 
-    if (!(await isLlmAvailable())) {
+    if (!isLlmAvailable()) {
       return this._generateFallbackPatches(rootCause, affectedFiles, codeContext);
     }
 
@@ -319,7 +319,7 @@ export class DebugAgentPipeline {
   ): Promise<CriticResult> {
     logger.info("Running critic evaluation", { operation: "debug-critic", metadata: { sessionId: context.sessionId, patchTitle: patch.title } });
 
-    if (!(await isLlmAvailable())) {
+    if (!isLlmAvailable()) {
       return { approved: true, feedback: "LLM critic not available — patch auto-approved with low confidence", score: 0.5 };
     }
 

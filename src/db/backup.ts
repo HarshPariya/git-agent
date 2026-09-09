@@ -64,7 +64,7 @@ export const restoreDatabaseBackup = async (
 
   const payload: DatabaseBackupPayload = JSON.parse(
     await fs.readFile(backupPath, "utf-8"),
-  );
+  ) as DatabaseBackupPayload;
 
   let restoredChunks = 0;
 

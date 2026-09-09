@@ -10,7 +10,7 @@ const runSecurityTests = async () => {
   let failed = 0;
   const assert = (ok: boolean, name: string) => {
     console.log(ok ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`);
-    ok ? passed++ : failed++;
+    if (ok) { passed++; } else { failed++; }
   };
 
   const tempDir = path.join(process.cwd(), "scratch", "security_test_repo");

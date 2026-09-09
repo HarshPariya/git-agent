@@ -43,7 +43,7 @@ const createEmbedding = (text: string): number[] => {
   return magnitude === 0 ? vector : vector.map((v) => v / magnitude);
 };
 
-export const getExtractor = async (): Promise<(text: string) => number[]> => createEmbedding;
+export const getExtractor = (): (text: string) => number[] => createEmbedding;
 
 export interface EmbedOptions {
   maxRetries?: number;
@@ -51,7 +51,7 @@ export interface EmbedOptions {
   backoffMs?: number;
 }
 
-export const embedText = async (text: string, _options: EmbedOptions = {}): Promise<number[]> => {
+export const embedText = (text: string, _options: EmbedOptions = {}): number[] => {
   const startTime = Date.now();
   try {
     const embedding = createEmbedding(text);
@@ -69,11 +69,11 @@ export interface EmbeddedChunk {
   embedding: number[];
 }
 
-export const embedChunks = async (chunks: { id: string; content: string }[], options?: EmbedOptions): Promise<EmbeddedChunk[]> =>
-  Promise.all(chunks.map(async (chunk) => ({
+export const embedChunks = (chunks: { id: string; content: string }[], options?: EmbedOptions): EmbeddedChunk[] =>
+  chunks.map((chunk) => ({
     id: chunk.id,
-    embedding: await embedText(chunk.content, options),
-  })));
+    embedding: embedText(chunk.content, options),
+  }));
 
 export const getEmbeddingMetrics = () => ({
   modelLoadTimeMs: metrics.modelLoadTimeMs,

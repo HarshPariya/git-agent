@@ -7,29 +7,29 @@
 // ── State color lookup (object over ternary chains) ─────────────────────────
 const STATE_COLORS = {
   COMPLETED: { bg: "#ecfdf5", color: "#065f46" },
-  FAILED:    { bg: "#fef2f2", color: "#991b1b" },
-  ABORTED:   { bg: "#fef2f2", color: "#991b1b" },
+  FAILED: { bg: "#fef2f2", color: "#991b1b" },
+  ABORTED: { bg: "#fef2f2", color: "#991b1b" },
 };
 
 const getResolvedState = (s) => ({ bg: "#e0e7ff", color: "#3730a3", ...STATE_COLORS[s] });
 
 // ── Step-to-phase mapping ──────────────────────────────────────────────────
 const STEP_TO_PHASE = {
-  isolate:   "isolate",
-  observe:   "isolate",
+  isolate: "isolate",
+  observe: "isolate",
   reproduce: "reproduce",
-  diagnose:  "diagnose",
-  fix:       "fix",
-  verify:    "verify",
+  diagnose: "diagnose",
+  fix: "fix",
+  verify: "verify",
 };
 
 // ── Diff line-prefix -> CSS class lookup ────────────────────────────────────
 const DIFF_LINE_CLASS = {
   "---": "diff-line diff-header",
   "+++": "diff-line diff-header",
-  "@@":  "diff-line diff-info",
-  "+":   "diff-line diff-add",
-  "-":   "diff-line diff-del",
+  "@@": "diff-line diff-info",
+  "+": "diff-line diff-add",
+  "-": "diff-line diff-del",
 };
 const DEFAULT_DIFF_CLASS = "diff-line";
 
@@ -60,9 +60,9 @@ document.addEventListener("click", (e) => {
   const repoId = gitView?.dataset?.repoId ?? window.state.currentSession?.repositoryId;
   const action = btn.dataset.action;
 
-  if (action === "git-pull")   return gitPullCurrentRepo(repoId);
-  if (action === "git-fetch")  return gitFetchCurrentRepo(repoId);
-  if (action === "git-pr")     return openCreatePRModal(repoId);
+  if (action === "git-pull") return gitPullCurrentRepo(repoId);
+  if (action === "git-fetch") return gitFetchCurrentRepo(repoId);
+  if (action === "git-pr") return openCreatePRModal(repoId);
   if (action === "git-branch") return gitCreateAndCheckoutBranch(repoId);
   if (action === "git-commit") return commitAndPushFix();
 });
@@ -157,10 +157,10 @@ async function executeDebugPipeline(repoId, query, mode) {
   const spinner = byId("agent-spinner");
   if (spinner) spinner.style.display = "inline-block";
 
-  const phasesContainer  = byId("agent-phases");
+  const phasesContainer = byId("agent-phases");
   const hypothesesContainer = byId("session-hypotheses");
-  const logsView         = byId("logs-view");
-  const statePill        = byId("session-agent-state");
+  const logsView = byId("logs-view");
+  const statePill = byId("session-agent-state");
 
   const updateState = (st) => {
     const { bg, color } = getResolvedState(st);
@@ -170,11 +170,11 @@ async function executeDebugPipeline(repoId, query, mode) {
   };
 
   const phases = [
-    { id: "isolate",   name: "1. Isolate Failing Path",  desc: "Inspect Git commits, blame history & working tree" },
-    { id: "reproduce", name: "2. Reproduce Behavior",    desc: "Construct regression command or reproducer" },
-    { id: "diagnose",  name: "3. Diagnose Root Cause",   desc: "Evaluate hypotheses with GraphRAG code intelligence" },
-    { id: "fix",       name: "4. Generate Safe Patch",   desc: "Synthesize minimal surgical fix with safety gate" },
-    { id: "verify",    name: "5. Critic Safety & Tests", desc: "Critic review, AST syntax check & test execution" },
+    { id: "isolate", name: "1. Isolate Failing Path", desc: "Inspect Git commits, blame history & working tree" },
+    { id: "reproduce", name: "2. Reproduce Behavior", desc: "Construct regression command or reproducer" },
+    { id: "diagnose", name: "3. Diagnose Root Cause", desc: "Evaluate hypotheses with GraphRAG code intelligence" },
+    { id: "fix", name: "4. Generate Safe Patch", desc: "Synthesize minimal surgical fix with safety gate" },
+    { id: "verify", name: "5. Critic Safety & Tests", desc: "Critic review, AST syntax check & test execution" },
   ];
 
   phasesContainer.innerHTML = phases
@@ -212,16 +212,16 @@ async function executeDebugPipeline(repoId, query, mode) {
     if (hypothesesContainer) {
       const hyps = findings?.length
         ? findings.map((f, i) => ({
-            title: f.title || `Finding #${i + 1}`,
-            description: f.description || "",
-            confidence: f.confidence || 0.88,
-            status: f.type === "bug" ? "confirmed" : "candidate",
-          }))
+          title: f.title || `Finding #${i + 1}`,
+          description: f.description || "",
+          confidence: f.confidence || 0.88,
+          status: f.type === "bug" ? "confirmed" : "candidate",
+        }))
         : [
-            { title: "Defect boundary in target code path",       description: "Identified anomalous state in caller flow",                      confidence: 0.94, status: "confirmed" },
-            { title: "Interface type check or input contract violation", description: "Payload boundary validation missing",                    confidence: 0.78, status: "candidate" },
-            { title: "Edge case missing defensive guard",          description: "Null check boundary needed",                               confidence: 0.65, status: "rejected" },
-          ];
+          { title: "Defect boundary in target code path", description: "Identified anomalous state in caller flow", confidence: 0.94, status: "confirmed" },
+          { title: "Interface type check or input contract violation", description: "Payload boundary validation missing", confidence: 0.78, status: "candidate" },
+          { title: "Edge case missing defensive guard", description: "Null check boundary needed", confidence: 0.65, status: "rejected" },
+        ];
 
       hypothesesContainer.innerHTML = hyps
         .map((h) => `
@@ -231,8 +231,8 @@ async function executeDebugPipeline(repoId, query, mode) {
               <span class="badge ${h.status === "confirmed" ? "badge-success" : "badge-secondary"}">${Math.round(h.confidence * 100)}%</span>
             </div>
             ${h.description
-              ? `<div style="font-size:11px;color:var(--c-text-muted);margin-top:3px">${escapeHtml(h.description.slice(0, 95))}${h.description.length > 95 ? "..." : ""}</div>`
-              : ""}
+            ? `<div style="font-size:11px;color:var(--c-text-muted);margin-top:3px">${escapeHtml(h.description.slice(0, 95))}${h.description.length > 95 ? "..." : ""}</div>`
+            : ""}
           </div>`)
         .join("");
     }
@@ -295,25 +295,25 @@ async function executeDebugPipeline(repoId, query, mode) {
 
   // ── SSE event dispatch (switch on event type) ────────────────────────────
   const handleSSEEvent = {
-    step:         ({ data })  => handleStep(data || {}),
-    state_change: ({ data })  => {
+    step: ({ data }) => handleStep(data || {}),
+    state_change: ({ data }) => {
       const stateName = data?.state || data;
       if (typeof stateName === "string") { updateState(stateName); appendLog(logsView, `[STATE] ${stateName}`); }
     },
-    finding:      ({ data })  => appendLog(logsView, `[FINDING] ${data?.title || data?.type || "Candidate identified"}`),
-    complete:     ({ data })  => { appendLog(logsView, "[COMPLETE] Pipeline finished."); onSessionCompleted(data); },
-    snapshot:     (evt)       => { if (evt.session?.status === "completed") onSessionCompleted(evt); },
-    error:        ({ data })  => onSessionFailed(data?.message || "Unknown error in stream"),
-    phase_start:  ({ data })  => { if (data?.phase) { setPhaseRunning(data.phase, data.description); appendLog(logsView, `[PHASE START] ${data.phase}`); } },
+    finding: ({ data }) => appendLog(logsView, `[FINDING] ${data?.title || data?.type || "Candidate identified"}`),
+    complete: ({ data }) => { appendLog(logsView, "[COMPLETE] Pipeline finished."); onSessionCompleted(data); },
+    snapshot: (evt) => { if (evt.session?.status === "completed") onSessionCompleted(evt); },
+    error: ({ data }) => onSessionFailed(data?.message || "Unknown error in stream"),
+    phase_start: ({ data }) => { if (data?.phase) { setPhaseRunning(data.phase, data.description); appendLog(logsView, `[PHASE START] ${data.phase}`); } },
     phase_complete: ({ data }) => { if (data?.phase) { setPhaseDone(data.phase, data.result); appendLog(logsView, `[PHASE DONE] ${data.phase}`); } },
-    phase_failed: ({ data })  => { if (data?.phase) { setPhaseFailed(data.phase, data.error); appendLog(logsView, `[PHASE FAILED] ${data.phase}: ${data.error}`); } },
-    evidence:     ({ data })  => appendLog(logsView, `[EVIDENCE] ${data?.title || "Evidence collected"}`),
-    hypothesis:   ({ data })  => appendLog(logsView, `[HYPOTHESIS] ${data?.title || "Hypothesis formed"}`),
-    diff:         ()          => appendLog(logsView, "[DIFF] Patch diff received."),
-    critic:       ({ data })  => appendLog(logsView, `[CRITIC] Verdict: ${data?.verdict || "evaluating"}`),
-    test_result:  ({ data })  => appendLog(logsView, `[TEST] ${data?.name || "Test"}: ${data?.passed ? "PASS" : "FAIL"}`),
-    root_cause:   ({ data })  => appendLog(logsView, `[ROOT CAUSE] ${data?.cause || "Root cause identified"}`),
-    fix:          ({ data })  => appendLog(logsView, `[FIX] ${data?.summary || "Fix generated"}`),
+    phase_failed: ({ data }) => { if (data?.phase) { setPhaseFailed(data.phase, data.error); appendLog(logsView, `[PHASE FAILED] ${data.phase}: ${data.error}`); } },
+    evidence: ({ data }) => appendLog(logsView, `[EVIDENCE] ${data?.title || "Evidence collected"}`),
+    hypothesis: ({ data }) => appendLog(logsView, `[HYPOTHESIS] ${data?.title || "Hypothesis formed"}`),
+    diff: () => appendLog(logsView, "[DIFF] Patch diff received."),
+    critic: ({ data }) => appendLog(logsView, `[CRITIC] Verdict: ${data?.verdict || "evaluating"}`),
+    test_result: ({ data }) => appendLog(logsView, `[TEST] ${data?.name || "Test"}: ${data?.passed ? "PASS" : "FAIL"}`),
+    root_cause: ({ data }) => appendLog(logsView, `[ROOT CAUSE] ${data?.cause || "Root cause identified"}`),
+    fix: ({ data }) => appendLog(logsView, `[FIX] ${data?.summary || "Fix generated"}`),
   };
 
   try {
@@ -330,10 +330,10 @@ async function executeDebugPipeline(repoId, query, mode) {
         const summaryEl = byId("plan-summary");
         const compEl = byId("plan-complexity");
         const appEl = byId("plan-approval");
-        if (classEl)   classEl.textContent = plan.taskClass || "DEBUG";
+        if (classEl) classEl.textContent = plan.taskClass || "DEBUG";
         if (summaryEl) summaryEl.textContent = plan.summary || query;
-        if (compEl)    compEl.textContent = plan.estimatedComplexity || "moderate";
-        if (appEl)     appEl.textContent = plan.requiresApproval ? "Required" : "Auto-approved";
+        if (compEl) compEl.textContent = plan.estimatedComplexity || "moderate";
+        if (appEl) appEl.textContent = plan.requiresApproval ? "Required" : "Auto-approved";
         appendLog(logsView, `Task Classified: ${plan.taskClass || "DEBUG"} (${plan.estimatedComplexity || "moderate"})`);
       }
     } catch (e) {
@@ -351,8 +351,8 @@ async function executeDebugPipeline(repoId, query, mode) {
     // Open SSE stream (stored for cleanup on exit/abort)
     _activeEventSource = api.streamSession(
       sessionId,
-      (evt) => { if (evt) (handleSSEEvent[evt.type] || (() => {}))(evt); },
-      (err)  => console.warn("SSE connection closed or errored", err),
+      (evt) => { if (evt) (handleSSEEvent[evt.type] || (() => { }))(evt); },
+      (err) => console.warn("SSE connection closed or errored", err),
     );
 
     // Safety poller — auto-closes on completion/failure; stored for cleanup on exit
@@ -448,10 +448,10 @@ function renderEvidence(findings) {
         </div>
         <div style="font-size:12px;color:var(--c-text-secondary)">${escapeHtml(f.description || "")}</div>
         ${f.evidence?.length
-          ? `<div style="margin-top:8px;padding:6px 10px;background:#f8fafc;border-radius:var(--r-sm);font-size:11px;color:var(--c-text-muted)">
+        ? `<div style="margin-top:8px;padding:6px 10px;background:#f8fafc;border-radius:var(--r-sm);font-size:11px;color:var(--c-text-muted)">
                <strong>Evidence:</strong> ${escapeHtml(Array.isArray(f.evidence) ? f.evidence.join("; ") : String(f.evidence))}
              </div>`
-          : ""}
+        : ""}
       </div>`)
     .join("");
 }
@@ -465,8 +465,8 @@ function renderDiff(fixPlan, findings) {
 
   const diffText = (fixPlan?.filesToChange?.length > 0)
     ? fixPlan.filesToChange
-        .map((f) => f.patch || `--- a/${f.filePath}\n+++ b/${f.filePath}\n@@ -1,5 +1,6 @@\n// ${f.description}`)
-        .join("\n\n")
+      .map((f) => f.patch || `--- a/${f.filePath}\n+++ b/${f.filePath}\n@@ -1,5 +1,6 @@\n// ${f.description}`)
+      .join("\n\n")
     : `--- a/src/handler.ts
 +++ b/src/handler.ts
 @@ -24,7 +24,9 @@ export async function handleRequest(req) {
@@ -540,7 +540,7 @@ function renderCritic(critic) {
       </div>
 
       ${critic.findings?.length
-        ? `<div style="font-weight:600;font-size:12px;margin-top:4px">Detailed Review Findings:</div>
+      ? `<div style="font-weight:600;font-size:12px;margin-top:4px">Detailed Review Findings:</div>
            <div style="display:flex;flex-direction:column;gap:6px">
              ${critic.findings.map((f) => `
                <div class="critic-finding-item">
@@ -551,7 +551,7 @@ function renderCritic(critic) {
                  <div style="color:var(--c-text-secondary)">${escapeHtml(f.description)}</div>
                </div>`).join("")}
            </div>`
-        : `<div style="font-size:12px;color:var(--c-success-text);display:flex;align-items:center;gap:6px">
+      : `<div style="font-size:12px;color:var(--c-success-text);display:flex;align-items:center;gap:6px">
              <span>✓</span> No safety violations or regression risks identified.
            </div>`}
     </div>`;
@@ -605,10 +605,10 @@ function renderRootCauseCard(result) {
     riskBadge.className = `badge risk-${fixPlan.riskLevel.toLowerCase()}`;
   }
 
-  byId("rc-symptom").textContent  = result.summary || "Failing execution flow on target input / endpoint.";
+  byId("rc-symptom").textContent = result.summary || "Failing execution flow on target input / endpoint.";
   byId("rc-rootcause").textContent = fixPlan?.rootCause || result.summary || "Input validation defect or unhandled edge case in caller module.";
-  byId("rc-evidence").textContent  = fixPlan?.evidence?.join("; ") || "Git blame identified commit modifying input validation structure.";
-  byId("rc-fix").textContent       = fixPlan
+  byId("rc-evidence").textContent = fixPlan?.evidence?.join("; ") || "Git blame identified commit modifying input validation structure.";
+  byId("rc-fix").textContent = fixPlan
     ? `Files to update: ${fixPlan.filesToChange.map((f) => f.filePath).join(", ")}. ${fixPlan.estimatedImpact}`
     : "Added defensive type guard and error handling boundary.";
 
@@ -629,8 +629,8 @@ async function loadGitTab(repoId) {
       api.getGitBranches(repoId),
     ]);
 
-    const status   = statusData.status   === "fulfilled" ? statusData.value   : {};
-    const logs     = logData.status      === "fulfilled" ? (logData.value.entries || logData.value || []) : [];
+    const status = statusData.status === "fulfilled" ? statusData.value : {};
+    const logs = logData.status === "fulfilled" ? (logData.value.entries || logData.value || []) : [];
     const branches = branchesData.status === "fulfilled" ? (branchesData.value.branches || branchesData.value || []) : [];
 
     gitView.dataset.repoId = repoId;
@@ -676,14 +676,14 @@ Files Changed: ${status.entries ? status.entries.length : (status.modified || []
           <div style="font-weight:600;font-size:13px;margin-bottom:6px">Recent Commit History</div>
           <div style="display:flex;flex-direction:column;gap:6px">
             ${Array.isArray(logs) && logs.length > 0
-              ? logs.map((l) => `
+        ? logs.map((l) => `
                   <div style="font-size:12px;padding:6px 10px;border:1px solid var(--c-border);border-radius:var(--r-sm);background:var(--c-surface);display:flex;justify-content:space-between">
                     <div>
                       <code>${escapeHtml((l.shortHash || l.hash || "").slice(0, 7))}</code> — ${escapeHtml(l.message || l.subject || "")}
                     </div>
                     <span style="font-size:11px;color:var(--c-text-muted)">${escapeHtml(l.author || "")}</span>
                   </div>`).join("")
-              : '<div class="text-muted" style="font-size:12px">No commits found.</div>'}
+        : '<div class="text-muted" style="font-size:12px">No commits found.</div>'}
           </div>
         </div>
       </div>`;
@@ -752,7 +752,7 @@ async function gitCreateAndCheckoutBranch(repoId) {
     showToast(`Creating branch ${branchName}...`, "info");
     const res = await api.checkoutBranch(repoId, branchName, true);
     if (res.success) {
-      showToast(`Created &amp; checked out ${branchName}!`, "success");
+      showToast(`Created & checked out ${branchName}!`, "success");
       if (input) input.value = "";
     } else {
       showToast(`Branch notice: ${res.message || res.error}`, "warning");
@@ -794,19 +794,19 @@ async function applyFix() {
     return;
   }
 
-  const applyBtn     = byId("apply-fix-btn");
+  const applyBtn = byId("apply-fix-btn");
   const diffApplyBtn = byId("diff-apply-btn");
-  const revertBtn    = byId("revert-fix-btn");
+  const revertBtn = byId("revert-fix-btn");
   const diffRevertBtn = byId("diff-revert-btn");
 
   try {
-    if (applyBtn)     { applyBtn.disabled = true; applyBtn.textContent = "Applying..."; }
+    if (applyBtn) { applyBtn.disabled = true; applyBtn.textContent = "Applying..."; }
     if (diffApplyBtn) { diffApplyBtn.disabled = true; diffApplyBtn.textContent = "Applying..."; }
 
     const res = await api.approveFix(window.state.currentSession.id);
     if (!res.success) {
       showToast(`Failed to apply patch: ${res.error || "Unknown error"}`, "error");
-      if (applyBtn)     { applyBtn.disabled = false; applyBtn.textContent = "🔧 Apply Verified Patch"; }
+      if (applyBtn) { applyBtn.disabled = false; applyBtn.textContent = "🔧 Apply Verified Patch"; }
       if (diffApplyBtn) { diffApplyBtn.disabled = false; diffApplyBtn.textContent = "🔧 Apply Patch"; }
       return;
     }
@@ -814,7 +814,7 @@ async function applyFix() {
     window.setState("currentBackupId", res.backupId);
     showToast("Patch applied cleanly! Backup snapshot saved.", "success");
 
-    if (applyBtn)     { applyBtn.textContent = "Applied ✓"; applyBtn.disabled = true; }
+    if (applyBtn) { applyBtn.textContent = "Applied ✓"; applyBtn.disabled = true; }
     if (diffApplyBtn) { diffApplyBtn.textContent = "Applied ✓"; diffApplyBtn.disabled = true; }
     if (revertBtn) revertBtn.style.display = "inline-block";
     if (diffRevertBtn) diffRevertBtn.style.display = "inline-block";
@@ -822,7 +822,7 @@ async function applyFix() {
     switchTab("diff");
   } catch (err) {
     showToast(`Error applying fix: ${err.message}`, "error");
-    if (applyBtn)     { applyBtn.disabled = false; applyBtn.textContent = "🔧 Apply Verified Patch"; }
+    if (applyBtn) { applyBtn.disabled = false; applyBtn.textContent = "🔧 Apply Verified Patch"; }
     if (diffApplyBtn) { diffApplyBtn.disabled = false; diffApplyBtn.textContent = "🔧 Apply Patch"; }
   }
 }
@@ -833,13 +833,13 @@ async function revertFix() {
     return;
   }
 
-  const revertBtn     = byId("revert-fix-btn");
+  const revertBtn = byId("revert-fix-btn");
   const diffRevertBtn = byId("diff-revert-btn");
-  const applyBtn      = byId("apply-fix-btn");
-  const diffApplyBtn  = byId("diff-apply-btn");
+  const applyBtn = byId("apply-fix-btn");
+  const diffApplyBtn = byId("diff-apply-btn");
 
   try {
-    if (revertBtn)     { revertBtn.disabled = true; revertBtn.textContent = "Reverting..."; }
+    if (revertBtn) { revertBtn.disabled = true; revertBtn.textContent = "Reverting..."; }
     if (diffRevertBtn) { diffRevertBtn.disabled = true; diffRevertBtn.textContent = "Reverting..."; }
 
     const res = await api.revertFix(window.state.currentSession.id, window.state.currentBackupId);
@@ -851,7 +851,7 @@ async function revertFix() {
     showToast("Patch rolled back to original snapshot!", "success");
     if (revertBtn) revertBtn.style.display = "none";
     if (diffRevertBtn) diffRevertBtn.style.display = "none";
-    if (applyBtn)     { applyBtn.disabled = false; applyBtn.textContent = "🔧 Apply Verified Patch"; }
+    if (applyBtn) { applyBtn.disabled = false; applyBtn.textContent = "🔧 Apply Verified Patch"; }
     if (diffApplyBtn) { diffApplyBtn.disabled = false; diffApplyBtn.textContent = "🔧 Apply Patch"; }
     window.setState("currentBackupId", null);
   } catch (err) {
@@ -900,29 +900,29 @@ async function commitAndPushFix() {
 // Miscellaneous public actions
 // ────────────────────────────────────────────────────────────────────────────
 function requestDetails() { switchTab("evidence"); }
-function rejectFix()      { showToast("Patch rejected. Agent ready for refined diagnosis.", "info"); }
+function rejectFix() { showToast("Patch rejected. Agent ready for refined diagnosis.", "info"); }
 
 // ────────────────────────────────────────────────────────────────────────────
 // Window exports — public API surface (all 21 preserved)
 // ────────────────────────────────────────────────────────────────────────────
-window.setDebugExample           = setDebugExample;
-window.setInvestigationMode      = setInvestigationMode;
-window.startDebugFromForm        = startDebugFromForm;
-window.executeDebugPipeline      = executeDebugPipeline;
-window.renderEvidence            = renderEvidence;
-window.renderDiff                = renderDiff;
-window.renderCritic              = renderCritic;
-window.renderTests               = renderTests;
-window.renderRootCauseCard       = renderRootCauseCard;
-window.loadGitTab                = loadGitTab;
-window.gitPullCurrentRepo        = gitPullCurrentRepo;
-window.gitFetchCurrentRepo       = gitFetchCurrentRepo;
-window.gitSwitchBranch           = gitSwitchBranch;
+window.setDebugExample = setDebugExample;
+window.setInvestigationMode = setInvestigationMode;
+window.startDebugFromForm = startDebugFromForm;
+window.executeDebugPipeline = executeDebugPipeline;
+window.renderEvidence = renderEvidence;
+window.renderDiff = renderDiff;
+window.renderCritic = renderCritic;
+window.renderTests = renderTests;
+window.renderRootCauseCard = renderRootCauseCard;
+window.loadGitTab = loadGitTab;
+window.gitPullCurrentRepo = gitPullCurrentRepo;
+window.gitFetchCurrentRepo = gitFetchCurrentRepo;
+window.gitSwitchBranch = gitSwitchBranch;
 window.gitCreateAndCheckoutBranch = gitCreateAndCheckoutBranch;
-window.exitDebugSession          = exitDebugSession;
-window.abortCurrentSession       = abortCurrentSession;
-window.applyFix                  = applyFix;
-window.revertFix                 = revertFix;
-window.commitAndPushFix          = commitAndPushFix;
-window.requestDetails            = requestDetails;
-window.rejectFix                 = rejectFix;
+window.exitDebugSession = exitDebugSession;
+window.abortCurrentSession = abortCurrentSession;
+window.applyFix = applyFix;
+window.revertFix = revertFix;
+window.commitAndPushFix = commitAndPushFix;
+window.requestDetails = requestDetails;
+window.rejectFix = rejectFix;

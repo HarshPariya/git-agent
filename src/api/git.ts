@@ -6,7 +6,7 @@ import { AppError } from "../errors/app-error.js";
 import { conflictAnalyzer } from "../git/conflicts.js";
 import { executeSafeCommit } from "../git/commit.js";
 import { executeSafePush } from "../git/push.js";
-import { analyzeAndPlanCommits, executeCommitPlan } from "../git/change-analyzer.js";
+import { analyzeAndPlanCommits, executeCommitPlan, type LogicalChangeGroup } from "../git/change-analyzer.js";
 import { getGitHubToken } from "../github/auth.js";
 import { createGitHubPR } from "../github/pull-requests.js";
 import { generateText } from "../llm/client.js";
@@ -58,7 +58,7 @@ export async function gitLogHandler(request: Request, response: Response, next: 
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
     await validateRepositoryAccess(repoId);
-    const count = typeof body.count === "number" ? body.count : 20;
+    const count = typeof body.count === "number" ? body.count : typeof body.maxCount === "number" ? body.maxCount : 20;
     const branch = optionalString(body, "branch");
     const entries = await executeGitLog(repoId, { count, ...(branch !== undefined && { branch }) });
     response.status(200).json({ commits: entries, entries });
@@ -89,9 +89,9 @@ export async function gitConflictResolveHandler(request: Request, response: Resp
           filePath,
           startLine: 1,
           endLine: 1,
-          baseLines: typeof body.base === "string" ? (body.base as string).split("\n") : [],
-          ourLines: (body.ours as string).split("\n"),
-          theirLines: (body.theirs as string).split("\n"),
+          baseLines: typeof body.base === "string" ? (body.base).split("\n") : [],
+          ourLines: (body.ours).split("\n"),
+          theirLines: (body.theirs).split("\n"),
         }],
       });
       response.status(200).json({ filePath, resolution: resolution.resolvedContent, strategy: resolution.strategy, confidence: resolution.confidence, explanation: resolution.explanation });
@@ -261,7 +261,7 @@ export async function gitExecuteHandler(request: Request, response: Response, ne
   } catch (error) { next(error); }
 }
 
-export async function gitOperationCatalogHandler(_request: Request, response: Response, next: NextFunction): Promise<void> {
+export function gitOperationCatalogHandler(_request: Request, response: Response, next: NextFunction): void {
   try {
     const catalog = GIT_OPERATION_CATALOG.map((op) => ({
       type: op.type,
@@ -276,7 +276,7 @@ export async function gitOperationCatalogHandler(_request: Request, response: Re
   } catch (error) { next(error); }
 }
 
-export async function gitClassifyHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export function gitClassifyHandler(request: Request, response: Response, next: NextFunction): void {
   try {
     const op = classifyOperation(request.params.operation as GitOperationType);
     response.status(200).json({
@@ -304,7 +304,7 @@ export async function gitExecuteCommitPlanHandler(request: Request, response: Re
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
     const repoPath = getExecutionPath(repoId);
-    let groups = Array.isArray(body.groups) ? body.groups : undefined;
+    let groups: LogicalChangeGroup[] | undefined = Array.isArray(body.groups) ? body.groups as LogicalChangeGroup[] : undefined;
 
     if (!groups || groups.length === 0) {
       const plan = await analyzeAndPlanCommits(repoPath);
@@ -471,10 +471,10 @@ export async function generateCommitMessageHandler(request: Request, response: R
       diffContext = [unstagedOut.trim(), stagedOut.trim()].filter(Boolean).join("\n").slice(0, 4000);
     } catch (err: unknown) {
       logger.warn("Failed to get diff context", { operation: "generate-commit", metadata: { error: err instanceof Error ? err.message : String(err) } });
-      diffContext = changedFiles.map((f) => `- ${String((f as Record<string, unknown>).path ?? (f as Record<string, unknown>).filePath ?? f)} (${String((f as Record<string, unknown>).status ?? "modified")})`).join("\n");
+      diffContext = changedFiles.map((f) => `- ${String((f as Record<string, unknown>).path ?? (f as Record<string, unknown>).filePath ?? f)} (${String((f as Record<string, unknown>).status as string ?? "modified")})`).join("\n");
     }
 
-    const fileList = changedFiles.map((f) => { const fo = f as Record<string, unknown>; return `${String(fo.status ?? "modified")}: ${String(fo.path ?? fo.filePath ?? f)}`; }).join("\n");
+    const fileList = changedFiles.map((f) => { const fo = f as Record<string, unknown>; return `${String(fo.status as string ?? "modified")}: ${String(fo.path ?? fo.filePath ?? f)}`; }).join("\n");
     const instructions = `You are a Principal Software Engineer. Write a production-ready, professional Conventional Commit message for these git changes.\n\nStrict Rules:\n1. Format: <type>(<scope>): <clear, concise, imperative summary of what was actually changed/added/fixed>\n2. Types: feat, fix, chore, refactor, style, docs, test, ci, perf, build\n3. The summary line must be <= 72 characters, describing the concrete capability or bug fix (NEVER generic phrases like "update files" or "work in progress").\n4. The description must have 2 to 6 detailed bullet points starting with "- ", explaining:\n   - What architectural changes or capabilities were introduced\n   - Which specific files and components were modified and why\n   - Any UX, API, or bug fix enhancements\n5. Output ONLY valid JSON matching this exact structure:\n{"summary": "feat(scope): concise summary", "description": "- bullet 1\\n- bullet 2\\n- bullet 3"}`;
     const input = `Changed files:\n${fileList}\n\nGit diff (truncated):\n${diffContext}`;
     let summary = "";
@@ -482,7 +482,7 @@ export async function generateCommitMessageHandler(request: Request, response: R
 
     try {
       const llmRes = await generateText({ instructions, input });
-      let clean = llmRes.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+      const clean = llmRes.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
       try {
         const jsonMatch = /\{[\s\S]*\}/.exec(clean);
         if (jsonMatch) {

@@ -2,7 +2,7 @@ import "dotenv/config";
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../errors/app-error.js";
 import { executeGitStatus } from "../git/engine.js";
-import type { PullRequest, PullRequestReviewer } from "../types/git.js";
+import type { PullRequest } from "../types/git.js";
 import crypto from "node:crypto";
 
 const pullRequests = new Map<string, PullRequest>();
@@ -146,7 +146,7 @@ export async function addPrReviewerHandler(request: Request, response: Response,
 
     const updated: PullRequest = {
       ...pr,
-      reviewers: [...pr.reviewers, { user: reviewer, status: "pending" } as PullRequestReviewer],
+      reviewers: [...pr.reviewers, { user: reviewer, status: "pending" }],
       updatedAt: new Date().toISOString(),
     };
 
