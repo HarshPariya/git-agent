@@ -72,8 +72,38 @@ function showAuth() {
   initGoogleSignIn();
 }
 
+// Wait (with a deadline) for the Google Identity Services script to load.
+// The script is injected with async defer, so it may still be downloading
+// when showAuth() runs — without this, initGoogleSignIn() would give up
+// because `google` is undefined yet and the button would never render.
+function waitForGoogleScript(timeoutMs) {
+  return new Promise((resolve) => {
+    const deadline = Date.now() + timeoutMs;
+    const check = () => {
+      if (typeof google !== "undefined" && google.accounts && google.accounts.id) {
+        resolve(true);
+        return;
+      }
+      if (Date.now() >= deadline) {
+        resolve(false);
+        return;
+      }
+      setTimeout(check, 100);
+    };
+    check();
+  });
+}
+
 async function initGoogleSignIn() {
   try {
+    const { clientId } = await api.getGoogleClientId();
+    if (!clientId) return;
+
+    if (typeof google === "undefined") {
+      const ok = await waitForGoogleScript(8000);
+      if (!ok) return; // script never loaded (blocked/offline) — stay on email/password
+    }
+
     if (googleSignInReady) {
       // Already initialized — re-render button if container is now visible
       const container = document.getElementById("google-signin-btn");
@@ -88,9 +118,6 @@ async function initGoogleSignIn() {
       }
       return;
     }
-
-    const { clientId } = await api.getGoogleClientId();
-    if (!clientId || typeof google === "undefined") return;
 
     google.accounts.id.initialize({
       client_id: clientId,
@@ -151,6 +178,23 @@ function showApp(user, freshLogin = false) {
   const emailEl = document.getElementById("settings-email");
   if (emailEl) emailEl.textContent = user?.email || user?.name || "Developer (Dev Mode)";
 
+  // Settings page: show admin-specific info
+  const accountTitle = document.getElementById("settings-account-title");
+  const roleBadge = document.getElementById("settings-role-badge");
+  const isAdmin = user?.role === "admin";
+  if (accountTitle) accountTitle.textContent = isAdmin ? "Admin Account" : "User Account";
+  if (roleBadge) {
+    if (isAdmin) {
+      roleBadge.style.display = "inline-flex";
+      roleBadge.className = "settings-role-badge admin";
+      roleBadge.textContent = "★ Administrator";
+    } else {
+      roleBadge.style.display = "inline-flex";
+      roleBadge.className = "settings-role-badge developer";
+      roleBadge.textContent = user?.role || "Developer";
+    }
+  }
+
   // Show profile picture if available
   const avatarUrl = user?.picture || null;
   const headerAvatar = document.getElementById("header-avatar");
@@ -161,17 +205,34 @@ function showApp(user, freshLogin = false) {
     if (headerAvatar) {
       headerAvatar.src = avatarUrl;
       headerAvatar.style.display = "block";
+      headerAvatar.onerror = () => {
+        headerAvatar.style.display = "none";
+        if (headerAvatarIcon) headerAvatarIcon.style.display = "block";
+      };
     }
     if (headerAvatarIcon) headerAvatarIcon.style.display = "none";
     if (settingsAvatar) {
       settingsAvatar.src = avatarUrl;
       settingsAvatar.style.display = "block";
+      settingsAvatar.onerror = () => {
+        settingsAvatar.style.display = "none";
+      };
     }
   } else {
     if (headerAvatar) headerAvatar.style.display = "none";
     if (headerAvatarIcon) headerAvatarIcon.style.display = "block";
     if (settingsAvatar) settingsAvatar.style.display = "none";
   }
+
+  // Show Admin nav item only for admin users, User Panel nav for non-admin users
+  const adminNav = document.getElementById("nav-admin");
+  const adminPage = document.getElementById("page-admin");
+  const userPanelNav = document.getElementById("nav-user-panel");
+  const userPanelPage = document.getElementById("page-user-panel");
+  if (adminNav) adminNav.style.display = isAdmin ? "" : "none";
+  if (adminPage) adminPage.style.display = isAdmin ? "" : "none";
+  if (userPanelNav) userPanelNav.style.display = isAdmin ? "none" : "";
+  if (userPanelPage) userPanelPage.style.display = isAdmin ? "none" : "";
 
   loadAll();
 
@@ -209,6 +270,103 @@ function logout() {
 }
 
 // ============================================================
+// USER / DEVELOPER PANEL
+// ============================================================
+
+const ACTIVITY_LABELS_APP = {
+  "auth:login": "🔑 Login",
+  "auth:register": "📝 Register",
+  "auth:google-login": "🔵 Google Login",
+  "git:commit": "💾 Git Commit",
+  "git:push": "⬆ Git Push",
+  "git:pull": "⬇ Git Pull",
+  "git:fetch": "🔄 Git Fetch",
+  "git:checkout": "🔀 Git Checkout",
+  "git:sync": "🔄 Git Sync",
+  "git:ship": "🚀 Git Ship",
+  "git:analyze-changes": "🔍 Analyze Changes",
+  "git:commit-plan-execute": "📋 Commit Plan",
+  "git:commit-all": "💾 Commit All",
+  "git:generate-message": "💬 Generate Message",
+  "git:resolve-conflicts": "🔧 Resolve Conflicts",
+  "debug:run": "🐛 Debug Run",
+  "debug:start": "🐛 Debug Start",
+  "debug:complete": "✅ Debug Complete",
+  "debug:abort": "🚫 Debug Abort",
+  "debug:approve-fix": "👍 Approve Fix",
+  "debug:revert-fix": "↩ Revert Fix",
+  "debug:classify": "🏷 Classify",
+  "debug:plan": "📋 Plan",
+  "debug:execute-step": "▶ Execute Step",
+  "repo:connect": "🔗 Repo Connect",
+  "repo:disconnect": "🔗 Repo Disconnect",
+  "repo:sync": "🔄 Repo Sync",
+  "graphrag:index": "📚 GraphRAG Index",
+  "graphrag:search": "🔍 GraphRAG Search",
+  "github:connect": "🐙 GitHub Connect",
+  "ci:trigger": "🔨 CI Trigger",
+  "pr:create": "🔃 PR Create",
+};
+
+function formatTimestampApp(ts) {
+  const d = new Date(ts);
+  const now = new Date();
+  const diffMs = now - d;
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHr = Math.floor(diffMs / 3600000);
+  const diffDay = Math.floor(diffMs / 86400000);
+  if (diffMin < 1) return "just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHr < 24) return `${diffHr}h ago`;
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return d.toLocaleDateString();
+}
+
+async function loadUserPanel() {
+  const listEl = document.getElementById("user-activity-list");
+  const greetingEl = document.getElementById("user-panel-greeting");
+  const subtitleEl = document.getElementById("user-panel-subtitle");
+
+  // Try to get user info from the current state
+  const user = window.state?.user;
+  if (greetingEl) greetingEl.textContent = `Welcome back, ${user?.name || user?.email?.split("@")[0] || "Developer"}`;
+  if (subtitleEl) subtitleEl.textContent = `Here's an overview of your activity on the platform`;
+
+  if (!listEl) return;
+
+  try {
+    const result = await window.api.userMyActivity({ limit: 50 });
+    const entries = result.entries ?? [];
+
+    if (entries.length === 0) {
+      listEl.innerHTML = '<div class="admin-empty-state"><div class="admin-empty-icon">📊</div><div class="admin-empty-text">No activity recorded yet. Start using the platform to see your activity here.</div></div>';
+      return;
+    }
+
+    listEl.innerHTML = entries.map((entry) => {
+      const label = ACTIVITY_LABELS_APP[entry.action] || entry.action;
+      const details = entry.details ? Object.entries(entry.details).map(([k, v]) => `${k}: ${v}`).join(", ") : "";
+      return `<div class="user-activity-item">
+        <div class="user-activity-icon">${label.split(" ")[0]}</div>
+        <div class="user-activity-info">
+          <div class="user-activity-action">${label.split(" ").slice(1).join(" ") || label}</div>
+          <div class="user-activity-meta">${details ? escapeHtmlApp(details) : "No details"}</div>
+        </div>
+        <div class="user-activity-time">${formatTimestampApp(entry.timestamp)}</div>
+      </div>`;
+    }).join("");
+  } catch (err) {
+    listEl.innerHTML = `<div class="admin-empty-state"><div class="admin-empty-icon">⚠️</div><div class="admin-empty-text">Failed to load activity: ${escapeHtmlApp(err.message || "unknown error")}</div></div>`;
+  }
+}
+
+function escapeHtmlApp(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ============================================================
 // NAVIGATION & ROUTING
 // ============================================================
 
@@ -242,8 +400,9 @@ const PAGE_LOADERS = {
   history: () => typeof loadHistory === "function" && loadHistory(),
   settings: () => {
     if (typeof loadGitHubStatus === "function") loadGitHubStatus();
-    if (typeof loadApiStatus === "function") loadApiStatus();
   },
+  admin: () => typeof loadAdminPanel === "function" && loadAdminPanel(),
+  "user-panel": () => typeof loadUserPanel === "function" && loadUserPanel(),
 };
 
 function navigate(pageId) {
@@ -486,7 +645,6 @@ document.addEventListener("click", (e) => {
     connectGitHub: () => typeof connectGitHub === "function" && connectGitHub(),
     connectGitHubFromModal: () => typeof connectGitHubFromModal === "function" && connectGitHubFromModal(),
     disconnectGitHub: () => typeof disconnectGitHub === "function" && disconnectGitHub(),
-    loadApiStatus: () => typeof loadApiStatus === "function" && loadApiStatus(),
     startDebugFromForm: () => typeof startDebugFromForm === "function" && startDebugFromForm(),
     exitDebugSession: () => typeof exitDebugSession === "function" && exitDebugSession(),
     abortCurrentSession: () => typeof abortCurrentSession === "function" && abortCurrentSession(),
@@ -514,6 +672,13 @@ document.addEventListener("click", (e) => {
     editGroupCommitMessage: () => typeof editGroupCommitMessage === "function" && editGroupCommitMessage(value),
     previewGroupDiff: () => typeof previewGroupDiff === "function" && previewGroupDiff(value),
     executeCommitPlanAll: () => typeof executeCommitPlanAll === "function" && executeCommitPlanAll(),
+    adminRefreshUsers: () => typeof loadAdminPanel === "function" && loadAdminPanel(),
+    adminRefreshActivity: () => typeof loadAdminPanel === "function" && loadAdminPanel(),
+    adminViewUser: () => typeof adminViewUser === "function" && adminViewUser(value),
+    adminCloseDetail: () => { const d = document.getElementById("admin-user-detail-overlay"); if (d) d.style.display = "none"; },
+    adminViewActivity: () => typeof adminViewActivity === "function" && adminViewActivity(value),
+    adminCloseActivityDetail: () => { const d = document.getElementById("admin-activity-detail-overlay"); if (d) d.style.display = "none"; },
+    userRefreshActivity: () => typeof loadUserPanel === "function" && loadUserPanel(),
   };
 
   // Delegate to view-specific handlers first, fall back to centralized handlers

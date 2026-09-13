@@ -6,9 +6,24 @@
 
 // ── State color lookup (object over ternary chains) ─────────────────────────
 const STATE_COLORS = {
+  INITIALIZING: { bg: "#e0e7ff", color: "#3730a3" },
+  SCANNING_REPOSITORY: { bg: "#dbeafe", color: "#1e40af" },
+  ISOLATING_DEFECT: { bg: "#dbeafe", color: "#1e40af" },
+  REPRODUCING_BEHAVIOR: { bg: "#e0f2fe", color: "#075985" },
+  GENERATING_HYPOTHESES: { bg: "#fef3c7", color: "#92400e" },
+  DIAGNOSING_ROOT_CAUSE: { bg: "#fef3c7", color: "#92400e" },
+  SYNTHESIZING_PATCH: { bg: "#d1fae5", color: "#065f46" },
+  VALIDATING_PATCH_SAFETY: { bg: "#d1fae5", color: "#065f46" },
+  RUNNING: { bg: "#fef3c7", color: "#92400e" },
   COMPLETED: { bg: "#ecfdf5", color: "#065f46" },
   FAILED: { bg: "#fef2f2", color: "#991b1b" },
   ABORTED: { bg: "#fef2f2", color: "#991b1b" },
+  ISOLATE_IN_PROGRESS: { bg: "#dbeafe", color: "#1e40af" },
+  REPRODUCE_IN_PROGRESS: { bg: "#e0f2fe", color: "#075985" },
+  DIAGNOSE_IN_PROGRESS: { bg: "#fef3c7", color: "#92400e" },
+  FIX_IN_PROGRESS: { bg: "#d1fae5", color: "#065f46" },
+  VERIFY_IN_PROGRESS: { bg: "#d1fae5", color: "#065f46" },
+  OBSERVE_IN_PROGRESS: { bg: "#dbeafe", color: "#1e40af" },
 };
 
 const getResolvedState = (s) => ({ bg: "#e0e7ff", color: "#3730a3", ...STATE_COLORS[s] });
@@ -163,10 +178,12 @@ async function executeDebugPipeline(repoId, query, mode) {
   const statePill = byId("session-agent-state");
 
   const updateState = (st) => {
+    if (!statePill) return;
     const { bg, color } = getResolvedState(st);
     statePill.textContent = st.replace(/_/g, " ");
     statePill.style.background = bg;
     statePill.style.color = color;
+    statePill.style.display = "inline-block";
   };
 
   const phases = [
@@ -189,6 +206,7 @@ async function executeDebugPipeline(repoId, query, mode) {
     .join("");
 
   let sessionFinished = false;
+  const accumulatedFindings = [];
 
   // ── Session terminal handlers ────────────────────────────────────────────
   const onSessionCompleted = (data) => {
@@ -200,7 +218,12 @@ async function executeDebugPipeline(repoId, query, mode) {
     const badge = byId("session-status-badge");
     if (badge) { badge.className = "badge badge-success"; badge.textContent = "Solved"; }
 
-    const { session: sess, fixPlan, critic, findings = sess?.findings || [] } = { ...data, session: data.session || data };
+    const raw = { ...data, session: data.session || data };
+    const sess = raw.session;
+    const fixPlan = raw.fixPlan;
+    const critic = raw.critic;
+    const testResult = raw.testResult;
+    const findings = raw.findings || sess?.findings || [];
 
     window.setState("currentSession", sess);
     window.setState("currentFixPlan", fixPlan);
@@ -215,32 +238,30 @@ async function executeDebugPipeline(repoId, query, mode) {
           title: f.title || `Finding #${i + 1}`,
           description: f.description || "",
           confidence: f.confidence || 0.88,
-          status: f.type === "bug" ? "confirmed" : "candidate",
+          status: f.type === "bug" ? "confirmed" : f.type === "configuration" ? "passed" : "candidate",
         }))
-        : [
-          { title: "Defect boundary in target code path", description: "Identified anomalous state in caller flow", confidence: 0.94, status: "confirmed" },
-          { title: "Interface type check or input contract violation", description: "Payload boundary validation missing", confidence: 0.78, status: "candidate" },
-          { title: "Edge case missing defensive guard", description: "Null check boundary needed", confidence: 0.65, status: "rejected" },
-        ];
+        : [];
 
-      hypothesesContainer.innerHTML = hyps
-        .map((h) => `
+      hypothesesContainer.innerHTML = hyps.length === 0
+        ? '<div style="padding:12px;text-align:center;color:var(--c-text-muted);font-size:12px">✅ No issues detected — all investigation checks passed.</div>'
+        : hyps
+          .map((h) => `
           <div style="padding:8px 10px;background:#f8fafc;border:1px solid var(--c-border);border-radius:var(--r-sm)">
             <div style="display:flex;justify-content:space-between;align-items:center">
               <span style="font-size:12px;font-weight:600;color:var(--c-text-primary)">${escapeHtml(h.title)}</span>
-              <span class="badge ${h.status === "confirmed" ? "badge-success" : "badge-secondary"}">${Math.round(h.confidence * 100)}%</span>
+              <span class="badge ${h.status === "confirmed" ? "badge-success" : h.status === "passed" ? "badge-success" : "badge-secondary"}">${Math.round(h.confidence * 100)}%</span>
             </div>
             ${h.description
-            ? `<div style="font-size:11px;color:var(--c-text-muted);margin-top:3px">${escapeHtml(h.description.slice(0, 95))}${h.description.length > 95 ? "..." : ""}</div>`
-            : ""}
+              ? `<div style="font-size:11px;color:var(--c-text-muted);margin-top:3px">${escapeHtml(h.description.slice(0, 95))}${h.description.length > 95 ? "..." : ""}</div>`
+              : ""}
           </div>`)
-        .join("");
+          .join("");
     }
 
     renderEvidence(findings);
     renderDiff(fixPlan, findings);
     renderCritic(critic);
-    renderTests(sess);
+    renderTests({ ...sess, testResult });
     renderRootCauseCard({ session: sess, fixPlan, critic, findings });
 
     const diffApplyBtn = byId("diff-apply-btn");
@@ -263,10 +284,10 @@ async function executeDebugPipeline(repoId, query, mode) {
     cleanupDebugSession();
 
     updateState("FAILED");
-    appendLog(logsView, `ERROR: ${errMsg}`);
+    appendLog(logsView, `ERROR: ${errMsg} `);
     const badge = byId("session-status-badge");
     if (badge) { badge.className = "badge badge-danger"; badge.textContent = "Failed"; }
-    showToast(`Debug failed: ${errMsg}`, "error");
+    showToast(`Debug failed: ${errMsg} `, "error");
 
     window.setState("agentRunning", false);
     if (spinner) spinner.style.display = "none";
@@ -280,7 +301,7 @@ async function executeDebugPipeline(repoId, query, mode) {
       case "running":
         setPhaseRunning(pId, step.description || `Executing ${step.type}...`);
         updateState(`${step.type.toUpperCase()}_IN_PROGRESS`);
-        appendLog(logsView, `[STEP RUNNING] ${step.description || step.type}`);
+        appendLog(logsView, `[STEP RUNNING] ${step.description || step.type} `);
         break;
       case "completed":
         setPhaseDone(pId, step.result ? step.result.slice(0, 80) : `${step.description} ✓`);
@@ -288,7 +309,7 @@ async function executeDebugPipeline(repoId, query, mode) {
         break;
       case "failed":
         setPhaseFailed(pId, step.error || "Step failed");
-        appendLog(logsView, `[STEP FAILED] ${step.description || step.type}: ${step.error}`);
+        appendLog(logsView, `[STEP FAILED] ${step.description || step.type}: ${step.error} `);
         break;
     }
   };
@@ -296,24 +317,73 @@ async function executeDebugPipeline(repoId, query, mode) {
   // ── SSE event dispatch (switch on event type) ────────────────────────────
   const handleSSEEvent = {
     step: ({ data }) => handleStep(data || {}),
-    state_change: ({ data }) => {
-      const stateName = data?.state || data;
-      if (typeof stateName === "string") { updateState(stateName); appendLog(logsView, `[STATE] ${stateName}`); }
+    state: (evt) => {
+      const stateName = evt.state || evt.data?.state || (typeof evt.data === "string" ? evt.data : null);
+      if (typeof stateName === "string") { updateState(stateName); appendLog(logsView, `[STATE] ${stateName} `); }
     },
-    finding: ({ data }) => appendLog(logsView, `[FINDING] ${data?.title || data?.type || "Candidate identified"}`),
+    finding: ({ data }) => {
+      appendLog(logsView, `[FINDING] ${data?.title || data?.type || "Candidate identified"} `);
+      accumulatedFindings.push(data);
+      renderEvidence(accumulatedFindings);
+    },
     complete: ({ data }) => { appendLog(logsView, "[COMPLETE] Pipeline finished."); onSessionCompleted(data); },
-    snapshot: (evt) => { if (evt.session?.status === "completed") onSessionCompleted(evt); },
+    snapshot: (evt) => {
+      if (evt.agentState) updateState(evt.agentState);
+      if (evt.plan) {
+        const planCard = byId("session-plan-card");
+        if (planCard) planCard.style.display = "block";
+        if (byId("plan-task-class")) byId("plan-task-class").textContent = evt.plan.taskClass || "DEBUG";
+        if (byId("plan-summary")) byId("plan-summary").textContent = evt.plan.summary || "";
+        if (byId("plan-complexity")) byId("plan-complexity").textContent = evt.plan.estimatedComplexity || "moderate";
+        if (byId("plan-approval")) byId("plan-approval").textContent = evt.plan.requiresApproval ? "Required" : "Auto-approved";
+      }
+      if (evt.session?.findings?.length) {
+        accumulatedFindings.push(...evt.session.findings);
+        renderEvidence(accumulatedFindings);
+      }
+      if (evt.session?.status === "completed") onSessionCompleted(evt);
+    },
     error: ({ data }) => onSessionFailed(data?.message || "Unknown error in stream"),
-    phase_start: ({ data }) => { if (data?.phase) { setPhaseRunning(data.phase, data.description); appendLog(logsView, `[PHASE START] ${data.phase}`); } },
-    phase_complete: ({ data }) => { if (data?.phase) { setPhaseDone(data.phase, data.result); appendLog(logsView, `[PHASE DONE] ${data.phase}`); } },
-    phase_failed: ({ data }) => { if (data?.phase) { setPhaseFailed(data.phase, data.error); appendLog(logsView, `[PHASE FAILED] ${data.phase}: ${data.error}`); } },
-    evidence: ({ data }) => appendLog(logsView, `[EVIDENCE] ${data?.title || "Evidence collected"}`),
-    hypothesis: ({ data }) => appendLog(logsView, `[HYPOTHESIS] ${data?.title || "Hypothesis formed"}`),
+    phase_start: ({ data }) => { if (data?.phase) { setPhaseRunning(data.phase, data.description); appendLog(logsView, `[PHASE START] ${data.phase} `); } },
+    phase_complete: ({ data }) => { if (data?.phase) { setPhaseDone(data.phase, data.result); appendLog(logsView, `[PHASE DONE] ${data.phase} `); } },
+    phase_failed: ({ data }) => { if (data?.phase) { setPhaseFailed(data.phase, data.error); appendLog(logsView, `[PHASE FAILED] ${data.phase}: ${data.error} `); } },
+    evidence: ({ data }) => appendLog(logsView, `[EVIDENCE] ${data?.title || "Evidence collected"} `),
+    hypothesis: ({ data }) => {
+      appendLog(logsView, `[HYPOTHESIS] ${data?.title || "Hypothesis formed"} `);
+      if (hypothesesContainer) {
+        const item = document.createElement("div");
+        item.className = "hypothesis-item";
+        const pct = Math.round((data?.confidence ?? 0) * 100);
+        item.innerHTML = `
+          <div class="hypothesis-title">${escapeHtml(data?.title || "Hypothesis")} <span class="text-muted">(${data?.category || ""} · ${pct}%)</span></div>
+          <div class="text-muted" style="font-size:12px">${escapeHtml(data?.description || "")}</div>`;
+        if (hypothesesContainer.dataset.populated !== "1") {
+          hypothesesContainer.innerHTML = "";
+          hypothesesContainer.dataset.populated = "1";
+        }
+        hypothesesContainer.appendChild(item);
+      }
+    },
     diff: () => appendLog(logsView, "[DIFF] Patch diff received."),
-    critic: ({ data }) => appendLog(logsView, `[CRITIC] Verdict: ${data?.verdict || "evaluating"}`),
-    test_result: ({ data }) => appendLog(logsView, `[TEST] ${data?.name || "Test"}: ${data?.passed ? "PASS" : "FAIL"}`),
-    root_cause: ({ data }) => appendLog(logsView, `[ROOT CAUSE] ${data?.cause || "Root cause identified"}`),
-    fix: ({ data }) => appendLog(logsView, `[FIX] ${data?.summary || "Fix generated"}`),
+    fix_plan: ({ data }) => {
+      appendLog(logsView, `[FIX PLAN] ${data?.id || ""} risk=${data?.riskLevel || "unknown"} `);
+      const diffView = byId("diff-view");
+      if (diffView && data?.filesToChange?.length) {
+        diffView.innerHTML = `
+          <div style="padding:16px">
+            <div style="font-weight:600;font-size:14px">Proposed Fix Plan <span class="text-muted">(risk: ${escapeHtml(data?.riskLevel || "unknown")})</span></div>
+            <ul style="margin:10px 0 0 18px;font-size:13px;line-height:1.6">
+              ${data.filesToChange.map((f) => `<li>${escapeHtml(f?.filePath || f)}</li>`).join("")}
+            </ul>
+            ${data?.summary ? `<p style="font-size:12px;color:var(--c-text-muted);margin-top:10px">${escapeHtml(data.summary)}</p>` : ""}
+          </div>`;
+      }
+    },
+    critic: ({ data }) => appendLog(logsView, `[CRITIC] Verdict: ${data?.verdict || "evaluating"} `),
+    test: ({ data }) => appendLog(logsView, `[TEST] ${data?.script || "test"}: ${data?.passed ? "PASS" : "FAIL"} (exit ${data?.exitCode}) `),
+    test_result: ({ data }) => appendLog(logsView, `[TEST] ${data?.name || "Test"}: ${data?.passed ? "PASS" : "FAIL"} `),
+    root_cause: ({ data }) => appendLog(logsView, `[ROOT CAUSE] ${data?.cause || "Root cause identified"} `),
+    fix: ({ data }) => appendLog(logsView, `[FIX] ${data?.summary || "Fix generated"} `),
   };
 
   try {
@@ -337,7 +407,7 @@ async function executeDebugPipeline(repoId, query, mode) {
         appendLog(logsView, `Task Classified: ${plan.taskClass || "DEBUG"} (${plan.estimatedComplexity || "moderate"})`);
       }
     } catch (e) {
-      appendLog(logsView, `Plan fetch notice: ${e.message}`);
+      appendLog(logsView, `Plan fetch notice: ${e.message} `);
     }
 
     const asyncRes = await api.runDebugAsync({ repositoryId: repoId, query, mode });
@@ -346,7 +416,7 @@ async function executeDebugPipeline(repoId, query, mode) {
 
     if (!sessionId) throw new Error("No sessionId returned by debug-async");
 
-    appendLog(logsView, `Debug session [${sessionId.slice(0, 8)}] launched. Listening to SSE stream...`);
+    appendLog(logsView, `Debug session[${sessionId.slice(0, 8)}]launched.Listening to SSE stream...`);
 
     // Open SSE stream (stored for cleanup on exit/abort)
     _activeEventSource = api.streamSession(
@@ -418,23 +488,9 @@ function renderEvidence(findings) {
 
   if (!findings?.length) {
     container.innerHTML = `
-      <div style="display:flex;gap:12px;padding:12px;border:1px solid var(--c-border);border-radius:var(--r-md);background:var(--c-surface)">
-        <span style="font-size:20px">🔍</span>
-        <div>
-          <div style="font-weight:700;font-size:13px">Git History &amp; Blame Analysis</div>
-          <div style="font-size:12px;color:var(--c-text-secondary);margin-top:2px">
-            Inspected recent commits and diff changes. Failing code path traced back to recent modification.
-          </div>
-        </div>
-      </div>
-      <div style="display:flex;gap:12px;padding:12px;border:1px solid var(--c-border);border-radius:var(--r-md);background:var(--c-surface)">
-        <span style="font-size:20px">🕸️</span>
-        <div>
-          <div style="font-weight:700;font-size:13px">Code Graph &amp; Dependency Mapping</div>
-          <div style="font-size:12px;color:var(--c-text-secondary);margin-top:2px">
-            GraphRAG symbol lookup confirmed callers, references, and external contract boundaries.
-          </div>
-        </div>
+      <div style="padding:16px;text-align:center;color:var(--c-text-muted);font-size:12px">
+        <div style="font-size:20px;margin-bottom:4px">✅</div>
+        No issues or errors found — repository is clean.
       </div>`;
     return;
   }
@@ -444,7 +500,7 @@ function renderEvidence(findings) {
       <div style="padding:12px;border:1px solid var(--c-border);border-radius:var(--r-md);background:var(--c-surface)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
           <span style="font-weight:700;font-size:13px">${idx + 1}. ${escapeHtml(f.title || f.type || "Finding")}</span>
-          <span class="badge ${f.severity === "high" || f.type === "bug" ? "badge-danger" : "badge-accent"}">${escapeHtml(f.type || f.severity || "info")}</span>
+          <span class="badge ${(f.severity === "high" || f.type === "bug") ? "badge-danger" : "badge-accent"}">${escapeHtml(f.type || f.severity || "info")}</span>
         </div>
         <div style="font-size:12px;color:var(--c-text-secondary)">${escapeHtml(f.description || "")}</div>
         ${f.evidence?.length
@@ -463,20 +519,18 @@ function renderDiff(fixPlan, findings) {
   const container = byId("diff-view");
   if (!container) return;
 
-  const diffText = (fixPlan?.filesToChange?.length > 0)
-    ? fixPlan.filesToChange
-      .map((f) => f.patch || `--- a/${f.filePath}\n+++ b/${f.filePath}\n@@ -1,5 +1,6 @@\n// ${f.description}`)
-      .join("\n\n")
-    : `--- a/src/handler.ts
-+++ b/src/handler.ts
-@@ -24,7 +24,9 @@ export async function handleRequest(req) {
-   const payload = req.body;
--  const result = await processInput(payload.token);
-+  if (!payload || typeof payload.token !== "string") {
-+    throw new AppError("Invalid token format", "VALIDATION_ERROR", 400);
-+  }
-+  const result = await processInput(payload.token);
-   return result;`;
+  if (!fixPlan?.filesToChange?.length) {
+    container.innerHTML = `
+      <div style="padding:24px;text-align:center;color:var(--c-text-muted);font-size:13px">
+        <div style="font-size:28px;margin-bottom:8px">📋</div>
+        No changes needed — repository is in good health.
+      </div>`;
+    return;
+  }
+
+  const diffText = fixPlan.filesToChange
+    .map((f) => f.patch || `--- a/${f.filePath}\n+++ b/${f.filePath}\n@@ -1,5 +1,6 @@\n// ${f.description}`)
+    .join("\n\n");
 
   const coloredLines = diffText.split("\n").map((line) => {
     const prefix = line[0];
@@ -496,24 +550,18 @@ function renderCritic(critic) {
 
   if (!critic) {
     container.innerHTML = `
-      <div class="critic-card">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div style="font-weight:700;font-size:14px">Critic Evaluation</div>
-          <span class="badge badge-success">APPROVED</span>
-        </div>
-        <div class="critic-score-bar">
-          <div class="critic-score-fill" style="width:92%"></div>
-        </div>
-        <div style="font-size:12px;color:var(--c-text-secondary)">
-          Deterministic safety evaluation passed. No regressions or high-risk Git mutations detected.
-        </div>
+      <div style="padding:24px;text-align:center;color:var(--c-text-muted);font-size:13px">
+        <div style="font-size:28px;margin-bottom:8px">🔍</div>
+        Critic evaluation not available for this session.
       </div>`;
     return;
   }
 
-  const score = critic.score || (critic.verdict === "APPROVED" ? 95 : 60);
-  const scorePercent = Math.round(score > 1 ? score : score * 100);
-  const isApproved = critic.verdict === "APPROVED" || critic.approved === true;
+  const verdict = critic.verdict || (critic.approved === true ? "APPROVED" : critic.verdict);
+  const isApproved = critic.approved === true || verdict === "APPROVED";
+  const hasScore = typeof critic.score === "number";
+  const scorePercent = hasScore ? Math.round(critic.score > 1 ? critic.score : critic.score * 100) : null;
+  const scoreColor = scorePercent == null ? "var(--c-text-muted)" : scorePercent >= 80 ? "var(--c-success)" : scorePercent >= 60 ? "var(--c-warning)" : "var(--c-danger)";
 
   container.innerHTML = `
     <div class="critic-card">
@@ -522,21 +570,21 @@ function renderCritic(critic) {
           <div style="font-weight:700;font-size:14px">Critic Agent Verdict</div>
           <div style="font-size:12px;color:var(--c-text-muted)">Safety, correctness &amp; regression check</div>
         </div>
-        <span class="badge ${isApproved ? "badge-success" : "badge-danger"}">${escapeHtml(critic.verdict || (isApproved ? "APPROVED" : "REJECTED"))}</span>
+        <span class="badge ${isApproved ? "badge-success" : "badge-danger"}">${escapeHtml(verdict || "NO VERDICT")}</span>
       </div>
 
       <div>
         <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:4px">
           <span>Safety &amp; Confidence Score</span>
-          <span>${scorePercent}/100</span>
+          <span>${scorePercent == null ? "N/A" : `${scorePercent}/100`}</span>
         </div>
         <div class="critic-score-bar">
-          <div class="critic-score-fill" style="width:${scorePercent}%;background:${scorePercent >= 80 ? "var(--c-success)" : scorePercent >= 60 ? "var(--c-warning)" : "var(--c-danger)"}"></div>
+          <div class="critic-score-fill" style="width:${scorePercent == null ? 0 : scorePercent}%;background:${scoreColor}"></div>
         </div>
       </div>
 
       <div style="font-size:12px;color:var(--c-text-secondary);background:#f8fafc;padding:10px;border-radius:var(--r-sm)">
-        ${escapeHtml(critic.summary || critic.feedback || "Fix verified against repository defect signature.")}
+        ${escapeHtml(critic.summary || critic.feedback || "Critic evaluation completed with no summary provided.")}
       </div>
 
       ${critic.findings?.length
@@ -564,29 +612,40 @@ function renderTests(session) {
   const container = byId("tests-view");
   if (!container) return;
 
+  const tr = session?.testResult;
+  if (!tr) {
+    container.innerHTML = `
+      <div style="padding:24px;text-align:center;color:var(--c-text-muted);font-size:13px">
+        <div style="font-size:28px;margin-bottom:8px">🧪</div>
+        No test run available for this session. The repository&apos;s test/verify script was not executed yet.
+      </div>`;
+    return;
+  }
+
+  const passed = tr.passed === true;
+  const badgeCls = passed ? "badge-success" : "badge-danger";
+  const statusText = passed ? "PASS" : "FAIL";
+  const icon = passed ? "✓" : "✗";
+  const color = passed ? "var(--c-success)" : "var(--c-danger)";
+
+  const output = [tr.stdout, tr.stderr].filter(Boolean).join("\n").trim();
+  const duration = typeof tr.durationMs === "number" ? ` · ${tr.durationMs}ms` : "";
+
   container.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:8px">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border:1px solid var(--c-border);border-radius:var(--r-md);background:var(--c-surface)">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="color:var(--c-success);font-size:16px">✓</span>
-          <span style="font-size:13px;font-weight:600">Regression Test Suite</span>
+        <div style="display:flex;align-items:center;gap:8px;min-width:0">
+          <span style="color:${color};font-size:16px">${icon}</span>
+          <div style="min-width:0">
+            <div style="font-size:13px;font-weight:600">Test: <span style="font-family:var(--font-mono)">${escapeHtml(tr.script || "test")}</span></div>
+            <div style="font-size:11px;color:var(--c-text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(`${tr.packageManager || "npm"} run ${tr.script}`)}</div>
+          </div>
         </div>
-        <span class="badge badge-success">PASS (42ms)</span>
+        <span class="badge ${badgeCls}">${statusText}${duration}</span>
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border:1px solid var(--c-border);border-radius:var(--r-md);background:var(--c-surface)">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="color:var(--c-success);font-size:16px">✓</span>
-          <span style="font-size:13px;font-weight:600">Null / Boundary Safety Check</span>
-        </div>
-        <span class="badge badge-success">PASS (18ms)</span>
-      </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border:1px solid var(--c-border);border-radius:var(--r-md);background:var(--c-surface)">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="color:var(--c-success);font-size:16px">✓</span>
-          <span style="font-size:13px;font-weight:600">AST Syntax &amp; Compiler Validation</span>
-        </div>
-        <span class="badge badge-success">CLEAN</span>
-      </div>
+      ${output
+      ? `<pre style="margin:0;padding:12px;border:1px solid var(--c-border);border-radius:var(--r-md);background:#0f172a;color:#e2e8f0;font-size:11px;line-height:1.5;max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-word">${escapeHtml(output)}</pre>`
+      : `<div style="padding:12px;text-align:center;color:var(--c-text-muted);font-size:12px">No output captured for this test run.</div>`}
     </div>`;
 }
 
@@ -605,12 +664,12 @@ function renderRootCauseCard(result) {
     riskBadge.className = `badge risk-${fixPlan.riskLevel.toLowerCase()}`;
   }
 
-  byId("rc-symptom").textContent = result.summary || "Failing execution flow on target input / endpoint.";
-  byId("rc-rootcause").textContent = fixPlan?.rootCause || result.summary || "Input validation defect or unhandled edge case in caller module.";
-  byId("rc-evidence").textContent = fixPlan?.evidence?.join("; ") || "Git blame identified commit modifying input validation structure.";
+  byId("rc-symptom").textContent = result.summary || "No issues detected during investigation.";
+  byId("rc-rootcause").textContent = fixPlan?.rootCause || result.summary || "All checks passed. No root cause identified.";
+  byId("rc-evidence").textContent = fixPlan?.evidence?.join("; ") || result.findings?.[0]?.title || "Investigation steps completed successfully.";
   byId("rc-fix").textContent = fixPlan
     ? `Files to update: ${fixPlan.filesToChange.map((f) => f.filePath).join(", ")}. ${fixPlan.estimatedImpact}`
-    : "Added defensive type guard and error handling boundary.";
+    : "No changes needed — repository is in good health.";
 
   card.style.display = "block";
 }

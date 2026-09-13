@@ -267,6 +267,13 @@ class ApiClient {
       body: JSON.stringify({ repositoryId, message, stageAll }),
     });
   }
+  // Alias used by the debug view's "Commit & Push Fix" (returns {success, commitHash, message})
+  async commitChanges(repositoryId, message) {
+    return this.request("/api/git/commit", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, message, stageAll: true }),
+    });
+  }
   async generateCommitMessage(repositoryId) {
     return this.request("/api/git/generate-commit-message", {
       method: "POST",
@@ -427,6 +434,33 @@ class ApiClient {
     };
     eventSource.onerror = (err) => { if (onError) onError(err); };
     return eventSource;
+  }
+
+  // Admin API
+  async adminListUsers() { return this.request("/api/admin/users"); }
+  async adminGetAllActivity(params = {}) {
+    const q = new URLSearchParams(params).toString();
+    return this.request(`/api/admin/activity${q ? `?${q}` : ""}`);
+  }
+  async adminGetUserActivity(userId, params = {}) {
+    const q = new URLSearchParams(params).toString();
+    return this.request(`/api/admin/activity/${encodeURIComponent(userId)}${q ? `?${q}` : ""}`);
+  }
+  async adminGetStats(userId) {
+    const q = userId ? `?userId=${encodeURIComponent(userId)}` : "";
+    return this.request(`/api/admin/stats${q}`);
+  }
+  async adminGetUserData(userId) {
+    return this.request(`/api/admin/user-data/${encodeURIComponent(userId)}`);
+  }
+  async adminGetAggregateStats() {
+    return this.request("/api/admin/aggregate-stats");
+  }
+
+  // User activity (non-admin users seeing their own data)
+  async userMyActivity(params = {}) {
+    const q = new URLSearchParams(params).toString();
+    return this.request(`/api/user/activity${q ? `?${q}` : ""}`);
   }
 }
 
