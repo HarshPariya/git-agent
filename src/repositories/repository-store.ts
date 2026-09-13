@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Repository, ProtectedBranch, SyncResult } from "../types/git.js";
 import { executeGitStatus, registerRepositoryPath } from "../git/engine.js";
 import { logger } from "../logging/logger.js";
+import { persistRepository, markRepositoryDisconnected, loadRepositoriesFromDb } from "../db/persistence.js";
 
 const repositories = new Map<string, Repository>();
 const protectedBranches = new Map<string, ProtectedBranch[]>();
@@ -39,6 +40,29 @@ const sanitizeDefaultBranch = (branch: string): string =>
   branch && !branch.startsWith("feature/") && !branch.startsWith("fix/") ? branch : "development";
 
 export class RepositoryStore {
+  /**
+   * Hydrate the in-memory repository map from MongoDB at startup.
+   * This is called once during server boot so the dashboard always shows
+   * previously-connected repositories.
+   */
+  async hydrateFromDb(): Promise<void> {
+    const repos = await loadRepositoriesFromDb();
+    let count = 0;
+    for (const repo of repos) {
+      if (!repositories.has(repo.id)) {
+        repositories.set(repo.id, repo);
+        registerRepositoryPath(repo.id, repo.localPath);
+        count++;
+      }
+    }
+    if (count > 0) {
+      logger.info("Hydrated repository store from database", {
+        operation: "repo-hydrate",
+        metadata: { count },
+      });
+    }
+  }
+
   listRepositories(tenantId: string): readonly Repository[] {
     return [...repositories.values()].filter((r) =>
       (r.tenantId === tenantId || r.tenantId === "tenant-default") && r.status !== "disconnected",
@@ -80,7 +104,9 @@ export class RepositoryStore {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     const finalStatus = await executeGitStatus(repo.localPath);
-    repositories.set(repositoryId, { ...repo, currentBranch: finalStatus.branch, lastSyncAt: new Date().toISOString(), status: "connected" });
+    const synced: Repository = { ...repo, currentBranch: finalStatus.branch, lastSyncAt: new Date().toISOString(), status: "connected" };
+    repositories.set(repositoryId, synced);
+    void persistRepository(synced);
     logger.info("Repository synced", { operation: "repo-sync", metadata: { repositoryId, ahead: finalStatus.ahead, behind: finalStatus.behind } });
 
     return result;
@@ -91,6 +117,7 @@ export class RepositoryStore {
     if (!repo) throw new Error("Repository not found");
 
     repositories.delete(repositoryId);
+    void markRepositoryDisconnected(repositoryId);
     logger.info("Repository disconnected", { operation: "repo-disconnect", metadata: { repositoryId } });
     return { ...repo, status: "disconnected" };
   }
@@ -105,6 +132,7 @@ export class RepositoryStore {
       : { ...repo, status: "error", lastSyncAt: new Date().toISOString() };
 
     repositories.set(repositoryId, updated);
+    void persistRepository(updated);
     return updated;
   }
 
@@ -165,6 +193,7 @@ export class RepositoryStore {
     const updated: Repository = { ...existing, defaultBranch: sanitizeDefaultBranch(existing.defaultBranch), currentBranch: current, status: "connected", lastSyncAt: new Date().toISOString() };
 
     repositories.set(existing.id, updated);
+    void persistRepository(updated);
     logger.info("Repository already connected, updating status", { operation: "repo-connect", metadata: { repositoryId: existing.id } });
     return updated;
   }
@@ -188,6 +217,7 @@ export class RepositoryStore {
 
     repositories.set(repository.id, repository);
     registerRepositoryPath(repository.id, repository.localPath);
+    void persistRepository(repository);
     logger.info("Repository connected", { operation: "repo-connect", metadata: { repositoryId: repository.id, name: params.name } });
     return repository;
   }

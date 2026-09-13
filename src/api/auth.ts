@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../errors/app-error.js";
-import { query } from "../db/postgres.js";
-import { createSessionToken, findOrCreateGoogleUser, findUserByIdFromDb, findGoogleUserByIdInMemory, userStore } from "../security/auth.js";
+import { getCollection } from "../db/mongodb.js";
+import { createSessionToken, findOrCreateGoogleUser, findUserByIdFromDb, findUserByEmailFromDb, findGoogleUserByIdInMemory, userStore, ADMIN_EMAILS, verifySessionToken } from "../security/auth.js";
 import { verifyGoogleToken } from "../security/google-auth.js";
 
 type UserRole = "admin" | "developer" | "viewer";
@@ -18,6 +18,27 @@ const isValidRole = (role: unknown): role is UserRole =>
 const pickUser = (u: { id: string; email: string; name: string; tenantId: string; role: string; createdAt: string }) =>
   ({ id: u.id, email: u.email, name: u.name, tenantId: u.tenantId, role: u.role, createdAt: u.createdAt });
 
+/** Attach an optional picture field without violating exactOptionalPropertyTypes. */
+const withPicture = <T extends { id: string }>(base: T, picture: string | undefined): T & { picture?: string } =>
+  picture ? { ...base, picture } : base;
+
+/**
+ * Look up the Google avatar for a user from the identities collection.
+ * Returns undefined when the DB is unavailable or no avatar is stored.
+ */
+async function lookupAvatar(userId: string): Promise<string | undefined> {
+  try {
+    const identitiesCol = getCollection("identities");
+    const identityDoc = await identitiesCol.findOne(
+      { user_id: userId, provider: "google" },
+      { projection: { avatar_url: 1 } },
+    );
+    return (identityDoc?.avatar_url as string) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const getTenantContext = (request: Request) => {
   const context = request.tenantContext;
   if (!context) throw new AppError("Authentication required", "AUTHENTICATION_ERROR", 401);
@@ -31,12 +52,32 @@ export function registerHandler(request: Request, response: Response, next: Next
     if (!isValidEmail(email)) throw new AppError("A valid email address is required", "VALIDATION_ERROR", 400);
     if (!isValidPassword(password)) throw new AppError("Password must be at least 6 characters", "VALIDATION_ERROR", 400);
 
+    // Assign admin role for privileged emails (even on email/password registration)
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const requestedRole = isValidRole(role) ? role : "developer";
+    const finalRole: UserRole = ADMIN_EMAILS.has(normalizedEmail) ? "admin" : requestedRole;
+
     const user = userStore.register({
       email,
       password,
       name: typeof name === "string" ? name : "",
       ...(typeof tenantId === "string" && { tenantId }),
-      role: isValidRole(role) ? role : "developer",
+      role: finalRole,
+    });
+
+    // Persist to MongoDB so the user appears in admin panel and survives restarts
+    const usersCol = getCollection("users");
+    usersCol.insertOne({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      tenant_id: user.tenantId,
+      role: user.role,
+      password_hash: user.passwordHash,
+      salt: user.salt,
+      created_at: user.createdAt,
+    }).catch((dbErr: unknown) => {
+      console.warn("[AUTH] Failed to persist registered user to MongoDB:", dbErr instanceof Error ? dbErr.message : dbErr);
     });
 
     response.status(201).json({ token: createSessionToken(user), user: pickUser(user) });
@@ -45,19 +86,39 @@ export function registerHandler(request: Request, response: Response, next: Next
   }
 }
 
-export function loginHandler(request: Request, response: Response, next: NextFunction): void {
+export async function loginHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
   try {
     const { email, password } = (request.body ?? {}) as Record<string, unknown>;
 
     if (!isValidEmail(email)) throw new AppError("Email is required", "VALIDATION_ERROR", 400);
     if (!password || typeof password !== "string") throw new AppError("Password is required", "VALIDATION_ERROR", 400);
 
-    const user = userStore.findByEmail(email);
+    // Tier 1: In-memory store (fast path for active sessions)
+    let user = userStore.findByEmail(email);
+
+    // Tier 2: MongoDB lookup for registered users not yet in memory
+    if (!user) {
+      try {
+        const dbUser = await findUserByEmailFromDb(email);
+        if (dbUser && dbUser.passwordHash && dbUser.salt) {
+          user = dbUser;
+        }
+      } catch (dbErr) {
+        console.warn("[AUTH] Login: MongoDB lookup failed:", dbErr instanceof Error ? dbErr.message : dbErr);
+      }
+    }
+
     if (!user || !userStore.verifyPassword(user, password)) {
       throw new AppError("Invalid email or password", "AUTHENTICATION_ERROR", 401);
     }
 
-    response.status(200).json({ token: createSessionToken(user), user: pickUser(user) });
+    // Upgrade to admin if email is privileged
+    const normalizedEmail = user.email.trim().toLowerCase();
+    const upgraded = ADMIN_EMAILS.has(normalizedEmail)
+      ? { ...user, role: "admin" as const }
+      : user;
+
+    response.status(200).json({ token: createSessionToken(upgraded), user: pickUser(upgraded) });
   } catch (error) {
     next(error);
   }
@@ -130,7 +191,8 @@ export async function meHandlerDb(request: Request, response: Response, next: Ne
     // Tier 1: In-memory userStore (email/password users)
     const memUser = userStore.findById(context.userId);
     if (memUser) {
-      response.status(200).json({ user: pickUser(memUser) });
+      const picture = await lookupAvatar(context.userId);
+      response.status(200).json({ user: withPicture(pickUser(memUser), picture) });
       return;
     }
 
@@ -138,16 +200,8 @@ export async function meHandlerDb(request: Request, response: Response, next: Ne
     try {
       const dbUser = await findUserByIdFromDb(context.userId);
       if (dbUser) {
-        let avatarUrl: string | undefined;
-        try {
-          const identityResult = await query<{ avatar_url: string | null }>(
-            `SELECT avatar_url FROM identities WHERE user_id = $1 AND provider = 'google' LIMIT 1`,
-            [context.userId],
-          );
-          avatarUrl = identityResult.rows[0]?.avatar_url ?? undefined;
-        } catch { /* ignore — table may not exist */ }
-
-        response.status(200).json({ user: { ...dbUser, picture: avatarUrl } });
+        const picture = await lookupAvatar(context.userId);
+        response.status(200).json({ user: withPicture(pickUser(dbUser), picture) });
         return;
       }
     } catch (dbErr) {
@@ -158,17 +212,28 @@ export async function meHandlerDb(request: Request, response: Response, next: Ne
     const googleUser = findGoogleUserByIdInMemory(context.userId);
     if (googleUser) {
       console.warn(`[AUTH] me: using in-memory fallback for Google user ${context.userId} (${googleUser.email})`);
-      response.status(200).json({ user: googleUser });
+      response.status(200).json({ user: withPicture(pickUser({ ...googleUser, createdAt: "" }), googleUser.picture) });
       return;
     }
 
     // Tier 4: Dev-mode fallback — no user found anywhere
-    console.warn(`[AUTH] me: no user found for ${context.userId}, returning dev-mode fallback`);
+    // Re-extract role from JWT token so admin status is preserved on page refresh
+    let fallbackRole: "admin" | "developer" | "viewer" = "developer";
+    try {
+      const authHeader = request.header("authorization")?.trim();
+      const rawToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : undefined;
+      if (rawToken) {
+        const session = verifySessionToken(rawToken);
+        fallbackRole = session.role;
+      }
+    } catch { /* keep default */ }
+
+    console.warn(`[AUTH] me: no user found for ${context.userId}, returning dev-mode fallback (role=${fallbackRole})`);
     response.status(200).json({
       user: {
         id: context.userId,
         tenantId: context.tenantId,
-        role: "developer",
+        role: fallbackRole,
         email: `${context.userId}@local.dev`,
         name: context.userId,
       },

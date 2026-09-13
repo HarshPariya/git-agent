@@ -26,6 +26,7 @@ async function loadRepositories() {
     const data = await api.listRepositories();
     const repos = Array.isArray(data) ? data : data.repositories || [];
     window.setState("repositories", repos);
+    if (typeof window.updateServerStatus === "function") window.updateServerStatus();
 
     // Restore user's explicitly selected repo from localStorage or auto-activate first
     const savedRepoId = localStorage.getItem('gda_active_repo_id');
@@ -279,6 +280,8 @@ async function disconnectRepo(repoId) {
   try {
     const updatedRepos = (window.state.repositories || []).filter((r) => r.id !== repoId);
     window.setState("repositories", updatedRepos);
+    // Update the navbar pill immediately so "Connected" disappears as soon as the user disconnects.
+    if (typeof window.updateServerStatus === "function") window.updateServerStatus();
 
     if (window.state.activeRepository?.id === repoId) {
       setActiveRepository(updatedRepos[0] || null);

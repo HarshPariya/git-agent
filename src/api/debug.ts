@@ -4,16 +4,30 @@ import * as path from "node:path";
 import { debugOrchestrator } from "../agent/debug-orchestrator.js";
 import { debugAgentPipeline } from "../agent/debug-agent.js";
 import { AppError } from "../errors/app-error.js";
-import type { DebugMode } from "../types/git.js";
+import type { DebugMode, DebugSession } from "../types/git.js";
 import { classifyTask, generateInvestigationPlan } from "../agent/planner.js";
 import { fixPlanner } from "../agent/fix-planner.js";
 import { applyPatch, revertPatch, applyDiffHunk, type PatchFileChange } from "../agent/patch-engine.js";
 import { getExecutionPath } from "../git/engine.js";
+import { verifySessionToken } from "../security/auth.js";
+import { loadDebugSessionsFromDb, loadDebugSessionByIdFromDb } from "../db/persistence.js";
 
 const getTenantContext = (request: Request) => {
   const context = request.tenantContext;
   if (!context) throw new AppError("Tenant context is missing", "AUTHENTICATION_ERROR", 401);
   return context;
+};
+
+const getUserIdFromToken = (request: Request): string | undefined => {
+  const authHeader = request.header("authorization")?.trim();
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : undefined;
+  if (!token) return undefined;
+  try {
+    const session = verifySessionToken(token);
+    return session.userId;
+  } catch {
+    return undefined;
+  }
 };
 
 const getRequestBody = (request: Request): Record<string, unknown> =>
@@ -103,6 +117,7 @@ export async function runDebugHandler(request: Request, response: Response, next
       plan: extended?.investigationPlan,
       fixPlan: extended?.fixPlan,
       critic: extended?.criticReview,
+      testResult: extended?.testResult,
     });
   } catch (error) {
     next(error);
@@ -131,11 +146,27 @@ export async function runDebugAsyncHandler(request: Request, response: Response,
   }
 }
 
-export function getDebugSessionHandler(request: Request, response: Response, next: NextFunction): void {
+export async function getDebugSessionHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
   try {
     const context = getTenantContext(request);
     const sessionId = getSessionId(request);
-    const session = debugAgentPipeline.getSession(sessionId, context.tenantId);
+
+    // Prefer the live in-memory session, but fall back to the persisted document
+    // so completed sessions survive a server restart / eviction from memory.
+    let session: DebugSession;
+    try {
+      session = debugAgentPipeline.getSession(sessionId, context.tenantId);
+    } catch (err) {
+      const AppErr = err as { status?: number };
+      if (AppErr?.status !== 404) throw err;
+      const dbSession = await loadDebugSessionByIdFromDb(sessionId);
+      if (dbSession && dbSession.tenantId === context.tenantId) {
+        session = dbSession;
+      } else {
+        throw err;
+      }
+    }
+
     const extended = debugAgentPipeline.getExtendedData(sessionId);
 
     response.status(200).json({
@@ -144,25 +175,39 @@ export function getDebugSessionHandler(request: Request, response: Response, nex
       plan: extended?.investigationPlan,
       fixPlan: extended?.fixPlan,
       critic: extended?.criticReview,
+      testResult: extended?.testResult,
     });
   } catch (error) {
     next(error);
   }
 }
 
-export function listDebugSessionsHandler(request: Request, response: Response, next: NextFunction): void {
+export async function listDebugSessionsHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
   try {
     const context = getTenantContext(request);
-    response.status(200).json({ sessions: debugAgentPipeline.listSessions(context.tenantId) });
+    const userId = getUserIdFromToken(request);
+    const memorySessions = debugAgentPipeline.listSessions(context.tenantId, userId);
+    const dbSessions = await loadDebugSessionsFromDb(context.tenantId, userId);
+    const byId = new Map<string, DebugSession>();
+    for (const s of dbSessions) byId.set(s.id, s);
+    for (const s of memorySessions) byId.set(s.id, s);
+    const merged = [...byId.values()].sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""));
+    response.status(200).json({ sessions: merged });
   } catch (error) {
     next(error);
   }
 }
 
-export function listAgentRunsHandler(request: Request, response: Response, next: NextFunction): void {
+export async function listAgentRunsHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
   try {
     const context = getTenantContext(request);
-    response.status(200).json({ runs: debugAgentPipeline.listSessions(context.tenantId) });
+    const memorySessions = debugAgentPipeline.listSessions(context.tenantId);
+    const dbSessions = await loadDebugSessionsFromDb(context.tenantId);
+    const byId = new Map<string, DebugSession>();
+    for (const s of dbSessions) byId.set(s.id, s);
+    for (const s of memorySessions) byId.set(s.id, s);
+    const merged = [...byId.values()].sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""));
+    response.status(200).json({ runs: merged });
   } catch (error) {
     next(error);
   }
@@ -223,6 +268,7 @@ export function streamSessionHandler(request: Request, response: Response, next:
       plan: extended?.investigationPlan,
       fixPlan: extended?.fixPlan,
       critic: extended?.criticReview,
+      testResult: extended?.testResult,
       timestamp: new Date().toISOString(),
     })}\n\n`);
 

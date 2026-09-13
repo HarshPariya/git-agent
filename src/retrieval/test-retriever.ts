@@ -1,5 +1,5 @@
 import { CodeRetriever } from "./retriever.js";
-import { closeDatabase } from "../db/postgres.js";
+import { closeDatabase } from "../db/mongodb.js";
 
 const formatResult = (result: {
   rank: number;
@@ -37,17 +37,17 @@ const main = async (): Promise<void> => {
   await retriever.initialize();
 
   const stats = retriever.getStats();
-  console.log(
+  console.warn(
     `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nRETRIEVER STATS\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
   );
-  console.log(`Files: ${stats.files}\nChunks: ${stats.chunks}\nGraph nodes: ${stats.graphNodes}\nGraph edges: ${stats.graphEdges}`);
+  console.warn(`Files: ${stats.files}\nChunks: ${stats.chunks}\nGraph nodes: ${stats.graphNodes}\nGraph edges: ${stats.graphEdges}`);
 
   const query = process.argv.slice(2).join(" ") || "Where is normalizeId used?";
-  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nQUERY: "${query}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+  console.warn(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nQUERY: "${query}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 
   const results = await retriever.retrieve(query, { limit: 8 });
   for (const result of results) {
-    console.log(`${formatResult(result)}\n`);
+    console.warn(`${formatResult(result)}\n`);
   }
 };
 

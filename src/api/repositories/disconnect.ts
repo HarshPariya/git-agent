@@ -8,16 +8,11 @@ const getTenantContext = (request: Request) => {
   return context;
 };
 
-const requireString = (body: unknown, key: string): string => {
-  const value = (body as Record<string, unknown>)?.[key];
-  if (typeof value !== "string" || !value.trim()) throw new AppError(`${key} is required`, "VALIDATION_ERROR", 400);
-  return value.trim();
-};
-
 export const disconnectRepositoryHandler = (request: Request, response: Response, next: NextFunction): void => {
   try {
     const context = getTenantContext(request);
-    const repositoryId = requireString(request.body, "repositoryId");
+    const repositoryId = String(request.params.id || "").trim();
+    if (!repositoryId) throw new AppError("Repository id is required", "VALIDATION_ERROR", 400);
     repositoryStore.disconnectRepository(repositoryId, context.tenantId);
     response.status(200).json({ success: true });
   } catch (error) {

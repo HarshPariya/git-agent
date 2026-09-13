@@ -4,12 +4,12 @@ import { isSecretFile, isPathWithinRoot, isIgnoredFile, MAX_FILE_SIZE_BYTES } fr
 import { scanRepository } from "./parser.js";
 
 const runSecurityTests = async () => {
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nINGESTION & RETRIEVAL SECURITY TESTS\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+  console.warn("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nINGESTION & RETRIEVAL SECURITY TESTS\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
   let passed = 0;
   let failed = 0;
   const assert = (ok: boolean, name: string) => {
-    console.log(ok ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`);
+    console.warn(ok ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`);
     if (ok) { passed++; } else { failed++; }
   };
 
@@ -57,7 +57,7 @@ const runSecurityTests = async () => {
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
 
-    console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSECURITY TEST RESULTS: ${passed} Passed, ${failed} Failed.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.warn(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSECURITY TEST RESULTS: ${passed} Passed, ${failed} Failed.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
     if (failed > 0) process.exitCode = 1;
   }
 };

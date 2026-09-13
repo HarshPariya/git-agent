@@ -4,22 +4,22 @@ import { buildVectorIndex, vectorSearch } from "./vector-search.js";
 
 const main = async (): Promise<void> => {
   try {
-    console.log("Building vector retrieval index...\n");
+    console.warn("Building vector retrieval index...\n");
 
     const parsedFiles = await parseRepository(process.cwd());
     const chunks = chunkRepository(parsedFiles);
-    console.log(`Chunks: ${chunks.length}\nGenerating embeddings...`);
+    console.warn(`Chunks: ${chunks.length}\nGenerating embeddings...`);
 
     const index = buildVectorIndex(chunks);
-    console.log(`Embedded chunks: ${index.length}`);
+    console.warn(`Embedded chunks: ${index.length}`);
 
     const query = process.argv.slice(2).join(" ") || "Where is normalizeId used?";
-    console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nQuery: "${query}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+    console.warn(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nQuery: "${query}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 
     const results = vectorSearch(query, index, 10);
 
     for (const [i, result] of results.entries()) {
-      console.log(
+      console.warn(
         `${i + 1}. ${result.chunk.type.toUpperCase()} — ${result.chunk.name}\n` +
           `   Score: ${result.score.toFixed(4)}\n` +
           `   File: ${result.chunk.filePath}\n` +

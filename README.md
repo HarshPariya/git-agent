@@ -3,7 +3,7 @@
 [![Production CI Pipeline](https://github.com/HarshPariya/ai-chatbot/actions/workflows/ci.yml/badge.svg)](https://github.com/HarshPariya/ai-chatbot/actions/workflows/ci.yml)
 [![Node.js Version](https://img.shields.io/badge/Node.js-22.x%20LTS-green.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20%2B%20pgvector-336791.svg)](https://github.com/pgvector/pgvector)
+[![MongoDB](https://img.shields.io/badge/MongoDB-Atlas%20Vector%20Search-47A248.svg)](https://www.mongodb.com/atlas)
 [![License: ISC](https://img.shields.io/badge/License-ISC-yellow.svg)](https://opensource.org/licenses/ISC)
 
 > **Enterprise-grade Autonomous Git Debugging & Code Intelligence Platform.**  
@@ -87,7 +87,7 @@ Click any link below to directly open the complete documentation guide:
 │ • Task Planner          │ │ • Push Safeguards   │ │ • Dependency Graph │
 │ • Hypothesis Engine     │ │ • 3-Way Conflicts   │ │ • 384-Dim Vectors  │
 │ • Critic Agent          │ │ • Safe Commits      │ │ • Hybrid RRF Rank  │
-│ • Patch Engine          │ │ • Auto Bisect       │ │ • PostgreSQL (opt) │
+│ • Patch Engine          │ │ • Auto Bisect       │ │ • MongoDB Atlas    │
 └─────────────────────────┘ └─────────────────────┘ └────────────────────┘
 ```
 
@@ -134,7 +134,7 @@ For detailed sequence diagrams, see [docs/workflow.md](docs/workflow.md).
 ### 1. Prerequisites
 - **Node.js**: v22.x LTS (recommended) or v20.x+
 - **Git**: 2.38+ installed and in your PATH
-- *(Optional)* Docker Desktop for PostgreSQL + pgvector
+- *(Optional)* MongoDB Atlas account (or local MongoDB instance)
 
 ### 2. Installation
 ```bash
@@ -153,7 +153,8 @@ PORT=3000
 NODE_ENV=development
 GROQ_API_KEY=your_groq_api_key_here
 GITHUB_TOKEN=your_optional_github_token_here
-DATABASE_URL=postgresql://postgres:password@localhost:5432/ai_chatbot
+MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net
+MONGODB_DB_NAME=ai_chatbot
 ```
 
 ### 4. Run the Platform

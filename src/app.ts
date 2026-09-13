@@ -51,6 +51,7 @@ import {
   getIndexStatusHandler,
 } from "./api/graphrag.js";
 import { getAuditLogHandler, getAuditEntryHandler } from "./api/audit.js";
+import { listScriptsHandler, runScriptHandler } from "./api/scripts.js";
 import { runBisectHandler, detectRegressionHandler } from "./api/bisect.js";
 import {
   listCiBuildsHandler,
@@ -83,6 +84,9 @@ import { errorHandler } from "./errors/error-handler.js";
 import { logger } from "./logging/logger.js";
 import { requestIdMiddleware } from "./middleware/request-id.js";
 import { securityMiddleware } from "./middleware/security.js";
+import { activityMiddleware } from "./middleware/activity-middleware.js";
+import { ensureActivityIndexes, getUserActivity } from "./logging/activity-logger.js";
+import { verifySessionToken } from "./security/auth.js";
 import {
   listRepositoriesHandler,
   getRepositoryHandler,
@@ -100,10 +104,22 @@ import {
   pickNativeDialogHandler,
   openInOsHandler,
 } from "./api/fs.js";
+import {
+  listUsersHandler,
+  allActivityHandler,
+  userActivityHandler,
+  activityStatsHandler,
+  userDataHandler,
+  aggregateStatsHandler,
+} from "./api/admin.js";
 
 export const app = express();
 
 app.disable("x-powered-by");
+
+// Combined middleware: security check → activity logging → handler
+// activityMiddleware runs AFTER securityMiddleware so tenantContext is available
+const protectedRoute = [securityMiddleware, activityMiddleware] as const;
 
 app.use(
   cors({
@@ -126,11 +142,11 @@ app.use(
   }),
 );
 
-const SVG_FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#1a56db"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient></defs><circle cx="50" cy="50" r="48" fill="url(#g)"/><path d="M30 50 L45 35 L70 35 L70 65 L45 65 L30 50Z" fill="white" opacity="0.9"/><circle cx="50" cy="50" r="6" fill="url(#g)"/><line x1="50" y1="25" x2="50" y2="40" stroke="white" stroke-width="3" stroke-linecap="round"/><line x1="50" y1="60" x2="50" y2="75" stroke="white" stroke-width="3" stroke-linecap="round"/></svg>`;
+const SVG_FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#1f2937"/><stop offset="100%" stop-color="#000000"/></linearGradient></defs><rect x="8" y="8" width="84" height="84" rx="20" fill="url(#g)"/><polyline points="30,55 42,44 30,33" fill="none" stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/><line x1="46" y1="55" x2="68" y2="55" stroke="white" stroke-width="5" stroke-linecap="round" opacity="0.95"/></svg>`;
 
 app.get("/favicon.ico", (_request, response) => {
   response.setHeader("Content-Type", "image/svg+xml");
-  response.setHeader("Cache-Control", "public, max-age=86400");
+  response.setHeader("Cache-Control", "no-cache");
   response.status(200).send(SVG_FAVICON);
 });
 
@@ -161,6 +177,10 @@ app.get("/api/info", (_request, response) => {
         search: "POST /api/graphrag/search",
         graph: "GET /api/graphrag/:repositoryId/graph",
       },
+      scripts: {
+        list: "GET /api/scripts",
+        run: "POST /api/scripts/run",
+      },
       github: {
         connect: "POST /api/github/connect",
         status: "GET /api/github/status",
@@ -187,81 +207,81 @@ app.get("/info", (_req, res) => res.json({ service: "Git Debugging Agent", versi
 app.post("/api/auth/register", registerHandler);
 app.post("/api/auth/login", loginHandler);
 app.post("/api/auth/google", googleLoginHandler);
-app.get("/api/auth/me", securityMiddleware, meHandlerDb);
+app.get("/api/auth/me", ...protectedRoute, meHandlerDb);
 app.get("/api/auth/google-client-id", (_req, res) => {
   res.json({ clientId: process.env.GOOGLE_CLIENT_ID?.trim() || "" });
 });
 
 // Git repositories
-app.get("/api/repositories", securityMiddleware, listRepositoriesHandler);
-app.get("/api/repositories/list", securityMiddleware, listRepositoriesHandler);
-app.get("/api/repositories/:id", securityMiddleware, getRepositoryHandler);
-app.post("/api/repositories/connect", securityMiddleware, connectRepositoryHandler);
-app.post("/api/repositories/:id/sync", securityMiddleware, syncRepositoryHandler);
-app.post("/api/repositories/:id/disconnect", securityMiddleware, disconnectRepositoryHandler);
-app.get("/api/repositories/:id/status", securityMiddleware, getRepositoryStatusHandler);
-app.get("/api/repositories/:id/protected-branches", securityMiddleware, listProtectedBranchesHandler);
-app.post("/api/repositories/:id/protected-branches", securityMiddleware, addProtectedBranchHandler);
-app.delete("/api/repositories/:id/protected-branches/:branch", securityMiddleware, removeProtectedBranchHandler);
-app.get("/api/fs/browse", securityMiddleware, browseFilesystemHandler);
-app.post("/api/fs/resolve-folder", securityMiddleware, resolveFolderHandler);
-app.post("/api/fs/pick-native-dialog", securityMiddleware, pickNativeDialogHandler);
-app.post("/api/fs/open-in-os", securityMiddleware, openInOsHandler);
+app.get("/api/repositories", ...protectedRoute, listRepositoriesHandler);
+app.get("/api/repositories/list", ...protectedRoute, listRepositoriesHandler);
+app.get("/api/repositories/:id", ...protectedRoute, getRepositoryHandler);
+app.post("/api/repositories/connect", ...protectedRoute, connectRepositoryHandler);
+app.post("/api/repositories/:id/sync", ...protectedRoute, syncRepositoryHandler);
+app.post("/api/repositories/:id/disconnect", ...protectedRoute, disconnectRepositoryHandler);
+app.get("/api/repositories/:id/status", ...protectedRoute, getRepositoryStatusHandler);
+app.get("/api/repositories/:id/protected-branches", ...protectedRoute, listProtectedBranchesHandler);
+app.post("/api/repositories/:id/protected-branches", ...protectedRoute, addProtectedBranchHandler);
+app.delete("/api/repositories/:id/protected-branches/:branch", ...protectedRoute, removeProtectedBranchHandler);
+app.get("/api/fs/browse", ...protectedRoute, browseFilesystemHandler);
+app.post("/api/fs/resolve-folder", ...protectedRoute, resolveFolderHandler);
+app.post("/api/fs/pick-native-dialog", ...protectedRoute, pickNativeDialogHandler);
+app.post("/api/fs/open-in-os", ...protectedRoute, openInOsHandler);
 
 // Git engine
-app.get("/api/git/catalog", securityMiddleware, gitOperationCatalogHandler);
-app.get("/api/git/classify/:operation", securityMiddleware, gitClassifyHandler);
-app.get("/api/git/status", securityMiddleware, gitStatusHandler);
-app.get("/api/git/log", securityMiddleware, gitLogHandler);
-app.get("/api/git/diff", securityMiddleware, gitDiffHandler);
-app.get("/api/git/branches", securityMiddleware, gitBranchesHandler);
-app.get("/api/git/conflicts", securityMiddleware, gitConflictsHandler);
-app.post("/api/git/conflicts", securityMiddleware, gitConflictsHandler);
-app.post("/api/git/conflicts/resolve", securityMiddleware, gitConflictResolveHandler);
-app.post("/api/git/commit", securityMiddleware, gitCommitHandler);
-app.post("/api/git/push", securityMiddleware, gitPushHandler);
-app.post("/api/git/pull", securityMiddleware, gitPullHandler);
-app.post("/api/git/fetch", securityMiddleware, gitFetchHandler);
-app.post("/api/git/checkout", securityMiddleware, gitCheckoutHandler);
-app.post("/api/git/status", securityMiddleware, gitStatusHandler);
-app.post("/api/git/log", securityMiddleware, gitLogHandler);
-app.post("/api/git/diff", securityMiddleware, gitDiffHandler);
-app.post("/api/git/branches", securityMiddleware, gitBranchesHandler);
-app.post("/api/git/operations/:operation", securityMiddleware, gitExecuteHandler);
-app.post("/api/git/analyze-changes", securityMiddleware, gitAnalyzeChangesHandler);
-app.post("/api/git/commit-plan/execute", securityMiddleware, gitExecuteCommitPlanHandler);
-app.post("/api/git/commit-all", securityMiddleware, gitExecuteCommitPlanHandler);
-app.post("/api/git/sync", securityMiddleware, gitSyncHandler);
-app.post("/api/git/ship", securityMiddleware, gitShipHandler);
-app.post("/api/git/generate-commit-message", securityMiddleware, generateCommitMessageHandler);
+app.get("/api/git/catalog", ...protectedRoute, gitOperationCatalogHandler);
+app.get("/api/git/classify/:operation", ...protectedRoute, gitClassifyHandler);
+app.get("/api/git/status", ...protectedRoute, gitStatusHandler);
+app.get("/api/git/log", ...protectedRoute, gitLogHandler);
+app.get("/api/git/diff", ...protectedRoute, gitDiffHandler);
+app.get("/api/git/branches", ...protectedRoute, gitBranchesHandler);
+app.get("/api/git/conflicts", ...protectedRoute, gitConflictsHandler);
+app.post("/api/git/conflicts", ...protectedRoute, gitConflictsHandler);
+app.post("/api/git/conflicts/resolve", ...protectedRoute, gitConflictResolveHandler);
+app.post("/api/git/commit", ...protectedRoute, gitCommitHandler);
+app.post("/api/git/push", ...protectedRoute, gitPushHandler);
+app.post("/api/git/pull", ...protectedRoute, gitPullHandler);
+app.post("/api/git/fetch", ...protectedRoute, gitFetchHandler);
+app.post("/api/git/checkout", ...protectedRoute, gitCheckoutHandler);
+app.post("/api/git/status", ...protectedRoute, gitStatusHandler);
+app.post("/api/git/log", ...protectedRoute, gitLogHandler);
+app.post("/api/git/diff", ...protectedRoute, gitDiffHandler);
+app.post("/api/git/branches", ...protectedRoute, gitBranchesHandler);
+app.post("/api/git/operations/:operation", ...protectedRoute, gitExecuteHandler);
+app.post("/api/git/analyze-changes", ...protectedRoute, gitAnalyzeChangesHandler);
+app.post("/api/git/commit-plan/execute", ...protectedRoute, gitExecuteCommitPlanHandler);
+app.post("/api/git/commit-all", ...protectedRoute, gitExecuteCommitPlanHandler);
+app.post("/api/git/sync", ...protectedRoute, gitSyncHandler);
+app.post("/api/git/ship", ...protectedRoute, gitShipHandler);
+app.post("/api/git/generate-commit-message", ...protectedRoute, generateCommitMessageHandler);
 
 // Debugging agent
-app.get("/api/debug", securityMiddleware, listDebugSessionsHandler);
-app.get("/api/debug/sessions", securityMiddleware, listDebugSessionsHandler);
-app.get("/api/agent/runs", securityMiddleware, listAgentRunsHandler);
-app.post("/api/debug", securityMiddleware, startDebugSessionHandler);
-app.post("/api/debug/run", securityMiddleware, runDebugHandler);
-app.post("/api/debug/run-async", securityMiddleware, runDebugAsyncHandler);
-app.post("/api/debug/classify", securityMiddleware, classifyTaskHandler);
-app.post("/api/debug/plan", securityMiddleware, planTaskHandler);
-app.get("/api/debug/:sessionId", securityMiddleware, getDebugSessionHandler);
-app.get("/api/debug/:sessionId/stream", securityMiddleware, streamSessionHandler);
-app.get("/api/debug/:sessionId/findings", securityMiddleware, getSessionFindingsHandler);
-app.post("/api/debug/:sessionId/steps", securityMiddleware, executeDebugStepHandler);
-app.post("/api/debug/:sessionId/fix/approve", securityMiddleware, approveFixHandler);
-app.post("/api/debug/:sessionId/approve", securityMiddleware, approveFixHandler);
-app.post("/api/debug/:sessionId/fix/revert", securityMiddleware, revertFixHandler);
-app.post("/api/debug/:sessionId/revert", securityMiddleware, revertFixHandler);
-app.post("/api/debug/:sessionId/complete", securityMiddleware, completeDebugSessionHandler);
-app.post("/api/debug/:sessionId/abort", securityMiddleware, abortDebugSessionHandler);
+app.get("/api/debug", ...protectedRoute, listDebugSessionsHandler);
+app.get("/api/debug/sessions", ...protectedRoute, listDebugSessionsHandler);
+app.get("/api/agent/runs", ...protectedRoute, listAgentRunsHandler);
+app.post("/api/debug", ...protectedRoute, startDebugSessionHandler);
+app.post("/api/debug/run", ...protectedRoute, runDebugHandler);
+app.post("/api/debug/run-async", ...protectedRoute, runDebugAsyncHandler);
+app.post("/api/debug/classify", ...protectedRoute, classifyTaskHandler);
+app.post("/api/debug/plan", ...protectedRoute, planTaskHandler);
+app.get("/api/debug/:sessionId", ...protectedRoute, getDebugSessionHandler);
+app.get("/api/debug/:sessionId/stream", ...protectedRoute, streamSessionHandler);
+app.get("/api/debug/:sessionId/findings", ...protectedRoute, getSessionFindingsHandler);
+app.post("/api/debug/:sessionId/steps", ...protectedRoute, executeDebugStepHandler);
+app.post("/api/debug/:sessionId/fix/approve", ...protectedRoute, approveFixHandler);
+app.post("/api/debug/:sessionId/approve", ...protectedRoute, approveFixHandler);
+app.post("/api/debug/:sessionId/fix/revert", ...protectedRoute, revertFixHandler);
+app.post("/api/debug/:sessionId/revert", ...protectedRoute, revertFixHandler);
+app.post("/api/debug/:sessionId/complete", ...protectedRoute, completeDebugSessionHandler);
+app.post("/api/debug/:sessionId/abort", ...protectedRoute, abortDebugSessionHandler);
 
 // Repository GraphRAG
-app.post("/api/graphrag/index", securityMiddleware, indexRepositoryHandler);
-app.get("/api/graphrag/:repositoryId/graph", securityMiddleware, getGraphHandler);
-app.post("/api/graphrag/search", securityMiddleware, searchCodeHandler);
-app.post("/api/graphrag/symbols", securityMiddleware, getSymbolsHandler);
-app.get("/api/graphrag/:repositoryId/status", securityMiddleware, getIndexStatusHandler);
-app.get("/api/knowledge", securityMiddleware, (_request, response) => {
+app.post("/api/graphrag/index", ...protectedRoute, indexRepositoryHandler);
+app.get("/api/graphrag/:repositoryId/graph", ...protectedRoute, getGraphHandler);
+app.post("/api/graphrag/search", ...protectedRoute, searchCodeHandler);
+app.post("/api/graphrag/symbols", ...protectedRoute, getSymbolsHandler);
+app.get("/api/graphrag/:repositoryId/status", ...protectedRoute, getIndexStatusHandler);
+app.get("/api/knowledge", ...protectedRoute, (_request, response) => {
   response.status(200).json({
     entries: [],
     message: "Knowledge is scoped to indexed repositories. Select a repository to search GraphRAG.",
@@ -269,32 +289,75 @@ app.get("/api/knowledge", securityMiddleware, (_request, response) => {
 });
 
 // GitHub Integration
-app.post("/api/github/connect", securityMiddleware, connectGitHubHandler);
-app.delete("/api/github/connect", securityMiddleware, disconnectGitHubHandler);
-app.get("/api/github/status", securityMiddleware, githubStatusHandler);
-app.get("/api/github/repos", securityMiddleware, listGitHubReposHandler);
-app.get("/api/github/repos/:owner/:repo", securityMiddleware, getGitHubRepoHandler);
-app.get("/api/github/repos/:owner/:repo/branches", securityMiddleware, listGitHubBranchesHandler);
-app.get("/api/github/repos/:owner/:repo/issues", securityMiddleware, listGitHubIssuesHandler);
-app.get("/api/github/repos/:owner/:repo/issues/:number", securityMiddleware, getGitHubIssueHandler);
-app.get("/api/github/repos/:owner/:repo/pulls", securityMiddleware, listGitHubPRsHandler);
-app.get("/api/github/repos/:owner/:repo/pulls/:number", securityMiddleware, getGitHubPRHandler);
-app.post("/api/github/repos/:owner/:repo/pulls", securityMiddleware, createGitHubPRHandler);
+app.post("/api/github/connect", ...protectedRoute, connectGitHubHandler);
+app.delete("/api/github/connect", ...protectedRoute, disconnectGitHubHandler);
+app.get("/api/github/status", ...protectedRoute, githubStatusHandler);
+app.get("/api/github/repos", ...protectedRoute, listGitHubReposHandler);
+app.get("/api/github/repos/:owner/:repo", ...protectedRoute, getGitHubRepoHandler);
+app.get("/api/github/repos/:owner/:repo/branches", ...protectedRoute, listGitHubBranchesHandler);
+app.get("/api/github/repos/:owner/:repo/issues", ...protectedRoute, listGitHubIssuesHandler);
+app.get("/api/github/repos/:owner/:repo/issues/:number", ...protectedRoute, getGitHubIssueHandler);
+app.get("/api/github/repos/:owner/:repo/pulls", ...protectedRoute, listGitHubPRsHandler);
+app.get("/api/github/repos/:owner/:repo/pulls/:number", ...protectedRoute, getGitHubPRHandler);
+app.post("/api/github/repos/:owner/:repo/pulls", ...protectedRoute, createGitHubPRHandler);
 
 // Engineering workflows
-app.get("/api/audit", securityMiddleware, getAuditLogHandler);
-app.get("/api/audit/:id", securityMiddleware, getAuditEntryHandler);
-app.post("/api/bisect", securityMiddleware, runBisectHandler);
-app.post("/api/regression", securityMiddleware, detectRegressionHandler);
-app.get("/api/ci", securityMiddleware, listCiBuildsHandler);
-app.get("/api/ci/:id", securityMiddleware, getCiBuildHandler);
-app.post("/api/ci", securityMiddleware, triggerCiBuildHandler);
-app.get("/api/ci/:id/logs", securityMiddleware, getCiBuildLogsHandler);
-app.get("/api/pr", securityMiddleware, listPullRequestsHandler);
-app.get("/api/pr/:id", securityMiddleware, getPullRequestHandler);
-app.post("/api/pr", securityMiddleware, createPullRequestHandler);
-app.post("/api/pr/:id/merge", securityMiddleware, mergePullRequestHandler);
-app.post("/api/pr/:id/reviewers", securityMiddleware, addPrReviewerHandler);
+app.get("/api/scripts", ...protectedRoute, listScriptsHandler);
+app.post("/api/scripts/run", ...protectedRoute, runScriptHandler);
+app.get("/api/audit", ...protectedRoute, getAuditLogHandler);
+app.get("/api/audit/:id", ...protectedRoute, getAuditEntryHandler);
+app.post("/api/bisect", ...protectedRoute, runBisectHandler);
+app.post("/api/regression", ...protectedRoute, detectRegressionHandler);
+app.get("/api/ci", ...protectedRoute, listCiBuildsHandler);
+app.get("/api/ci/:id", ...protectedRoute, getCiBuildHandler);
+app.post("/api/ci", ...protectedRoute, triggerCiBuildHandler);
+app.get("/api/ci/:id/logs", ...protectedRoute, getCiBuildLogsHandler);
+app.get("/api/pr", ...protectedRoute, listPullRequestsHandler);
+app.get("/api/pr/:id", ...protectedRoute, getPullRequestHandler);
+app.post("/api/pr", ...protectedRoute, createPullRequestHandler);
+app.post("/api/pr/:id/merge", ...protectedRoute, mergePullRequestHandler);
+app.post("/api/pr/:id/reviewers", ...protectedRoute, addPrReviewerHandler);
+
+// Admin routes (require admin role — enforced inside each handler)
+app.get("/api/admin/users", ...protectedRoute, listUsersHandler);
+app.get("/api/admin/activity", ...protectedRoute, allActivityHandler);
+app.get("/api/admin/activity/:userId", ...protectedRoute, userActivityHandler);
+app.get("/api/admin/stats", ...protectedRoute, activityStatsHandler);
+app.get("/api/admin/user-data/:userId", ...protectedRoute, userDataHandler);
+app.get("/api/admin/aggregate-stats", ...protectedRoute, aggregateStatsHandler);
+
+// User activity endpoint — any authenticated user can see their own activity
+app.get("/api/user/activity", ...protectedRoute, async (request, response, next) => {
+  try {
+    const ctx = request.tenantContext;
+    if (!ctx) {
+      response.status(401).json({ error: "Authentication required" });
+      return;
+    }
+
+    const authHeader = request.header("authorization")?.trim();
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : undefined;
+    let userId = ctx.userId;
+
+    // Try to extract userId from session token for accuracy
+    if (token) {
+      try {
+        const session = verifySessionToken(token);
+        userId = session.userId;
+      } catch {
+        // Use ctx.userId as fallback
+      }
+    }
+
+    const limit = Math.min(Number(request.query.limit) || 50, 200);
+    const skip = Number(request.query.skip) || 0;
+
+    const result = await getUserActivity(userId, { limit, skip });
+    response.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
 
 app.use(errorHandler);
 
@@ -308,12 +371,20 @@ app.use((_req, res) => {
 });
 
 export const startServer = async (): Promise<void> => {
-  // Auto-run database migrations on startup
+  // Connect to MongoDB on startup
   try {
-    const { runMigrations } = await import("./db/migrate.js");
-    await runMigrations();
+    const { connectDatabase } = await import("./db/mongodb.js");
+    await connectDatabase();
+    // Create activity_history indexes for fast per-user queries
+    await ensureActivityIndexes();
+    // Rehydrate previously-connected repositories across restarts
+    const { repositoryStore }: { repositoryStore: { hydrateFromDb(): Promise<void> } } = await import("./repositories/repository-store.js");
+    await repositoryStore.hydrateFromDb();
+    // Backfill created_at for users who signed up before the field existed
+    const { backfillUserCreatedAt }: { backfillUserCreatedAt: () => Promise<void> } = await import("./db/persistence.js");
+    await backfillUserCreatedAt();
   } catch (error) {
-    logger.warn("Database migration check failed — continuing without migrations", {
+    logger.warn("MongoDB connection failed — continuing without database", {
       operation: "startup",
       metadata: { error: error instanceof Error ? error.message : String(error) },
     });
@@ -340,7 +411,7 @@ export const startServer = async (): Promise<void> => {
     server.close(() => void (async () => {
       logger.info("HTTP server closed.");
       try {
-        const { closeDatabase } = await import("./db/postgres.js");
+        const { closeDatabase } = await import("./db/mongodb.js");
         await closeDatabase();
         logger.info("Database connection closed.");
         clearTimeout(shutdownTimeout);

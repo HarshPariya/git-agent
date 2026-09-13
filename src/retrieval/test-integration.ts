@@ -2,10 +2,10 @@ import { CodeRetriever } from "./retriever.js";
 import { validateQueryLength, ResourceLimitError } from "../guardrails/retrieval-limits.js";
 import { loadGraphCache, saveGraphCache } from "../graph/graph-cache.js";
 import { metricsCollector } from "../monitoring/observability.js";
-import { closeDatabase } from "../db/postgres.js";
+import { closeDatabase } from "../db/mongodb.js";
 
 const runIntegrationTests = async (): Promise<void> => {
-  console.log(
+  console.warn(
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nFULL INTEGRATION & HARDENING TEST SUITE\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
   );
 
@@ -13,7 +13,7 @@ const runIntegrationTests = async (): Promise<void> => {
   let failed = 0;
 
   const assert = (condition: boolean, name: string): void => {
-    console.log(condition ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`);
+    console.warn(condition ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`);
     if (condition) { ++passed; } else { ++failed; }
   };
 
@@ -40,7 +40,7 @@ const runIntegrationTests = async (): Promise<void> => {
 
   await closeDatabase();
 
-  console.log(
+  console.warn(
     `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nINTEGRATION TEST RESULTS: ${passed} Passed, ${failed} Failed.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
   );
 

@@ -3,26 +3,59 @@
  * Metrics, connected repositories overview, and recent debug sessions
  */
 
-async function checkHealth() {
-  const groqEl = document.getElementById("status-groq");
+/**
+ * Update the navbar connection pill immediately from current repository state.
+ * Exposed globally so connect / disconnect flows can refresh it in real time.
+ */
+function updateServerStatus() {
   const dotEl = document.getElementById("server-status-dot");
   const statusText = document.getElementById("server-status-text");
-
-  try {
-    const health = await api.getHealth();
+  const repos = window.state.repositories || [];
+  const reposCount = Array.isArray(repos) ? repos.filter((r) => r.status !== "disconnected").length : 0;
+  if (reposCount > 0) {
     if (dotEl) dotEl.className = "status-dot online";
     if (statusText) statusText.textContent = "Connected";
+  } else {
+    if (dotEl) dotEl.className = "status-dot warning";
+    if (statusText) statusText.textContent = "No Repos";
+  }
+}
+
+async function checkHealth() {
+  const groqEl = document.getElementById("status-groq");
+
+  try {
+    const [health, reposData] = await Promise.allSettled([
+      api.getHealth(),
+      api.listRepositories(),
+    ]);
+
+    if (health.status === "rejected") throw health.reason;
+
+    const repos = reposData.status === "fulfilled" && reposData.value
+      ? (reposData.value.repositories || reposData.value || [])
+      : [];
+    const isEmpty = !Array.isArray(repos) || repos.filter((r) => r.status !== "disconnected").length === 0;
+
+    if (!isEmpty && (!window.state.repositories || window.state.repositories.length === 0)) {
+      window.setState("repositories", Array.isArray(repos) ? repos : []);
+    }
+    updateServerStatus();
 
     if (groqEl) {
-      groqEl.textContent = health.modules?.agent === "ready"
+      groqEl.textContent = health.value.modules?.agent === "ready"
         ? "Groq AI / Automated Root-Cause Engine ready"
         : "Ready";
     }
   } catch {
+    const dotEl = document.getElementById("server-status-dot");
+    const statusText = document.getElementById("server-status-text");
     if (dotEl) dotEl.className = "status-dot error";
     if (statusText) statusText.textContent = "Offline";
   }
 }
+
+window.updateServerStatus = updateServerStatus;
 
 async function loadDashboardStats() {
   // Show skeleton loading states
@@ -30,11 +63,13 @@ async function loadDashboardStats() {
   const statSessions = document.getElementById("stat-sessions");
   const statFixes = document.getElementById("stat-fixes");
   const statRuns = document.getElementById("stat-runs");
+  const statChanges = document.getElementById("stat-changes");
 
   if (statRepos) statRepos.innerHTML = '<div class="skeleton skeleton-text" style="width:40px;height:28px;display:inline-block"></div>';
   if (statSessions) statSessions.innerHTML = '<div class="skeleton skeleton-text" style="width:40px;height:28px;display:inline-block"></div>';
   if (statFixes) statFixes.innerHTML = '<div class="skeleton skeleton-text" style="width:40px;height:28px;display:inline-block"></div>';
   if (statRuns) statRuns.innerHTML = '<div class="skeleton skeleton-text" style="width:40px;height:28px;display:inline-block"></div>';
+  if (statChanges) statChanges.textContent = "0 files";
 
   // Show skeleton for repos
   const reposContainer = document.getElementById("dashboard-repos");
@@ -86,6 +121,23 @@ async function loadDashboardStats() {
       statFixes.textContent = resolvedCount;
     }
     if (statRuns) statRuns.textContent = runsCount;
+
+    // Fetch real git change counts from connected repos
+    const connectedRepos = Array.isArray(repos) ? repos.filter((r) => r.status !== "disconnected") : [];
+    if (connectedRepos.length > 0 && statChanges) {
+      const statusResults = await Promise.allSettled(
+        connectedRepos.map((r) => api.getGitStatus(r.id)),
+      );
+      let totalChanges = 0;
+      for (const result of statusResults) {
+        if (result.status === "fulfilled" && result.value?.entries) {
+          totalChanges += result.value.entries.length;
+        }
+      }
+      statChanges.textContent = totalChanges > 0 ? `${totalChanges} files` : "0 files";
+    } else if (statChanges) {
+      statChanges.textContent = "0 files";
+    }
 
     renderDashboardRepos(Array.isArray(repos) ? repos : []);
     renderDashboardSessions(Array.isArray(sessions) ? sessions : []);

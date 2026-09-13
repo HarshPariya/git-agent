@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { CodeRetriever } from "./retriever.js";
 import { retrievalEvalDataset } from "./eval-dataset.js";
-import { closeDatabase } from "../db/postgres.js";
+import { closeDatabase } from "../db/mongodb.js";
 
 interface EvalCaseResult {
   id: string;
@@ -47,13 +47,13 @@ const printCaseResult = ({ id, query, expected, returned, rank, latencyMs }: Eva
   const indicator = rank ? "✓" : "✗";
   const topResult = returned[0] ?? "none";
   const firstRelevant = rank ?? "not found";
-  console.log(
+  console.warn(
     `${indicator} ${id}\n` +
-      `  Query: ${query}\n` +
-      `  Expected: ${expected.join(", ")}\n` +
-      `  Top result: ${topResult}\n` +
-      `  First relevant rank: ${firstRelevant}\n` +
-      `  Latency: ${latencyMs.toFixed(1)} ms\n`,
+    `  Query: ${query}\n` +
+    `  Expected: ${expected.join(", ")}\n` +
+    `  Top result: ${topResult}\n` +
+    `  First relevant rank: ${firstRelevant}\n` +
+    `  Latency: ${latencyMs.toFixed(1)} ms\n`,
   );
 };
 
@@ -62,19 +62,19 @@ const printSummary = (results: EvalCaseResult[]): void => {
   const sortedLatency = results.map((r) => r.latencyMs).sort((a, b) => a - b);
   const p95Idx = Math.min(sortedLatency.length - 1, Math.floor(sortedLatency.length * 0.95));
 
-  console.log(
+  console.warn(
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nEVALUATION SUMMARY\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-      `Queries: ${results.length}\n` +
-      `Recall@1: ${(avg((r) => r.recallAt1) * 100).toFixed(1)}%\n` +
-      `Recall@5: ${(avg((r) => r.recallAt5) * 100).toFixed(1)}%\n` +
-      `MRR: ${avg((r) => r.reciprocalRank).toFixed(3)}\n` +
-      `Mean latency: ${avg((r) => r.latencyMs).toFixed(1)} ms\n` +
-      `P95 latency: ${(sortedLatency[p95Idx] ?? 0).toFixed(1)} ms`,
+    `Queries: ${results.length}\n` +
+    `Recall@1: ${(avg((r) => r.recallAt1) * 100).toFixed(1)}%\n` +
+    `Recall@5: ${(avg((r) => r.recallAt5) * 100).toFixed(1)}%\n` +
+    `MRR: ${avg((r) => r.reciprocalRank).toFixed(3)}\n` +
+    `Mean latency: ${avg((r) => r.latencyMs).toFixed(1)} ms\n` +
+    `P95 latency: ${(sortedLatency[p95Idx] ?? 0).toFixed(1)} ms`,
   );
 };
 
 const main = async (): Promise<void> => {
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nRETRIEVAL EVALUATION\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+  console.warn("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nRETRIEVAL EVALUATION\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
   const retriever = new CodeRetriever(process.cwd());
   await retriever.initialize();

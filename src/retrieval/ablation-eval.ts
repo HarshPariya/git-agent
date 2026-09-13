@@ -4,7 +4,7 @@ import { retrievalEvalDataset } from "./eval-dataset.js";
 import { pgVectorSearch } from "../db/vector-store.js";
 import { graphSearch } from "./graph-search.js";
 import { hybridSearch } from "./hybrid-search.js";
-import { closeDatabase } from "../db/postgres.js";
+import { closeDatabase } from "../db/mongodb.js";
 import type { CodeChunk } from "../ingestion/chunker.js";
 import type { CodeGraph } from "../graph/graph-builder.js";
 
@@ -66,7 +66,7 @@ const buildModes = (retriever: CodeRetriever, internals: RetrieverInternals): Mo
 ];
 
 const evaluateMode = async (mode: ModeConfig): Promise<ModeMetrics> => {
-  console.log(`Evaluating Mode: ${mode.name}...`);
+  console.warn(`Evaluating Mode: ${mode.name}...`);
 
   const caseResults: CaseResult[] = await Promise.all(
     retrievalEvalDataset.map(async (tc) => {
@@ -98,12 +98,12 @@ const evaluateMode = async (mode: ModeConfig): Promise<ModeMetrics> => {
 };
 
 const printResults = (metrics: ModeMetrics[]): void => {
-  console.log(
+  console.warn(
     "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
     "ABLATION COMPARISON MATRIX\n" +
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
   );
-  console.log(
+  console.warn(
     "Mode".padEnd(20) +
     "Recall@1".padEnd(12) +
     "Recall@5".padEnd(12) +
@@ -111,20 +111,20 @@ const printResults = (metrics: ModeMetrics[]): void => {
     "Mean Latency".padEnd(15) +
     "P95 Latency",
   );
-  console.log("-".repeat(80));
+  console.warn("-".repeat(80));
 
   for (const m of metrics) {
     const r1 = `${(m.recallAt1 * 100).toFixed(1)}%`;
     const r5 = `${(m.recallAt5 * 100).toFixed(1)}%`;
     const ml = `${m.meanLatencyMs.toFixed(1)} ms`;
     const p95 = `${m.p95LatencyMs.toFixed(1)} ms`;
-    console.log(`${m.modeName.padEnd(20)}${r1.padEnd(32)}${r5.padEnd(12)}${m.mrr.toFixed(3).padEnd(10)}${ml.padEnd(15)}${p95}`);
+    console.warn(`${m.modeName.padEnd(20)}${r1.padEnd(32)}${r5.padEnd(12)}${m.mrr.toFixed(3).padEnd(10)}${ml.padEnd(15)}${p95}`);
   }
-  console.log();
+  console.warn();
 };
 
 const main = async (): Promise<void> => {
-  console.log(
+  console.warn(
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nRETRIEVAL ABLATION BENCHMARK\n" +
     "Comparing: Vector Only | Graph Only | Hybrid | Hybrid + Reranker\n" +
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",

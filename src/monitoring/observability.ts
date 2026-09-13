@@ -1,4 +1,4 @@
-import { pool } from "../db/postgres.js";
+import { getPoolStats } from "../db/mongodb.js";
 
 export interface PercentileMetrics {
   p50Ms: number;
@@ -84,8 +84,8 @@ const buildHealthScore = (
   const clamped = Math.max(0, Math.min(100, Math.round(score)));
   const status: SystemMetrics["healthScore"]["status"] =
     clamped >= 95 ? "EXCELLENT" :
-    clamped >= 80 ? "GOOD" :
-    clamped >= 50 ? "DEGRADED" : "CRITICAL";
+      clamped >= 80 ? "GOOD" :
+        clamped >= 50 ? "DEGRADED" : "CRITICAL";
 
   return {
     status,
@@ -176,7 +176,7 @@ class MetricsCollector {
     llmInputTokens: number;
     llmOutputTokens: number;
   }): void {
-    console.log(
+    console.warn(
       `[RAG METRICS] mode: ${metrics.retrievalMode} | retrieved: ${metrics.retrievedCandidates} | reranked: ${metrics.rerankedCandidates} | sentToLLM: ${metrics.sentToLLM} | ragTokens: ${metrics.ragContextTokens} | memTokens: ${metrics.memoryTokens} | totalInputTokens: ${metrics.llmInputTokens}`,
     );
   }
@@ -235,9 +235,9 @@ class MetricsCollector {
       database: {
         totalQueries: this.dbQueries,
         failedQueries: this.failedDbQueries,
-        poolTotalConnections: pool.totalCount ?? 0,
-        poolIdleConnections: pool.idleCount ?? 0,
-        poolWaitingCount: pool.waitingCount ?? 0,
+        poolTotalConnections: getPoolStats().totalConnections,
+        poolIdleConnections: getPoolStats().idleConnections,
+        poolWaitingCount: getPoolStats().waitingCount,
       },
       embeddings: {
         modelLoadTimeMs: embeddingStats?.modelLoadTimeMs ?? 0,

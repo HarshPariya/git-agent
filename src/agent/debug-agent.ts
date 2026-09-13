@@ -7,6 +7,7 @@ import type { FixPlan } from "./fix-planner.js";
 import type { CriticReview } from "./critic.js";
 import type { InvestigationPlan } from "./planner.js";
 import type { DebugContext as AggregatedContext } from "./context-builder.js";
+import { persistDebugSession } from "../db/persistence.js";
 
 export interface DebugContext {
   readonly repositoryId: string;
@@ -36,11 +37,22 @@ export interface CriticResult {
 }
 
 export interface SessionStreamEvent {
-  readonly type: "state" | "step" | "finding" | "hypothesis" | "fix_plan" | "critic" | "complete" | "error";
+  readonly type: "state" | "step" | "finding" | "hypothesis" | "fix_plan" | "critic" | "test" | "complete" | "error";
   readonly sessionId: string;
   readonly state?: AgentState;
   readonly data: unknown;
   readonly timestamp: string;
+}
+
+export interface TestResultInfo {
+  readonly script: string;
+  readonly command: string;
+  readonly packageManager: string;
+  readonly exitCode: number;
+  readonly durationMs: number;
+  readonly passed: boolean;
+  readonly stdout: string;
+  readonly stderr: string;
 }
 
 export interface ExtendedSessionData {
@@ -51,6 +63,7 @@ export interface ExtendedSessionData {
   fixPlan?: FixPlan;
   backupId?: string;
   criticReview?: CriticReview;
+  testResult?: TestResultInfo;
 }
 
 const STEP_TIMEOUTS_MS: Record<DebugStepType, number> = {
@@ -105,6 +118,12 @@ export class DebugAgentPipeline {
 
     debugSessions.set(sessionId, session);
     extendedDataMap.set(sessionId, { session, stateMachine: sm });
+    void persistDebugSession(session).catch((err: unknown) =>
+      logger.warn("Failed to persist new debug session", {
+        operation: "persistence",
+        metadata: { sessionId, error: err instanceof Error ? err.message : String(err) },
+      }),
+    );
 
     sm.transition("INITIALIZING", "Debug session started", { repositoryId, mode });
     logger.info("Debug session started", { operation: "debug-start", metadata: { sessionId, repositoryId, mode } });
@@ -119,6 +138,14 @@ export class DebugAgentPipeline {
   transitionState(sessionId: string, state: AgentState, reason?: string, metadata?: Record<string, unknown>): void {
     const sm = this.getStateMachine(sessionId);
     sm?.transition(state, reason, metadata);
+    // Broadcast the live state transition so the UI state pill stays in sync.
+    this.emitEvent(sessionId, {
+      type: "state",
+      sessionId,
+      state,
+      data: { reason: reason ?? "", metadata },
+      timestamp: new Date().toISOString(),
+    });
   }
 
   subscribeToSession(sessionId: string, listener: (event: SessionStreamEvent) => void): () => void {
@@ -382,8 +409,12 @@ export class DebugAgentPipeline {
     return session;
   }
 
-  listSessions(tenantId: string): readonly DebugSession[] {
-    return [...debugSessions.values()].filter((s) => s.tenantId === tenantId);
+  listSessions(tenantId: string, userId?: string): readonly DebugSession[] {
+    return [...debugSessions.values()].filter((s) => {
+      if (s.tenantId !== tenantId) return false;
+      if (userId && s.userId !== userId) return false;
+      return true;
+    });
   }
 
   completeSession(sessionId: string): void {
@@ -392,9 +423,16 @@ export class DebugAgentPipeline {
 
     const completed: DebugSession = { ...session, status: "completed", completedAt: new Date().toISOString() };
     debugSessions.set(sessionId, completed);
+    void persistDebugSession(completed).catch((err: unknown) =>
+      logger.warn("Failed to persist completed debug session", {
+        operation: "persistence",
+        metadata: { sessionId, error: err instanceof Error ? err.message : String(err) },
+      }),
+    );
 
     this.transitionState(sessionId, "COMPLETED", "Session completed normally");
-    this.emitEvent(sessionId, { type: "complete", sessionId, data: completed, timestamp: new Date().toISOString() });
+    // Note: the 'complete' event is now emitted by the orchestrator with enriched payload (summary, fixPlan, etc.).
+    // Emitting a bare one here previously caused the frontend to receive an incomplete event before the orchestrator's enriched one.
   }
 
   abortSession(sessionId: string): void {
@@ -403,6 +441,12 @@ export class DebugAgentPipeline {
 
     const aborted: DebugSession = { ...session, status: "abandoned", completedAt: new Date().toISOString() };
     debugSessions.set(sessionId, aborted);
+    void persistDebugSession(aborted).catch((err: unknown) =>
+      logger.warn("Failed to persist aborted debug session", {
+        operation: "persistence",
+        metadata: { sessionId, error: err instanceof Error ? err.message : String(err) },
+      }),
+    );
 
     this.transitionState(sessionId, "ABORTED", "Session aborted by user");
     this.emitEvent(sessionId, { type: "complete", sessionId, data: aborted, timestamp: new Date().toISOString() });

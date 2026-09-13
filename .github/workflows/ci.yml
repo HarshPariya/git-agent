@@ -13,27 +13,28 @@ on:
 
 jobs:
   ci:
-    name: Build, Migrate & Test
+    name: Build & Test
     runs-on: ubuntu-latest
 
     services:
-      postgres:
-        image: pgvector/pgvector:pg16
+      mongodb:
+        image: mongo:7
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: ai_chatbot_test
+          MONGO_INITDB_ROOT_USERNAME: postgres
+          MONGO_INITDB_ROOT_PASSWORD: password
+          MONGO_INITDB_DATABASE: ai_chatbot_test
         ports:
-          - 5432:5432
+          - 27017:27017
         options: >-
-          --health-cmd pg_isready
+          --health-cad "mongosh --eval 'db.adminCommand({ping:1})'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
 
     env:
       NODE_ENV: test
-      DATABASE_URL: postgresql://postgres:password@localhost:5432/ai_chatbot_test
+      MONGODB_URI: mongodb://postgres:password@localhost:27017
+      MONGODB_DB_NAME: ai_chatbot_test
       PORT: 3000
 
     steps:
@@ -54,9 +55,6 @@ jobs:
 
       - name: Build Application
         run: npm run build
-
-      - name: Run Database Migrations
-        run: npm run db:migrate
 
       - name: Run Database Connection Tests
         run: npm run db:test
@@ -98,23 +96,24 @@ jobs:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development')
 
     services:
-      postgres:
-        image: pgvector/pgvector:pg16
+      mongodb:
+        image: mongo:7
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: ai_chatbot_test
+          MONGO_INITDB_ROOT_USERNAME: postgres
+          MONGO_INITDB_ROOT_PASSWORD: password
+          MONGO_INITDB_DATABASE: ai_chatbot_test
         ports:
-          - 5432:5432
+          - 27017:27017
         options: >-
-          --health-cmd pg_isready
+          --health-cad "mongosh --eval 'db.adminCommand({ping:1})'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
 
     env:
       NODE_ENV: test
-      DATABASE_URL: postgresql://postgres:password@localhost:5432/ai_chatbot_test
+      MONGODB_URI: mongodb://postgres:password@localhost:27017
+      MONGODB_DB_NAME: ai_chatbot_test
       PORT: 3000
 
     steps:
@@ -129,9 +128,6 @@ jobs:
 
       - name: Install Dependencies
         run: npm ci
-
-      - name: Run Database Migrations
-        run: npm run db:migrate
 
       - name: Run RAG Benchmarks & Evaluation
         run: npm run rag:eval

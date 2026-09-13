@@ -20,7 +20,6 @@ const STATUS_BADGE_MAP = { ADDED: "badge-success", DELETED: "badge-danger" };
 const TAB_PANEL_MAP = {
   "gd-diff": { btn: "gd-tab-btn-diff", panel: "panel-gd-diff" },
   "gd-all-diff": { btn: "gd-tab-btn-all-diff", panel: "panel-gd-all-diff" },
-  "gd-output": { btn: "gd-tab-btn-output", panel: "panel-gd-output" },
 };
 const LEFT_TAB_MAP = {
   changes: { tab: "gd-tab-changes", panel: "gd-panel-changes", style: "flex" },
@@ -624,18 +623,14 @@ function renderFormattedDiff(containerId, diffText, filePath = "") {
 function switchGitDesktopTab(tabName) {
   const diffBtn = document.getElementById("gd-tab-btn-diff");
   const allDiffBtn = document.getElementById("gd-tab-btn-all-diff");
-  const outputBtn = document.getElementById("gd-tab-btn-output");
   const diffPanel = document.getElementById("panel-gd-diff");
   const allDiffPanel = document.getElementById("panel-gd-all-diff");
-  const outputPanel = document.getElementById("panel-gd-output");
 
   if (diffBtn) diffBtn.className = tabName === "gd-diff" ? "btn btn-secondary btn-sm" : "btn btn-ghost btn-sm";
   if (allDiffBtn) allDiffBtn.className = tabName === "gd-all-diff" ? "btn btn-secondary btn-sm" : "btn btn-ghost btn-sm";
-  if (outputBtn) outputBtn.className = tabName === "gd-output" ? "btn btn-secondary btn-sm" : "btn btn-ghost btn-sm";
 
   if (diffPanel) diffPanel.style.display = tabName === "gd-diff" ? "block" : "none";
   if (allDiffPanel) allDiffPanel.style.display = tabName === "gd-all-diff" ? "block" : "none";
-  if (outputPanel) outputPanel.style.display = tabName === "gd-output" ? "block" : "none";
 
   if (tabName === "gd-all-diff") viewAllFilesDiff();
 }
@@ -821,14 +816,6 @@ async function triggerAICommitAll() {
 
     if (res.success) {
       showToast(`Successfully created ${res.totalCreated} logical commits!`, "success");
-      const consoleOut = document.getElementById("gd-console-output");
-      const logText = `=== COMMIT ALL EXECUTION SUCCESSFUL ===\nBranch: ${res.branch}\nTotal commits created: ${res.totalCreated}\n\n` +
-        (res.commits || []).map((c, idx) =>
-          `[Commit ${idx + 1}] SHA: ${c.commitHash} | ${c.commitMessage}\nFiles (${c.files.length}):\n${c.files.map((f) => `  - ${f}`).join("\n")}\n`
-        ).join("\n");
-      if (consoleOut) consoleOut.textContent = logText;
-      switchGitDesktopTab("gd-output");
-
       await loadGitDesktop();
       const commitAllBtn = document.getElementById("gd-btn-commit-all");
       if (commitAllBtn) commitAllBtn.style.display = "none";
@@ -860,10 +847,7 @@ async function triggerGitFetch() {
 
   showToast("Fetching remote references...", "info");
   try {
-    const res = await api.gitFetch(repo.id);
-    const consoleEl = document.getElementById("gd-console-output");
-    if (consoleEl) consoleEl.textContent = res.output || "Fetch completed.";
-    switchGitDesktopTab("gd-output");
+    await api.gitFetch(repo.id);
     await loadGitDesktop();
     showToast("Fetched latest refs from origin", "success");
   } catch (err) {
@@ -877,9 +861,6 @@ async function triggerGitPull() {
 
   try {
     const res = await api.gitPull(repo.id);
-    const consoleEl = document.getElementById("gd-console-output");
-    if (consoleEl) consoleEl.textContent = res.output || res.error || "Pull executed.";
-    switchGitDesktopTab("gd-output");
 
     const hasConflict = !res.success && (res.error?.includes("conflict") || res.output?.includes("conflict"));
     if (hasConflict) {
@@ -902,11 +883,6 @@ async function triggerGitSync() {
   showToast("Syncing with remote...", "info");
   try {
     const res = await api.gitSync(repo.id);
-    const consoleEl = document.getElementById("gd-console-output");
-    if (consoleEl) {
-      consoleEl.textContent = `Sync Result: ${res.message}\nAhead: ${res.ahead}, Behind: ${res.behind}, Action: ${res.actionRequired}`;
-    }
-    switchGitDesktopTab("gd-output");
     await loadGitDesktop();
 
     if (res.actionRequired === "diverged") {
@@ -1027,10 +1003,6 @@ async function executePushFromModal() {
   try {
     const res = await api.gitPush(repo.id, remote, targetBranch, setUpstream, forceWithLease);
     closeModal("modal-push-preview");
-    const consoleEl = document.getElementById("gd-console-output");
-    if (consoleEl) {
-      consoleEl.textContent = res.output || res.message || "Push completed successfully.";
-    }
     await loadGitDesktop();
 
     if (typeof window.renderPushSummaryView === "function") {
@@ -1153,11 +1125,6 @@ async function triggerAIShip() {
   showToast("AI Ship in progress...", "info");
   try {
     const res = await api.gitShip(repo.id);
-    const consoleEl = document.getElementById("gd-console-output");
-    if (consoleEl) {
-      consoleEl.textContent = `=== AI SHIP COMPLETED ===\n${res.message}\nBranch: ${res.branch}\nPR: ${res.pr ? JSON.stringify(res.pr, null, 2) : "None"}`;
-    }
-    switchGitDesktopTab("gd-output");
     await loadGitDesktop();
     showToast(res.message, "success");
   } catch (err) {

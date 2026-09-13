@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { RepositoryIndexer } from "./indexer.js";
-import { query, closeDatabase } from "../db/postgres.js";
+import { closeDatabase, getCollection } from "../db/mongodb.js";
 
 const safeUnlink = async (filePath: string, retries = 5, delay = 100): Promise<void> => {
   for (let attempt = 0; attempt < retries; attempt++) {
@@ -18,7 +18,7 @@ const safeUnlink = async (filePath: string, retries = 5, delay = 100): Promise<v
 };
 
 const runIndexerLifecycleTest = async () => {
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nAUTOMATIC INDEXING LIFECYCLE TEST\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+  console.warn("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nAUTOMATIC INDEXING LIFECYCLE TEST\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
   const repoDir = process.cwd();
   const indexer = new RepositoryIndexer(repoDir, "test-auto-repo");
@@ -27,7 +27,7 @@ const runIndexerLifecycleTest = async () => {
   let passed = 0;
   let failed = 0;
   const assert = (ok: boolean, name: string) => {
-    console.log(ok ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`);
+    console.warn(ok ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`);
     if (ok) { passed++; } else { failed++; }
   };
 
@@ -35,35 +35,29 @@ const runIndexerLifecycleTest = async () => {
     await fs.mkdir(path.dirname(tempFile), { recursive: true });
 
     // 1. Create temp file & auto-index
-    console.log("1. Creating temporary file & auto-indexing...");
+    console.warn("1. Creating temporary file & auto-indexing...");
     await fs.writeFile(tempFile, "export function calculateDiscount(price: number) { return price * 0.9; }");
 
     const indexStats = await indexer.indexSingleFile(tempFile);
     assert(indexStats.action === "indexed", "Single file indexed successfully");
     assert(indexStats.chunksCount > 0, "Created chunks for newly added file");
 
-    const dbCheck1 = await query(
-      `SELECT COUNT(*) FROM code_chunks WHERE repository = $1 AND file_path = $2`,
-      ["test-auto-repo", path.normalize(tempFile)],
-    );
-    assert(Number(dbCheck1.rows[0]?.count ?? 0) > 0, "DB contains indexed chunks for temp file");
+    const dbCheck1 = await getCollection("code_chunks").countDocuments({ repository: "test-auto-repo", file_path: path.normalize(tempFile) });
+    assert(dbCheck1 > 0, "DB contains indexed chunks for temp file");
 
     // 2. Delete temp file & test auto-cleanup
-    console.log("\n2. Deleting temporary file & testing auto-cleanup...");
+    console.warn("\n2. Deleting temporary file & testing auto-cleanup...");
     await safeUnlink(tempFile);
     const deleteStats = await indexer.indexSingleFile(tempFile);
     assert(deleteStats.action === "deleted", "Detected file removal automatically");
 
-    const dbCheck2 = await query(
-      `SELECT COUNT(*) FROM code_chunks WHERE repository = $1 AND file_path = $2`,
-      ["test-auto-repo", path.normalize(tempFile)],
-    );
-    assert(Number(dbCheck2.rows[0]?.count ?? 0) === 0, "DB automatically pruned all chunks for deleted file");
+    const dbCheck2 = await getCollection("code_chunks").countDocuments({ repository: "test-auto-repo", file_path: path.normalize(tempFile) });
+    assert(dbCheck2 === 0, "DB automatically pruned all chunks for deleted file");
   } finally {
-    await query(`DELETE FROM code_chunks WHERE repository = $1`, ["test-auto-repo"]);
+    await getCollection("code_chunks").deleteMany({ repository: "test-auto-repo" });
     await closeDatabase();
 
-    console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nINDEXER LIFECYCLE TEST RESULTS: ${passed} Passed, ${failed} Failed.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.warn(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nINDEXER LIFECYCLE TEST RESULTS: ${passed} Passed, ${failed} Failed.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
     if (failed > 0) process.exitCode = 1;
   }
 };

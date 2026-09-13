@@ -9,7 +9,7 @@ Thank you for contributing to the Autonomous AI Git Debugging Agent project. Thi
 ### Prerequisites
 - **Node.js**: v22.x LTS (recommended) or v20.x+
 - **Git**: 2.38+
-- **Docker Desktop** (optional, for running PostgreSQL + pgvector locally)
+- **MongoDB Atlas** account (or local MongoDB instance for development)
 
 ### Quick Start
 ```bash
@@ -87,7 +87,7 @@ The CI pipeline ([`.github/workflows/ci.yml`](file:///c:/Users/harsh/Desktop/Cod
 1. Clean dependency installation (`npm ci`)
 2. Full type checking (`npx tsc --noEmit`)
 3. Compilation (`npm run build`)
-4. PostgreSQL + pgvector migrations (`npm run db:migrate`)
+4. MongoDB Atlas connection tests (`npm run db:test`)
 5. Full test suite runner (`npm test`)
 6. RAG security and boundary verification
 

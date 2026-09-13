@@ -51,12 +51,12 @@ graph TD
         GRAPH_BUILDER["Code Knowledge Graph (Nodes & Edges)"]
         HYBRID_RETRIEVER["Hybrid Search (Graph + Semantic Vector)"]
         RERANKER["Reciprocal Rank Fusion (RRF) Reranker"]
-        VECTOR_STORE["pgvector / Standalone Feature Hash Store"]
+        VECTOR_STORE["MongoDB Atlas Vector Search / Standalone Feature Hash Store"]
     end
 
     subgraph "Storage & Workspace Layer"
         LOCAL_REPOS["Local OS Workspaces & Repositories"]
-        POSTGRES["PostgreSQL 16 + pgvector (Optional)"]
+        POSTGRES["MongoDB Atlas (Optional)"]
         DISK_CACHE["Graph Cache (.cache/graphrag/)"]
         AUDIT_LOG["In-Memory & Persistent Audit Store"]
     end
@@ -308,7 +308,7 @@ flowchart LR
     RELATIONS --> GRAPH
     
     CHUNKER --> EMBEDDER[384-Dim Feature Hashing]
-    EMBEDDER --> VECTOR_STORE[(Postgres pgvector / Memory Store)]
+    EMBEDDER --> VECTOR_STORE[(MongoDB Atlas Vector Search / Memory Store)]
     
     QUERY[User Query] --> HYBRID[Hybrid Search Engine]
     GRAPH --> HYBRID
@@ -319,7 +319,7 @@ flowchart LR
 
 1. **AST Parsing (`src/ingestion/parser.ts`)**: Traverses source files with the TypeScript Compiler API, extracting symbols, function boundaries, class declarations, and import specifiers.
 2. **Graph Construction (`src/graph/graph-builder.ts`)**: Constructs a directed multi-graph where nodes represent code entities (files, functions, modules) and edges represent interactions (`CONTAINS`, `IMPORTS`, `CALLS`).
-3. **Embeddings & Persistence (`src/ingestion/embedder.ts`, `src/db/vector-store.ts`)**: Computes 384-dimensional normalized feature embeddings using deterministic character and word n-gram feature hashing. Optionally persists to PostgreSQL with `vector` type and HNSW indexing.
+3. **Embeddings & Persistence (`src/ingestion/embedder.ts`, `src/db/vector-store.ts`)**: Computes 384-dimensional normalized feature embeddings using deterministic character and word n-gram feature hashing. Optionally persists to MongoDB with Atlas Vector Search indexing.
 4. **Hybrid Search & Fusion (`src/retrieval/hybrid-search.ts`, `reranker.ts`)**: Merges graph traversal scores with vector similarity scores using reciprocal rank fusion for pinpoint precision.
 
 ---

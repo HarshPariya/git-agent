@@ -34,9 +34,9 @@ export const parseTypeScriptAST = (content: string, filePath: string): ASTParseR
     if (ts.isImportDeclaration(node)) {
       const names = node.importClause
         ? [
-            node.importClause.name?.getText(sourceFile),
-            ...(node.importClause.namedBindings ? extractNamedImports(node.importClause.namedBindings) : []),
-          ].filter((n): n is string => n !== undefined)
+          node.importClause.name?.getText(sourceFile),
+          ...(node.importClause.namedBindings ? extractNamedImports(node.importClause.namedBindings) : []),
+        ].filter((n): n is string => n !== undefined)
         : [];
 
       imports.push({

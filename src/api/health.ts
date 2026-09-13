@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { env } from "../config/env.js";
-import { getDatabaseHealth } from "../db/postgres.js";
+import { getDatabaseHealth } from "../db/mongodb.js";
 import { getRetrievalRuntimeStatus } from "../retrieval/runtime-status.js";
 
 export const healthHandler = async (_request: Request, response: Response): Promise<void> => {

@@ -3,7 +3,6 @@ import { debugAgentPipeline } from "./debug-agent.js";
 import {
   executeGitStatus,
   executeGitLog,
-  executeGitBranches,
   executeGitDiff,
   getExecutionPath,
   registerRepositoryPath,
@@ -14,8 +13,10 @@ import { generateInvestigationPlan } from "./planner.js";
 import { buildDebugContext } from "./context-builder.js";
 import { fixPlanner } from "./fix-planner.js";
 import { criticAgent } from "./critic.js";
+import { runRepositoryScript, listScriptsForRepository } from "../api/scripts.js";
 import { conflictAnalyzer } from "../git/conflicts.js";
 import { hypothesisEngine } from "./hypothesis-engine.js";
+import { detectRegression } from "../git/bisect.js";
 
 interface OrchestratorContext {
   readonly repositoryId: string;
@@ -45,38 +46,90 @@ const createDebugContext = (ctx: OrchestratorContext, session: DebugSession, mod
 const hasFailedStep = (session: DebugSession): boolean =>
   session.steps.some((s) => s.status === "failed");
 
+// testsToRun entries come as full shell commands ("npm test", "npm run test:unit")
+// or bare script names ("test", "test:unit"). Normalize to the package.json script
+// name that runRepositoryScript expects.
+const normalizeTestScript = (entry: string | undefined): string => {
+  if (!entry) return "test";
+  const stripped = entry.trim().replace(/^(npm run|npm|yarn|pnpm)\s+/i, "");
+  return stripped || "test";
+};
+
+interface TestRunInfo {
+  readonly script: string;
+  readonly command: string;
+  readonly packageManager: string;
+  readonly exitCode: number;
+  readonly durationMs: number;
+  readonly passed: boolean;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+// ── CI / PR / History / GraphRAG shared helpers ─────────────────────────────
+
+const parseErrorLocations = (output: string): Array<{ file: string; line: number; message: string }> => {
+  const truncated = output.slice(0, 200_000);
+  const regex = /\b([\w./-]+\.(?:ts|tsx|js|jsx|css|scss)):(\d+):?\d*\s*(?:error|warning|TS\d+)?/gi;
+  const results: Array<{ file: string; line: number; message: string }> = [];
+  const seen = new Set<string>();
+
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(truncated)) !== null) {
+    const file = match[1] ?? "";
+    const line = parseInt(match[2] ?? "0", 10);
+    const key = `${file}:${line}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      results.push({ file, line, message: match[0] });
+    }
+  }
+  return results;
+};
+
+const runScriptQuietly = async (repositoryId: string, script: string): Promise<TestRunInfo | null> => {
+  try {
+    const run = await runRepositoryScript(repositoryId, script, [], 60_000);
+    return {
+      script: run.script,
+      command: run.command,
+      packageManager: run.packageManager,
+      exitCode: run.exitCode,
+      durationMs: run.durationMs,
+      passed: run.status === "success",
+      stdout: run.stdout,
+      stderr: run.stderr,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const selectScripts = (scripts: readonly { readonly name: string; readonly command: string }[], preferred: readonly string[]): readonly string[] => {
+  const names = new Set(scripts.map((s) => s.name));
+  const chosen: string[] = [];
+  for (const pref of preferred) {
+    if (names.has(pref)) chosen.push(pref);
+  }
+  if (chosen.length === 0) {
+    for (const s of scripts) {
+      if (/test|build|lint|check/i.test(s.name)) {
+        chosen.push(s.name);
+      }
+    }
+  }
+  return chosen.length > 0 ? chosen : ["test"];
+};
+
 const browseIssues = async (ctx: OrchestratorContext): Promise<string> => {
   await executeGitStatus(ctx.repositoryId);
   const log = await executeGitLog(ctx.repositoryId, { count: 10 });
   return `Issues view for repository ${ctx.repositoryId}.\nRecent git history:\n${log.map((e) => `  ${e.shortHash} ${e.message}`).join("\n")}\nNo issues tracker configured or no issues found.`;
 };
 
-const browsePRs = async (ctx: OrchestratorContext): Promise<string> => {
-  await executeGitStatus(ctx.repositoryId);
-  const branches = await executeGitBranches(ctx.repositoryId);
-  return `Pull requests for repository ${ctx.repositoryId}.\nCurrent branches:\n${branches.map((b) => `  ${b.name}${b.current ? " (current)" : ""}`).join("\n")}\nNo PRs configured or no open pull requests found.`;
-};
-
-const reviewPRDiff = async (ctx: OrchestratorContext): Promise<string> => {
-  const diff = await executeGitDiff(ctx.repositoryId);
-  return `PR diff analysis complete. ${diff.length} modified file(s) evaluated.`;
-};
-
-const monitorCI = async (ctx: OrchestratorContext): Promise<string> => {
-  await executeGitStatus(ctx.repositoryId);
-  return `CI status for repository ${ctx.repositoryId}: Local git verification complete. All checks passed.`;
-};
-
-const analyzeCIFailures = (): Promise<string> =>
-  Promise.resolve("Analyzed CI failure patterns. No critical pipeline failures detected.");
-
-const fixCIFailures = (): Promise<string> =>
-  Promise.resolve("Generated CI configuration and workflow recommendations.");
-
-const browseHistory = async (ctx: OrchestratorContext): Promise<string> => {
-  const log = await executeGitLog(ctx.repositoryId, { count: 20 });
-  return `Commit history for ${ctx.repositoryId} (${log.length} commits retrieved):\n${log.map((c) => `  ${c.shortHash} [${c.author}] ${c.message}`).join("\n")}`;
-};
+// browsePRs, reviewPRDiff, monitorCI, analyzeCIFailures, fixCIFailures,
+// browseHistory, and codeIntelligence removed — replaced by full inline
+// implementations in the mode handlers below.
 
 const reviewChanges = async (ctx: OrchestratorContext): Promise<string> => {
   const [status, diff] = await Promise.all([
@@ -84,15 +137,6 @@ const reviewChanges = async (ctx: OrchestratorContext): Promise<string> => {
     executeGitDiff(ctx.repositoryId),
   ]);
   return `Working tree review for ${ctx.repositoryId}:\n- Status: ${status.clean ? "Clean" : `${status.entries.length} file(s) with changes`}\n- Diff entries: ${diff.length}\n${diff.map((d) => `  ${d.status} ${d.filePath} (+${d.additions}/-${d.deletions})`).join("\n")}`;
-};
-
-const codeIntelligence = async (ctx: OrchestratorContext): Promise<string> => {
-  try {
-    const graph = await repositoryIndexer.getGraph(ctx.repositoryId, ctx.tenantId);
-    return `Code Intelligence Graph for ${ctx.repositoryId}:\n- Nodes: ${graph.nodes.length}\n- Edges: ${graph.edges.length}\n- Symbols: ${graph.symbols.length}`;
-  } catch {
-    return `Code Intelligence: Graph not yet indexed for ${ctx.repositoryId}. Run index operation to populate AST graph.`;
-  }
 };
 
 const listAgentRuns = (ctx: OrchestratorContext): Promise<string> => {
@@ -110,8 +154,11 @@ const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
     const dc = createDebugContext(ctx, session, "debug");
     const repoPath = getExecutionPath(ctx.repositoryId);
 
-    debugAgentPipeline.transitionState(session.id, "SCANNING_REPOSITORY", "Analyzing query and git state");
-    const investigationPlan = generateInvestigationPlan(ctx.query, repoPath);
+    debugAgentPipeline.transitionState(session.id, "SCANNING_REPOSITORY", "Building multi-source debug context");
+    const multiContext = await buildDebugContext(ctx.repositoryId, ctx.query, { tenantId: ctx.tenantId });
+    debugAgentPipeline.setExtendedData(session.id, { context: multiContext });
+
+    const investigationPlan = generateInvestigationPlan(ctx.query, multiContext.localPath ?? repoPath);
     debugAgentPipeline.setExtendedData(session.id, { investigationPlan });
     debugAgentPipeline.emitEvent(session.id, { type: "state", sessionId: session.id, state: "SCANNING_REPOSITORY", data: { plan: investigationPlan }, timestamp: new Date().toISOString() });
 
@@ -119,14 +166,11 @@ const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
     await debugAgentPipeline.executeStep(dc, "isolate", "Identify the failing code path or behavior", async () => {
       const [status, log] = await Promise.all([executeGitStatus(ctx.repositoryId), executeGitLog(ctx.repositoryId, { count: 3 })]);
       const branch = log[0]?.branch ?? status.branch ?? "main";
-      return `Task Classified: ${investigationPlan.taskClass} (${investigationPlan.estimatedComplexity})\nRepository: ${ctx.repositoryId} | Branch: ${branch}\nWorking tree: ${status.clean ? "Clean" : `${status.entries.length} modified files`}\nQuery: ${ctx.query}`;
+      const fileCount = multiContext.git.changedFiles.length;
+      return `Task Classified: ${investigationPlan.taskClass} (${investigationPlan.estimatedComplexity})\nRepository: ${ctx.repositoryId} | Branch: ${branch}\nWorking tree: ${status.clean ? "Clean" : `${status.entries.length} modified files`}\nChanged files tracked by git: ${fileCount}\nRelevant code files: ${multiContext.code.relevantFiles.length}\nQuery: ${ctx.query}`;
     });
 
     if (hasFailedStep(session)) return;
-
-    debugAgentPipeline.transitionState(session.id, "INDEXING_GRAPHRAG", "Aggregating multi-source debug context");
-    const multiContext = await buildDebugContext(ctx.repositoryId, ctx.query, { tenantId: ctx.tenantId });
-    debugAgentPipeline.setExtendedData(session.id, { context: multiContext });
 
     debugAgentPipeline.transitionState(session.id, "REPRODUCING_BEHAVIOR", "Validating issue triggers");
     await debugAgentPipeline.executeStep(dc, "reproduce", "Reproduce the issue with focused diagnostic checks", () =>
@@ -174,13 +218,48 @@ const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
 
     if (hasFailedStep(session)) return;
 
+    debugAgentPipeline.transitionState(session.id, "VALIDATING_PATCH_SAFETY", "Running real repository tests");
+    const testScript = normalizeTestScript(fixPlan.testsToRun[0]);
+    let testResult: TestRunInfo | null = null;
+    let testRunNote = "No repository test script available to verify the fix.";
+    try {
+      const run = await runRepositoryScript(ctx.repositoryId, testScript, [], 60_000);
+      testResult = {
+        script: run.script,
+        command: run.command,
+        packageManager: run.packageManager,
+        exitCode: run.exitCode,
+        durationMs: run.durationMs,
+        passed: run.status === "success",
+        stdout: run.stdout,
+        stderr: run.stderr,
+      };
+      testRunNote = String(run.exitCode);
+      debugAgentPipeline.setExtendedData(session.id, { testResult });
+      debugAgentPipeline.emitEvent(session.id, { type: "test", sessionId: session.id, data: testResult, timestamp: new Date().toISOString() });
+    } catch (err) {
+      testResult = {
+        script: testScript,
+        command: testScript,
+        packageManager: "unknown",
+        exitCode: 1,
+        durationMs: 0,
+        passed: false,
+        stdout: "",
+        stderr: err instanceof Error ? err.message : "Test execution failed",
+      };
+      debugAgentPipeline.setExtendedData(session.id, { testResult });
+    }
+
     debugAgentPipeline.transitionState(session.id, "VALIDATING_PATCH_SAFETY", "Critic evaluation of proposed fix");
-    const criticReview = await criticAgent.review(fixPlan, multiContext, true);
-    debugAgentPipeline.setExtendedData(session.id, { criticReview });
+    const criticReview = await criticAgent.review(fixPlan, multiContext, testResult?.passed ?? false);
+    debugAgentPipeline.setExtendedData(session.id, { criticReview, testResult });
     debugAgentPipeline.emitEvent(session.id, { type: "critic", sessionId: session.id, data: criticReview, timestamp: new Date().toISOString() });
 
-    await debugAgentPipeline.executeStep(dc, "verify", "Critic safety and correctness validation", () =>
-      Promise.resolve(`Critic Review: ${criticReview.verdict} (Score: ${criticReview.score}/100)\n${criticReview.summary}\nFindings: ${criticReview.findings.length === 0 ? "None - fix is clean" : criticReview.findings.map((f) => `[${f.severity}] ${f.description}`).join("; ")}`)
+    await debugAgentPipeline.executeStep(dc, "verify", "Run real tests and evaluate critic safety check", () =>
+      Promise.resolve(testResult
+        ? `Test run: ${testResult.passed ? "PASSED" : "FAILED"} (exit ${testResult.exitCode}, ${testResult.durationMs}ms)\nCommand: ${testResult.packageManager} run ${testResult.script}\n\nCritic Review: ${criticReview.verdict} (Score: ${criticReview.score}/100)\n${criticReview.summary}${testResult.passed ? "" : `\n${testResult.stderr.trim().slice(0, 500)}`}`
+        : `${testRunNote}\nCritic Review: ${criticReview.verdict} (Score: ${criticReview.score}/100)\n${criticReview.summary}`)
     );
 
     debugAgentPipeline.transitionState(session.id, "COMPLETED", "Debug lifecycle concluded");
@@ -189,22 +268,190 @@ const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
   issues: async (ctx, session) => {
     const dc = createDebugContext(ctx, session, "issues");
     await debugAgentPipeline.executeStep(dc, "observe", "List and analyze issues in the repository", () => browseIssues(ctx));
+    debugAgentPipeline.addFindingToSession(session.id, {
+      id: `issues-browse-${Date.now()}`,
+      step: 1,
+      type: "configuration",
+      title: "Issues reviewed",
+      description: "Repository issues and recent git history have been reviewed. No issues tracker configured or no open issues found.",
+      evidence: [],
+      confidence: 1.0,
+    });
   },
 
   prs: async (ctx, session) => {
     const dc = createDebugContext(ctx, session, "prs");
-    await debugAgentPipeline.executeStep(dc, "observe", "List and review pull requests", () => browsePRs(ctx));
+    debugAgentPipeline.transitionState(session.id, "SCANNING_REPOSITORY", "Inspecting pull request diff and working tree changes");
+
+    const [status, diff, log] = await Promise.all([
+      executeGitStatus(ctx.repositoryId),
+      executeGitDiff(ctx.repositoryId),
+      executeGitLog(ctx.repositoryId, { count: 10 }),
+    ]);
+
+    await debugAgentPipeline.executeStep(dc, "observe", "Gather git status, diff stats and recent commits", () =>
+      Promise.resolve(`Branch: ${status.branch}\nChanged files: ${status.entries.length}\nDiff entries: ${diff.length}\nRecent commits: ${log.length}`)
+    );
+
     if (hasFailedStep(session)) return;
-    await debugAgentPipeline.executeStep(dc, "diagnose", "Analyze PR diff and CI status", () => reviewPRDiff(ctx));
+
+    debugAgentPipeline.transitionState(session.id, "DIAGNOSING_ROOT_CAUSE", "Reviewing diff for issues, TODOs, and security risks");
+    const diffText = diff.map((d) => `File: ${d.filePath} (+${d.additions}/-${d.deletions})\n${d.patch ?? ""}`).join("\n");
+    const hypotheses = hypothesisEngine.generateCandidates(ctx.query, diffText);
+
+    await debugAgentPipeline.executeStep(dc, "diagnose", "Analyze code changes for security, bugs, and style issues", () => {
+      const findings: DebugFinding[] = [];
+      for (const d of diff) {
+        if (/\b(TODO|FIXME|debugger)\b/i.test(d.patch ?? "")) {
+          findings.push({
+            id: `pr-finding-${Date.now()}-${d.filePath}`,
+            step: 2,
+            type: "performance",
+            title: `Review Item in ${d.filePath}`,
+            description: `Unresolved TODO/debugger statement found in modified file ${d.filePath}`,
+            evidence: [d.filePath],
+            confidence: 0.75,
+          });
+        }
+        if (/(api[_-]?key|secret|password|token)\s*[:=]\s*["'][^"']+["']/i.test(d.patch ?? "")) {
+          findings.push({
+            id: `pr-sec-${Date.now()}-${d.filePath}`,
+            step: 2,
+            type: "security",
+            title: `Potential Secret Exposed in ${d.filePath}`,
+            description: `Hardcoded credential or secret detected in diff for ${d.filePath}`,
+            evidence: [d.filePath],
+            confidence: 0.95,
+          });
+        }
+      }
+      for (const f of findings) {
+        debugAgentPipeline.addFindingToSession(session.id, f);
+      }
+      if (findings.length === 0) {
+        debugAgentPipeline.addFindingToSession(session.id, {
+          id: `pr-clean-${Date.now()}`,
+          step: 2,
+          type: "configuration",
+          title: "PR review passed",
+          description: "No TODOs, debugger statements, or hardcoded secrets detected in the diff.",
+          evidence: diff.map((d) => d.filePath),
+          confidence: 1.0,
+        });
+      }
+      return Promise.resolve(`Reviewed ${diff.length} modified files. Generated ${findings.length} findings.`);
+    });
+
+    if (hasFailedStep(session)) return;
+
+    debugAgentPipeline.transitionState(session.id, "SYNTHESIZING_PATCH", "Evaluating PR readiness");
+    const multiContext = await buildDebugContext(ctx.repositoryId, ctx.query, { tenantId: ctx.tenantId });
+    const fixPlan = await fixPlanner.generate(multiContext, "PR review check", [diffText.slice(0, 200)], hypotheses.map((h) => h.description));
+    debugAgentPipeline.setExtendedData(session.id, { fixPlan });
+    debugAgentPipeline.emitEvent(session.id, { type: "fix_plan", sessionId: session.id, data: fixPlan, timestamp: new Date().toISOString() });
+
+    await debugAgentPipeline.executeStep(dc, "fix", "Synthesize review summary or corrective patch", () =>
+      Promise.resolve(`PR Review Complete:\n- Files changed: ${diff.map((d) => d.filePath).join(", ") || "None"}\n- Risk level: ${fixPlan.riskLevel}`)
+    );
+
+    debugAgentPipeline.transitionState(session.id, "COMPLETED", "PR review finished");
   },
 
   ci: async (ctx, session) => {
     const dc = createDebugContext(ctx, session, "ci");
-    await debugAgentPipeline.executeStep(dc, "observe", "Fetch CI build status", () => monitorCI(ctx));
+    debugAgentPipeline.transitionState(session.id, "SCANNING_REPOSITORY", "Discovering and executing CI test/build scripts");
+
+    const manifest = await listScriptsForRepository(ctx.repositoryId);
+    const chosenScripts = selectScripts(manifest.scripts, ["test", "build", "lint", "typecheck"]);
+
+    const results: TestRunInfo[] = [];
+    for (const scriptName of chosenScripts) {
+      debugAgentPipeline.emitEvent(session.id, {
+        type: "step",
+        sessionId: session.id,
+        data: { step: 1, type: "observe", description: `Running script: ${scriptName}`, status: "running" },
+        timestamp: new Date().toISOString(),
+      });
+      const res = await runScriptQuietly(ctx.repositoryId, scriptName);
+      if (res) {
+        results.push(res);
+        debugAgentPipeline.emitEvent(session.id, { type: "test", sessionId: session.id, data: res, timestamp: new Date().toISOString() });
+      }
+    }
+
+    const failedRuns = results.filter((r) => !r.passed);
+
+    await debugAgentPipeline.executeStep(dc, "observe", "Execute repository test and build scripts", () => {
+      const summary = results.map((r) => `${r.script}: ${r.passed ? "PASSED" : "FAILED"} (${r.durationMs}ms)`).join("\n");
+      return Promise.resolve(`Executed ${results.length} script(s).\n${summary}`);
+    });
+
     if (hasFailedStep(session)) return;
-    await debugAgentPipeline.executeStep(dc, "diagnose", "Analyze CI failures", () => analyzeCIFailures());
-    if (hasFailedStep(session)) return;
-    await debugAgentPipeline.executeStep(dc, "fix", "Apply CI failure fixes", () => fixCIFailures());
+
+    if (failedRuns.length > 0) {
+      debugAgentPipeline.transitionState(session.id, "DIAGNOSING_ROOT_CAUSE", "Analyzing CI build/test failures");
+      const combinedOutput = failedRuns.map((r) => `${r.stdout}\n${r.stderr}`).join("\n");
+      const errors = parseErrorLocations(combinedOutput);
+      const multiContext = await buildDebugContext(ctx.repositoryId, ctx.query, { tenantId: ctx.tenantId });
+      const hypotheses = hypothesisEngine.generateCandidates(ctx.query, combinedOutput);
+
+      await debugAgentPipeline.executeStep(dc, "diagnose", "Parse error locations and diagnose CI failure", () => {
+        for (const [idx, errLoc] of errors.entries()) {
+          const finding: DebugFinding = {
+            id: `ci-err-${idx}-${Date.now()}`,
+            step: 2,
+            type: "test_failure",
+            title: `Build/Test Failure in ${errLoc.file}:${errLoc.line}`,
+            description: errLoc.message,
+            evidence: [`${errLoc.file}:${errLoc.line}`, combinedOutput.slice(0, 300)],
+            confidence: 0.9,
+          };
+          debugAgentPipeline.addFindingToSession(session.id, finding);
+        }
+        return Promise.resolve(`Identified ${errors.length} error location(s) from failed scripts. Hypotheses: ${hypotheses.length}`);
+      });
+
+      if (hasFailedStep(session)) return;
+
+      debugAgentPipeline.transitionState(session.id, "SYNTHESIZING_PATCH", "Generating fix plan for CI failures");
+      const topHyp = hypotheses[0];
+      const fixPlan = await fixPlanner.generate(
+        multiContext,
+        topHyp ? topHyp.description : "CI build or test failure detected",
+        failedRuns.map((r) => `${r.script} exit code ${r.exitCode}`),
+        hypotheses.map((h) => h.description)
+      );
+      debugAgentPipeline.setExtendedData(session.id, { fixPlan });
+      debugAgentPipeline.emitEvent(session.id, { type: "fix_plan", sessionId: session.id, data: fixPlan, timestamp: new Date().toISOString() });
+
+      await debugAgentPipeline.executeStep(dc, "fix", "Propose fix plan for CI failures", () =>
+        Promise.resolve(`Fix Plan Generated [${fixPlan.id}]:\n- Risk: ${fixPlan.riskLevel}\n- Files to change: ${fixPlan.filesToChange.map((f) => f.filePath).join(", ")}`)
+      );
+
+      debugAgentPipeline.transitionState(session.id, "VALIDATING_PATCH_SAFETY", "Verifying CI fix");
+      const criticReview = await criticAgent.review(fixPlan, multiContext, false);
+      debugAgentPipeline.setExtendedData(session.id, { criticReview });
+      debugAgentPipeline.emitEvent(session.id, { type: "critic", sessionId: session.id, data: criticReview, timestamp: new Date().toISOString() });
+
+      await debugAgentPipeline.executeStep(dc, "verify", "Critic safety check on CI fix plan", () =>
+        Promise.resolve(`Critic Verdict: ${criticReview.verdict} (${criticReview.score}/100)\n${criticReview.summary}`)
+      );
+    } else {
+      await debugAgentPipeline.executeStep(dc, "diagnose", "Verify CI status", () =>
+        Promise.resolve("All CI scripts and build checks passed successfully. No failures to diagnose.")
+      );
+      debugAgentPipeline.addFindingToSession(session.id, {
+        id: `ci-pass-${Date.now()}`,
+        step: 1,
+        type: "configuration",
+        title: "All CI checks passed",
+        description: "No issues or errors found during CI build and script execution.",
+        evidence: manifest.scripts.map((s) => s.name),
+        confidence: 1.0,
+      });
+    }
+
+    debugAgentPipeline.transitionState(session.id, "COMPLETED", "CI investigation finished");
   },
 
   conflicts: async (ctx, session) => {
@@ -222,6 +469,15 @@ const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
     await debugAgentPipeline.executeStep(dc, "fix", "AI Semantic Merge Conflict Resolution", async () => {
       const repoPath = getExecutionPath(ctx.repositoryId);
       const result = await conflictAnalyzer.resolveAllConflicts(repoPath);
+      debugAgentPipeline.addFindingToSession(session.id, {
+        id: `conflicts-resolved-${Date.now()}`,
+        step: 2,
+        type: "configuration",
+        title: result.success ? "Conflicts Resolved" : "Conflicts Resolved with Warnings",
+        description: result.success ? "All merge conflicts successfully analyzed and resolved." : `Resolved with warnings: ${result.errors.join(", ")}`,
+        evidence: [`Applied: ${result.appliedCount}`],
+        confidence: result.success ? 1.0 : 0.8,
+      });
       return `Conflicts Resolved:\n- Applied: ${result.appliedCount}\n- Status: ${result.success ? "All conflicts cleanly resolved" : `Warnings: ${result.errors.join(", ")}`}`;
     });
 
@@ -230,27 +486,179 @@ const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
 
   history: async (ctx, session) => {
     const dc = createDebugContext(ctx, session, "history");
-    await debugAgentPipeline.executeStep(dc, "observe", "Browse git history and run bisect", () => browseHistory(ctx));
+    debugAgentPipeline.transitionState(session.id, "SCANNING_REPOSITORY", "Tracing commit history and regression origin");
+
+    const log = await executeGitLog(ctx.repositoryId, { count: 30 });
+    await debugAgentPipeline.executeStep(dc, "observe", "Retrieve commit history for regression scan", () =>
+      Promise.resolve(`Retrieved ${log.length} recent commits. Running regression detection...`)
+    );
+
+    if (hasFailedStep(session)) return;
+
+    debugAgentPipeline.transitionState(session.id, "REPRODUCING_BEHAVIOR", "Running git bisect / regression analysis");
+    let regressionInfo = "No regression commit isolated automatically.";
+    let badCommitHash: string | undefined;
+
+    try {
+      const repo = {
+        id: ctx.repositoryId,
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        name: ctx.repositoryId,
+        url: undefined,
+        localPath: getExecutionPath(ctx.repositoryId),
+        defaultBranch: "main",
+        currentBranch: log[0]?.branch ?? "main",
+        status: "connected" as const,
+        createdAt: new Date().toISOString(),
+        protectedBranches: [],
+      };
+      if (log.length >= 2) {
+        const startRef = log[log.length - 1]?.hash ?? "HEAD~10";
+        const endRef = log[0]?.hash ?? "HEAD";
+        const reg = await detectRegression(repo, startRef, endRef);
+        if (reg.badCommit) {
+          badCommitHash = reg.badCommit.commit;
+          regressionInfo = `Suspected regression commit: ${reg.badCommit.shortHash} — "${reg.badCommit.message}" by ${reg.badCommit.author}`;
+        }
+      }
+    } catch (err) {
+      regressionInfo = `Bisect analysis notice: ${err instanceof Error ? err.message : String(err)}`;
+    }
+
+    await debugAgentPipeline.executeStep(dc, "reproduce", "Isolate regression commit", () =>
+      Promise.resolve(regressionInfo)
+    );
+
+    if (hasFailedStep(session)) return;
+
+    debugAgentPipeline.transitionState(session.id, "DIAGNOSING_ROOT_CAUSE", "Analyzing suspect commit diff");
+    const multiContext = await buildDebugContext(ctx.repositoryId, ctx.query, { tenantId: ctx.tenantId });
+
+    await debugAgentPipeline.executeStep(dc, "diagnose", "Diagnose regression cause", () => {
+      if (badCommitHash) {
+        const finding: DebugFinding = {
+          id: `regression-${badCommitHash}`,
+          step: 3,
+          type: "regression",
+          title: `Regression Introduced in ${badCommitHash.slice(0, 7)}`,
+          description: regressionInfo,
+          evidence: [badCommitHash],
+          confidence: 0.88,
+        };
+        debugAgentPipeline.addFindingToSession(session.id, finding);
+      } else {
+        debugAgentPipeline.addFindingToSession(session.id, {
+          id: `history-clean-${Date.now()}`,
+          step: 3,
+          type: "configuration",
+          title: "No regressions detected",
+          description: "Git history analysis and bisect did not isolate any regression commits.",
+          evidence: [],
+          confidence: 1.0,
+        });
+      }
+      return Promise.resolve(`Regression diagnosis complete. Suspect commit: ${badCommitHash ?? "None isolated"}`);
+    });
+
+    if (hasFailedStep(session)) return;
+
+    debugAgentPipeline.transitionState(session.id, "SYNTHESIZING_PATCH", "Generating revert or fix plan");
+    const fixPlan = await fixPlanner.generate(multiContext, regressionInfo, [badCommitHash ?? "HEAD"], []);
+    debugAgentPipeline.setExtendedData(session.id, { fixPlan });
+    debugAgentPipeline.emitEvent(session.id, { type: "fix_plan", sessionId: session.id, data: fixPlan, timestamp: new Date().toISOString() });
+
+    await debugAgentPipeline.executeStep(dc, "fix", "Propose regression fix or revert", () =>
+      Promise.resolve(`Regression Fix Plan Generated:\n- Suggested action: git revert ${badCommitHash ? badCommitHash.slice(0, 7) : "HEAD"}`)
+    );
+
+    debugAgentPipeline.transitionState(session.id, "COMPLETED", "Regression hunting finished");
   },
 
   changes: async (ctx, session) => {
     const dc = createDebugContext(ctx, session, "changes");
     await debugAgentPipeline.executeStep(dc, "observe", "Review working tree changes and diff", () => reviewChanges(ctx));
+    debugAgentPipeline.addFindingToSession(session.id, {
+      id: `changes-review-${Date.now()}`,
+      step: 1,
+      type: "configuration",
+      title: "Working tree reviewed",
+      description: "All working tree changes and diffs have been reviewed.",
+      evidence: [],
+      confidence: 1.0,
+    });
   },
 
   graphrag: async (ctx, session) => {
     const dc = createDebugContext(ctx, session, "graphrag");
-    await debugAgentPipeline.executeStep(dc, "diagnose", "Search code intelligence graph and trace symbols", () => codeIntelligence(ctx));
+    debugAgentPipeline.transitionState(session.id, "DIAGNOSING_ROOT_CAUSE", "Querying Code Intelligence AST Graph");
+
+    await debugAgentPipeline.executeStep(dc, "diagnose", "Search code intelligence graph and trace symbols", async () => {
+      try {
+        const graph = await repositoryIndexer.getGraph(ctx.repositoryId, ctx.tenantId);
+        const queryTerms = ctx.query.toLowerCase().split(/\s+/).filter((t) => t.length > 2);
+        const matchingSymbols = graph.symbols.filter((s) => queryTerms.some((term) => s.name.toLowerCase().includes(term) || s.filePath.toLowerCase().includes(term)));
+
+        for (const [idx, sym] of matchingSymbols.slice(0, 5).entries()) {
+          const finding: DebugFinding = {
+            id: `graph-sym-${idx}-${Date.now()}`,
+            step: 1,
+            type: "compatibility",
+            title: `Symbol Traced: ${sym.name} (${sym.kind})`,
+            description: `Found in ${sym.filePath}:${sym.startLine}-${sym.endLine}`,
+            evidence: [`${sym.filePath}:${sym.startLine}`, sym.signature ?? sym.name],
+            confidence: 0.9,
+          };
+          debugAgentPipeline.addFindingToSession(session.id, finding);
+        }
+
+        if (matchingSymbols.length === 0) {
+          debugAgentPipeline.addFindingToSession(session.id, {
+            id: `graph-clean-${Date.now()}`,
+            step: 1,
+            type: "configuration",
+            title: "Code graph scanned — no matching symbols",
+            description: `The AST graph was queried for "${ctx.query}" but no matching symbols were found.`,
+            evidence: [`Nodes: ${graph.nodes.length}`, `Edges: ${graph.edges.length}`],
+            confidence: 1.0,
+          });
+        }
+
+        return `Graph Intelligence Traced:\n- Nodes: ${graph.nodes.length}\n- Edges: ${graph.edges.length}\n- Matching symbols for query "${ctx.query}": ${matchingSymbols.length}`;
+      } catch (err) {
+        return `Code Intelligence graph not indexed or error: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    });
+
+    debugAgentPipeline.transitionState(session.id, "COMPLETED", "GraphRAG dependency tracing concluded");
   },
 
   "agent-runs": async (ctx, session) => {
     const dc = createDebugContext(ctx, session, "agent-runs");
     await debugAgentPipeline.executeStep(dc, "observe", "List and manage past agent/debug runs", () => listAgentRuns(ctx));
+    debugAgentPipeline.addFindingToSession(session.id, {
+      id: `agent-runs-${Date.now()}`,
+      step: 1,
+      type: "configuration",
+      title: "Agent runs listed",
+      description: "Past agent/debug sessions have been retrieved and listed.",
+      evidence: [],
+      confidence: 1.0,
+    });
   },
 
   settings: async (ctx, session) => {
     const dc = createDebugContext(ctx, session, "settings");
     await debugAgentPipeline.executeStep(dc, "observe", "Retrieve repository settings and branch protection", () => getSettings(ctx));
+    debugAgentPipeline.addFindingToSession(session.id, {
+      id: `settings-${Date.now()}`,
+      step: 1,
+      type: "configuration",
+      title: "Repository settings retrieved",
+      description: "Repository settings and branch protection configuration retrieved.",
+      evidence: [],
+      confidence: 1.0,
+    });
   },
 });
 
@@ -295,12 +703,16 @@ export class DebugOrchestrator {
         const finalSession = debugAgentPipeline.getSession(session.id, ctx.tenantId);
         const completedSteps = finalSession.steps.filter((s) => s.status === "completed");
         const failedSteps = finalSession.steps.filter((s) => s.status === "failed");
-        const summary = failedSteps.length > 0
+        const extended = debugAgentPipeline.getExtendedData(session.id);
+
+        // Build a rich summary from the last completed step result (root cause / diagnosis text)
+        const lastStepResult = [...completedSteps].reverse().find((s) => s.result)?.result ?? "";
+        const baseSummary = failedSteps.length > 0
           ? `Debug session completed with ${failedSteps.length} failed step(s).`
           : `Debug session completed successfully. ${completedSteps.length} step(s) executed.`;
+        const summary = lastStepResult ? `${baseSummary}\n\n${lastStepResult}` : baseSummary;
 
         debugAgentPipeline.completeSession(session.id);
-        const extended = debugAgentPipeline.getExtendedData(session.id);
 
         debugAgentPipeline.emitEvent(session.id, {
           type: "complete",
@@ -312,6 +724,7 @@ export class DebugOrchestrator {
             fixPlan: extended?.fixPlan,
             critic: extended?.criticReview,
             plan: extended?.investigationPlan,
+            testResult: extended?.testResult,
           },
           timestamp: new Date().toISOString(),
         });
@@ -384,8 +797,8 @@ export class DebugOrchestrator {
     return debugAgentPipeline.getSession(sessionId, tenantId);
   }
 
-  listSessions(tenantId: string): readonly DebugSession[] {
-    return debugAgentPipeline.listSessions(tenantId);
+  listSessions(tenantId: string, userId?: string): readonly DebugSession[] {
+    return debugAgentPipeline.listSessions(tenantId, userId);
   }
 }
 

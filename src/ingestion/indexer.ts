@@ -4,7 +4,7 @@ import path from "node:path";
 import { parseFile } from "./parser.js";
 import { chunkFile, type CodeChunk } from "./chunker.js";
 import { upsertChunks } from "../db/vector-store.js";
-import { query } from "../db/postgres.js";
+import { getCollection } from "../db/mongodb.js";
 import { isIgnoredDirectory, isIgnoredFile, isPathWithinRoot, MAX_FILE_SIZE_BYTES } from "./cleaner.js";
 import { toRepositoryPath } from "../retrieval/repository-path.js";
 
@@ -62,22 +62,23 @@ export class RepositoryIndexer {
       return skipResult(filePath, "No indexable content");
 
     await upsertChunks(this.repositoryName, chunks);
-    console.log(`⚡ Auto-Indexed changed file: ${path.basename(filePath)} (${chunks.length} chunks)`);
+    console.warn(`⚡ Auto-Indexed changed file: ${path.basename(filePath)} (${chunks.length} chunks)`);
     return { file: filePath, action: "indexed", chunksCount: chunks.length };
   }
 
   public async deleteFileFromIndex(filePath: string): Promise<IncrementalIndexStats> {
     const normalizedPath = toRepositoryPath(this.rootDirectory, filePath);
-    const result = await query(`DELETE FROM code_chunks WHERE repository = $1 AND file_path = $2`, [this.repositoryName, normalizedPath]);
-    const deletedChunks = result.rowCount ?? 0;
-    if (deletedChunks > 0) console.log(`🧹 Auto-Cleaned deleted file from DB: ${path.basename(filePath)} (${deletedChunks} chunks deleted)`);
+    const col = getCollection("code_chunks");
+    const result = await col.deleteMany({ repository: this.repositoryName, file_path: normalizedPath });
+    const deletedChunks = result.deletedCount;
+    if (deletedChunks > 0) console.warn(`Auto-Cleaned deleted file from MongoDB: ${path.basename(filePath)} (${deletedChunks} chunks deleted)`);
     return { file: filePath, action: "deleted", chunksCount: deletedChunks };
   }
 
   public watchRepository(onChange?: (stats: IncrementalIndexStats) => void, debounceMs = 300): void {
     if (this.watcher) return;
 
-    console.log(`👁 Starting automatic file watcher on ${this.rootDirectory}...`);
+    console.warn(`👁 Starting automatic file watcher on ${this.rootDirectory}...`);
     this.watcher = fsSync.watch(this.rootDirectory, { recursive: true }, (_eventType, filename) => {
       if (!filename) return;
 
@@ -108,6 +109,6 @@ export class RepositoryIndexer {
     if (!this.watcher) return;
     this.watcher.close();
     this.watcher = null;
-    console.log("🛑 Automatic file watcher stopped.");
+    console.warn("🛑 Automatic file watcher stopped.");
   }
 }

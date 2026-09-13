@@ -22,7 +22,6 @@
     "rag:retrieve": "tsx src/retrieval/test-retriever.ts",
     "db:test": "tsx src/db/test-database.ts",
     "db:vector": "tsx src/db/test-vector-store.ts",
-    "db:migrate": "tsx src/db/migrate.ts",
     "rag:eval": "tsx src/retrieval/eval.ts",
     "rag:ablation": "tsx src/retrieval/ablation-eval.ts",
     "rag:security-test": "tsx src/ingestion/test-security.ts",
@@ -48,8 +47,8 @@
     "debugging",
     "agent",
     "graphrag",
-    "postgresql",
-    "pgvector"
+    "mongodb",
+    "atlas-vector-search"
   ],
   "author": "HarshPariya",
   "license": "ISC",
@@ -63,15 +62,14 @@
     "express": "^5.2.1",
     "google-auth-library": "^11.0.2",
     "groq-sdk": "^1.6.0",
-    "openai": "^5.23.2",
-    "pg": "^8.23.0"
+    "mongodb": "^7.6.0",
+    "openai": "^5.23.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^26.3.0",
-    "@types/pg": "^8.23.1",
     "@typescript-eslint/eslint-plugin": "^8.70.0",
     "@typescript-eslint/parser": "^8.70.0",
     "eslint": "^10.10.0",

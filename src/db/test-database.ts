@@ -1,20 +1,20 @@
-import { closeDatabase, testDatabaseConnection } from "./postgres.js";
+import { closeDatabase, testDatabaseConnection } from "./mongodb.js";
 import { initializeSchema } from "./schema.js";
 
 const SEPARATOR = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
 
 const main = async () => {
-  console.log(SEPARATOR);
-  console.log("POSTGRESQL + PGVECTOR TEST");
-  console.log(`${SEPARATOR}\n`);
+  console.warn(SEPARATOR);
+  console.warn("MONGODB ATLAS TEST");
+  console.warn(`${SEPARATOR}\n`);
 
   if (!(await testDatabaseConnection())) {
     process.exitCode = 1;
     return;
   }
 
-  await initializeSchema();
-  console.log("\nPostgreSQL + pgvector setup successful.");
+  initializeSchema();
+  console.warn("\nMongoDB Atlas setup successful.");
 };
 
 main()

@@ -202,7 +202,7 @@ export const scanRepository = async (rootDirectory: string): Promise<string[]> =
       }
 
       if (!entry.isFile()) continue;
-      if (isIgnoredFile(entry.name)) { console.log(`🛡 Security: Filtered secret/artifact file: ${entry.name}`); continue; }
+      if (isIgnoredFile(entry.name)) { console.warn(`🛡 Security: Filtered secret/artifact file: ${entry.name}`); continue; }
 
       let stat;
       try {

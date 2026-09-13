@@ -5,7 +5,7 @@ import { buildGraph, getGraphStats } from "../graph/graph-builder.js";
 import { graphSearch } from "./graph-search.js";
 
 const main = async (): Promise<void> => {
-  console.log("Building repository GraphRAG index...\n");
+  console.warn("Building repository GraphRAG index...\n");
 
   const parsedFiles = await parseRepository(process.cwd());
   const entities = extractEntities(parsedFiles);
@@ -13,15 +13,15 @@ const main = async (): Promise<void> => {
   const graph = buildGraph(entities, relationships);
   const stats = getGraphStats(graph);
 
-  console.log(`Nodes: ${stats.totalNodes}\nEdges: ${stats.totalEdges}`);
+  console.warn(`Nodes: ${stats.totalNodes}\nEdges: ${stats.totalEdges}`);
 
   const query = process.argv.slice(2).join(" ") || "Where is normalizeId used?";
-  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nQuery: "${query}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+  console.warn(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nQuery: "${query}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 
   const results = graphSearch(graph, query, { limit: 10, maxDepth: 2 });
 
   if (results.length === 0) {
-    console.log("No graph results found.");
+    console.warn("No graph results found.");
     return;
   }
 
@@ -33,7 +33,7 @@ const main = async (): Promise<void> => {
         : "";
     const file = entity.filePath ? `\n   File: ${entity.filePath}` : "";
 
-    console.log(
+    console.warn(
       `${index + 1}. ${entity.type.toUpperCase()} — ${entity.name}\n` +
         `   Score: ${score.toFixed(3)}\n   Match: ${matchType}\n   Depth: ${depth}` +
         file +

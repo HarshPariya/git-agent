@@ -12,7 +12,6 @@ import { hybridSearch, type HybridSearchOptions } from "./hybrid-search.js";
 import { rerankResults, type RerankedResult } from "./reranker.js";
 import { validateQueryLength, validateTopK, validateRepositoryScan } from "../guardrails/retrieval-limits.js";
 import { metricsCollector } from "../monitoring/observability.js";
-import { setHnswSearchPrecision } from "../db/hnsw-tuning.js";
 import { toRepositoryPath } from "./repository-path.js";
 import { updateRetrievalRuntimeStatus } from "./runtime-status.js";
 import { findAstSymbolReferences } from "./ast-reference-search.js";
@@ -102,7 +101,7 @@ export class CodeRetriever {
       return;
     }
 
-    console.log("Initializing Code Retriever...");
+    console.warn("Initializing Code Retriever...");
     updateRetrievalRuntimeStatus({ graph: "initializing", vector: "initializing" });
 
     const parsedFiles = (await parseRepository(this.rootDirectory)).map((f) => ({
@@ -121,12 +120,12 @@ export class CodeRetriever {
 
     const { entities, relationships } = cached?.repositoryHash === currentHash
       ? (() => {
-        console.log("Loaded graph from disk cache (.cache/graphrag/graph.json)");
+        console.warn("Loaded graph from disk cache (.cache/graphrag/graph.json)");
         metricsCollector.recordCacheHit(true);
         return cached;
       })()
       : (() => {
-        console.log("Graph cache miss / changed - extracting entities & relationships...");
+        console.warn("Graph cache miss / changed - extracting entities & relationships...");
         metricsCollector.recordCacheHit(false);
         const entities = extractEntities(parsedFiles);
         const relationships = extractRelationships(parsedFiles, entities);
@@ -135,7 +134,7 @@ export class CodeRetriever {
 
     if (cached?.repositoryHash !== currentHash) {
       await saveGraphCache({ repositoryHash: currentHash, entities, relationships });
-      console.log("Saved updated graph to disk cache.");
+      console.warn("Saved updated graph to disk cache.");
     }
 
     this.graph = buildGraph(entities, relationships);
@@ -147,7 +146,7 @@ export class CodeRetriever {
       lastRefreshAt: new Date().toISOString(),
     });
 
-    console.log(
+    console.warn(
       `Parsed files: ${parsedFiles.length}\n` +
       `Code chunks: ${this.chunks.length}\n` +
       `Graph nodes: ${this.graph.nodes.size}\n` +
@@ -155,13 +154,13 @@ export class CodeRetriever {
     );
 
     try {
-      console.log("Persisting vector embeddings to PostgreSQL + pgvector...");
+      console.warn("Persisting vector embeddings to MongoDB Atlas Vector Search...");
       await upsertChunks(this.repositoryName, this.chunks, currentHash, this.fileCount);
       updateRetrievalRuntimeStatus({ vector: "ready" });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       updateRetrievalRuntimeStatus({ vector: "degraded", lastError: message });
-      console.warn("Postgres vector upsert skipped (running in AST graph mode):", message);
+      console.warn("MongoDB vector upsert skipped (running in AST graph mode):", message);
     } finally {
       this.initialized = true;
     }
@@ -173,7 +172,7 @@ export class CodeRetriever {
       parsedFiles: this.parsedFiles,
     });
 
-    console.log("Code Retriever ready.");
+    console.warn("Code Retriever ready.");
   }
 
   async refreshGraph(): Promise<void> {
@@ -303,7 +302,6 @@ export class CodeRetriever {
     let vectorMs = 0;
 
     try {
-      await setHnswSearchPrecision(100);
       const startVector = Date.now();
       vectorResults = await pgVectorSearch(sanitizedQuery, {
         repository: options.filterOptions?.repository ?? this.repositoryName,
@@ -311,7 +309,7 @@ export class CodeRetriever {
       });
       vectorMs = Date.now() - startVector;
     } catch {
-      console.warn("Postgres vector search skipped (using graph & AST chunk search).");
+      console.warn("MongoDB vector search skipped (using graph & AST chunk search).");
     }
 
     try {

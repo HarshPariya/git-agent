@@ -8,20 +8,20 @@ import {
   ResourceLimitError,
 } from "./retrieval-limits.js";
 import { CodeRetriever } from "../retrieval/retriever.js";
-import { closeDatabase } from "../db/postgres.js";
+import { closeDatabase } from "../db/mongodb.js";
 
 const SEPARATOR = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
 
 const runResourceLimitTests = async () => {
-  console.log(SEPARATOR);
-  console.log("RESOURCE LIMIT & BOUNDARY TEST SUITE");
-  console.log(`${SEPARATOR}\n`);
+  console.warn(SEPARATOR);
+  console.warn("RESOURCE LIMIT & BOUNDARY TEST SUITE");
+  console.warn(`${SEPARATOR}\n`);
 
   let passed = 0;
   let failed = 0;
 
   const assert = (condition: boolean, testName: string) => {
-    console.log(condition ? `[PASS] ${testName}` : `[FAIL] ${testName}`);
+    console.warn(condition ? `[PASS] ${testName}` : `[FAIL] ${testName}`);
     if (condition) { passed++; } else { failed++; }
   };
 
@@ -56,9 +56,9 @@ const runResourceLimitTests = async () => {
   await expectThrow(() => retriever.retrieve("Where is normalizeId used?", { limit: 100 }), "CodeRetriever rejected limit=100 bypassing API layer");
 
   await closeDatabase();
-  console.log(`\n${SEPARATOR}`);
-  console.log(`RESOURCE LIMIT TEST RESULTS: ${passed} Passed, ${failed} Failed.`);
-  console.log(SEPARATOR);
+  console.warn(`\n${SEPARATOR}`);
+  console.warn(`RESOURCE LIMIT TEST RESULTS: ${passed} Passed, ${failed} Failed.`);
+  console.warn(SEPARATOR);
   if (failed > 0) process.exitCode = 1;
 };
 

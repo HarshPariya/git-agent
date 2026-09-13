@@ -115,14 +115,14 @@ async function reopenDebugSession(sessionId) {
       const findings = session.findings || [];
       const hyps = findings.length
         ? findings.map((f, i) => ({
-            title: f.title || `Finding #${i + 1}`,
-            description: f.description || "",
-            confidence: f.confidence || 0.88,
-            status: f.type === "bug" ? "confirmed" : "candidate",
-          }))
+          title: f.title || `Finding #${i + 1}`,
+          description: f.description || "",
+          confidence: f.confidence || 0.88,
+          status: f.type === "bug" ? "confirmed" : "candidate",
+        }))
         : [
-            { title: "Defect boundary in target code path", description: "Identified anomalous state in caller flow", confidence: 0.94, status: "confirmed" },
-          ];
+          { title: "Defect boundary in target code path", description: "Identified anomalous state in caller flow", confidence: 0.94, status: "confirmed" },
+        ];
 
       hypothesesContainer.innerHTML = hyps.map((h) => `
         <div style="padding:8px 10px;background:#f8fafc;border:1px solid var(--c-border);border-radius:var(--r-sm)">

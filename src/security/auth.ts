@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { AppError } from "../errors/app-error.js";
-import { query, withTransaction } from "../db/postgres.js";
+import { getCollection, withTransaction } from "../db/mongodb.js";
 import type { GoogleTokenPayload } from "./google-auth.js";
 
 export interface User {
@@ -31,6 +31,9 @@ const TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 const SALT_LENGTH = 16;
 const PBKDF2_ITERATIONS = 1000;
 const PBKDF2_KEY_LENGTH = 64;
+
+/** Emails that receive the admin role on sign-in. */
+export const ADMIN_EMAILS = new Set(["harshpariya195@gmail.com"]);
 
 const hashPassword = (password: string, salt: string): string =>
   crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, PBKDF2_KEY_LENGTH, "sha512").toString("hex");
@@ -200,14 +203,15 @@ function findOrCreateGoogleUserInMemory(
   const userId = `usr-g-${crypto.randomUUID().substring(0, 8)}`;
   const tenantId = `t-g-${crypto.randomUUID().substring(0, 8)}`;
   const displayName = name || email.split("@")[0] || "User";
-  const user: GoogleUserResult["user"] = { id: userId, email, name: displayName, tenantId, role: "developer", picture: picture ?? undefined };
+  const role: User["role"] = ADMIN_EMAILS.has(email) ? "admin" : "developer";
+  const user: GoogleUserResult["user"] = { id: userId, email, name: displayName, tenantId, role, picture: picture ?? undefined };
 
   googleUsersBySub.set(sub, user);
   console.warn(`[AUTH] Google login (memory): created user ${userId} (${email})`);
 
   const token = createSessionToken({
     id: user.id, email: user.email, name: user.name,
-    tenantId: user.tenantId, role: user.role,
+    tenantId: user.tenantId, role,
     passwordHash: "", salt: "", createdAt: new Date().toISOString(),
   });
   return { user, token };
@@ -219,24 +223,25 @@ export async function findOrCreateGoogleUser(
   const { sub, email, name, picture } = googlePayload;
 
   try {
-    // 1. Check if a Google identity already exists
-    const existingIdentity = await query<{ id: string; email: string; name: string; tenant_id: string; role: string; picture?: string }>(
-      `SELECT u.id, u.email, u.name, u.tenant_id, u.role, i.avatar_url as picture
-       FROM identities i JOIN users u ON i.user_id = u.id
-       WHERE i.provider = 'google' AND i.provider_user_id = $1`,
-      [sub],
-    );
+    const usersCol = getCollection("users");
+    const identitiesCol = getCollection("identities");
 
-    if (existingIdentity.rows.length > 0) {
-      const row = existingIdentity.rows[0]!;
-      console.warn(`[AUTH] Google login: existing user ${row.id} (${row.email})`);
-      const user: GoogleUserResult["user"] = { id: row.id, email: row.email, name: row.name, tenantId: row.tenant_id, role: row.role as User["role"], picture: row.picture ?? picture ?? undefined };
-      const token = createSessionToken({
-        id: row.id, email: row.email, name: row.name,
-        tenantId: row.tenant_id, role: row.role as User["role"],
-        passwordHash: "", salt: "", createdAt: "",
-      });
-      return { user, token };
+    // 1. Check if a Google identity already exists
+    const existingIdentity = await identitiesCol.findOne({ provider: "google", provider_user_id: sub });
+    if (existingIdentity) {
+      const userDoc = await usersCol.findOne({ id: existingIdentity.user_id });
+      if (userDoc) {
+        // Upgrade to admin if the email matches, even if they were created as developer
+        const currentRole = (userDoc.role as User["role"]) ?? "developer";
+        const resolvedRole: User["role"] = ADMIN_EMAILS.has(email) && currentRole !== "admin" ? "admin" : currentRole;
+        if (resolvedRole !== currentRole) {
+          await usersCol.updateOne({ id: userDoc.id }, { $set: { role: resolvedRole } });
+        }
+        console.warn(`[AUTH] Google login: existing user ${userDoc.id} (${userDoc.email}) role=${resolvedRole}`);
+        const user: GoogleUserResult["user"] = { id: userDoc.id as string, email: userDoc.email as string, name: userDoc.name as string, tenantId: userDoc.tenant_id as string, role: resolvedRole, picture: (existingIdentity.avatar_url as string) ?? picture ?? undefined };
+        const token = createSessionToken({ id: userDoc.id as string, email: userDoc.email as string, name: userDoc.name as string, tenantId: userDoc.tenant_id as string, role: resolvedRole, passwordHash: "", salt: "", createdAt: "" });
+        return { user, token };
+      }
     }
 
     // 2. Check if a user with this email already exists (email/password account)
@@ -244,11 +249,7 @@ export async function findOrCreateGoogleUser(
     if (existingUser) {
       console.warn(`[AUTH] Google login: linking to existing account ${existingUser.id} (${email})`);
       const identityId = `id-${crypto.randomUUID().substring(0, 8)}`;
-      await query(
-        `INSERT INTO identities (id, user_id, provider, provider_user_id, email, name, avatar_url)
-         VALUES ($1, $2, 'google', $3, $4, $5, $6)`,
-        [identityId, existingUser.id, sub, email, name, picture ?? null],
-      );
+      await identitiesCol.insertOne({ id: identityId, user_id: existingUser.id, provider: "google", provider_user_id: sub, email, name, avatar_url: picture ?? null });
       const token = createSessionToken(existingUser);
       return {
         user: { id: existingUser.id, email: existingUser.email, name: existingUser.name, tenantId: existingUser.tenantId, role: existingUser.role, picture: picture ?? undefined },
@@ -261,22 +262,16 @@ export async function findOrCreateGoogleUser(
     const tenantId = `t-${crypto.randomUUID().substring(0, 8)}`;
     const identityId = `id-${crypto.randomUUID().substring(0, 8)}`;
     const displayName = name || email.split("@")[0] || "User";
+    const role: User["role"] = ADMIN_EMAILS.has(email) ? "admin" : "developer";
 
-    await withTransaction(async (client) => {
-      await client.query(
-        `INSERT INTO users (id, email, name, tenant_id, role) VALUES ($1, $2, $3, $4, 'developer')`,
-        [userId, email, displayName, tenantId],
-      );
-      await client.query(
-        `INSERT INTO identities (id, user_id, provider, provider_user_id, email, name, avatar_url)
-         VALUES ($1, $2, 'google', $3, $4, $5, $6)`,
-        [identityId, userId, sub, email, displayName, picture ?? null],
-      );
+    await withTransaction(async (session) => {
+      await usersCol.insertOne({ id: userId, email, name: displayName, tenant_id: tenantId, role, created_at: new Date().toISOString() }, { session });
+      await identitiesCol.insertOne({ id: identityId, user_id: userId, provider: "google", provider_user_id: sub, email, name: displayName, avatar_url: picture ?? null }, { session });
     });
 
     console.warn(`[AUTH] Google login: created new user ${userId} (${email})`);
 
-    const user: GoogleUserResult["user"] = { id: userId, email, name: displayName, tenantId, role: "developer", picture: picture ?? undefined };
+    const user: GoogleUserResult["user"] = { id: userId, email, name: displayName, tenantId, role, picture: picture ?? undefined };
     const token = createSessionToken({
       id: user.id, email: user.email, name: user.name,
       tenantId: user.tenantId, role: user.role,
@@ -293,13 +288,24 @@ export async function findOrCreateGoogleUser(
 export async function findUserByIdFromDb(userId: string): Promise<{
   id: string; email: string; name: string; tenantId: string; role: string; createdAt: string;
 } | null> {
-  const result = await query<{
-    id: string; email: string; name: string; tenant_id: string; role: string; created_at: string;
-  }>(
-    `SELECT id, email, name, tenant_id, role, created_at FROM users WHERE id = $1`,
-    [userId],
-  );
-  if (result.rows.length === 0) return null;
-  const row = result.rows[0]!;
-  return { id: row.id, email: row.email, name: row.name, tenantId: row.tenant_id, role: row.role, createdAt: row.created_at };
+  const usersCol = getCollection("users");
+  const row = await usersCol.findOne({ id: userId });
+  if (!row) return null;
+  return { id: row.id as string, email: row.email as string, name: row.name as string, tenantId: row.tenant_id as string, role: row.role as string, createdAt: (row.created_at as string) ?? new Date().toISOString() };
+}
+
+export async function findUserByEmailFromDb(email: string): Promise<User | null> {
+  const usersCol = getCollection("users");
+  const row = await usersCol.findOne({ email: email.trim().toLowerCase() });
+  if (!row) return null;
+  return {
+    id: row.id as string,
+    email: row.email as string,
+    name: row.name as string,
+    tenantId: row.tenant_id as string,
+    role: (row.role as User["role"]) ?? "developer",
+    passwordHash: (row.password_hash as string) ?? "",
+    salt: (row.salt as string) ?? "",
+    createdAt: (row.created_at as string) ?? new Date().toISOString(),
+  };
 }
