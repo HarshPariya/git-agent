@@ -24,11 +24,10 @@
       "dest": "public/$1"
     }
   ],
-  "framework": "custom",
+  "framework": null,
   "installCommand": "npm ci --ignore-scripts",
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
-  "cleanDevOutput": false,
   "regions": [
     "iad1"
   ]
