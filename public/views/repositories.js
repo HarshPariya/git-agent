@@ -549,7 +549,10 @@ async function handleNativeFolderSelected(event) {
 
 function openFolderBrowser(targetPath = "") {
   openModal("modal-folder-browser");
-  browseToDirectory(targetPath || "");
+  const pathInput = document.getElementById("folder-path-input");
+  if (pathInput && targetPath) {
+    pathInput.value = targetPath;
+  }
 }
 
 async function browseToDirectory(dirPath = "") {
@@ -707,13 +710,16 @@ async function connectSpecificFolder(name, localPath) {
       await window.loadDashboardStats();
     }
     if (res.repository) {
-      setActiveRepository(res.repository);
+      await setActiveRepository(res.repository);
       const debugSelect = document.getElementById("debug-repo");
       if (debugSelect) debugSelect.value = res.repository.id;
       const issuesSelect = document.getElementById("issues-repo-select");
       if (issuesSelect) issuesSelect.value = res.repository.id;
       const prsSelect = document.getElementById("prs-repo-select");
       if (prsSelect) prsSelect.value = res.repository.id;
+      if (typeof window.navigate === "function") {
+        window.navigate("git-desktop");
+      }
     }
   } catch (err) {
     showToast(`Failed to connect folder: ${err.message}`, "error");
@@ -746,6 +752,27 @@ async function connectEnteredPath() {
   }
   const folderName = target.split(/[\\/]/).filter(Boolean).pop() || "Local Repo";
   await connectSpecificFolder(folderName, target);
+}
+
+function openGitHubModalFromBrowser() {
+  closeModal("modal-folder-browser");
+  showGitHubModalFlow();
+}
+
+async function connectGitHubUrl() {
+  const input = document.getElementById("github-url-input");
+  const raw = sanitizePath(input?.value);
+  if (!raw) {
+    showToast("Please enter a valid GitHub repository URL", "error");
+    return;
+  }
+  let url = raw;
+  if (!url.startsWith("http://") && !url.startsWith("https://") && !url.startsWith("git@")) {
+    url = `https://github.com/${url.replace(/^\/+/, "")}`;
+  }
+  const name = url.split("/").filter(Boolean).pop()?.replace(/\.git$/, "") || "GitHub Repo";
+  closeModal("modal-folder-browser");
+  await connectSelectedGitHubRepo(name, url);
 }
 
 // ============================================================
@@ -940,7 +967,16 @@ async function connectSelectedGitHubRepo(name, cloneUrl) {
       await window.loadDashboardStats();
     }
     if (res.repository) {
-      setActiveRepository(res.repository);
+      await setActiveRepository(res.repository);
+      const debugSelect = document.getElementById("debug-repo");
+      if (debugSelect) debugSelect.value = res.repository.id;
+      const issuesSelect = document.getElementById("issues-repo-select");
+      if (issuesSelect) issuesSelect.value = res.repository.id;
+      const prsSelect = document.getElementById("prs-repo-select");
+      if (prsSelect) prsSelect.value = res.repository.id;
+      if (typeof window.navigate === "function") {
+        window.navigate("git-desktop");
+      }
     }
   } catch (err) {
     showToast(`Failed to connect repository: ${err.message}`, "error");
@@ -948,8 +984,8 @@ async function connectSelectedGitHubRepo(name, cloneUrl) {
 }
 
 // Event delegation for data-action attributes
-document.addEventListener('click', (e) => {
-  const target = e.target.closest('[data-action]');
+document.addEventListener("click", (e) => {
+  const target = e.target.closest("[data-action]");
   if (!target) return;
 
   const { action, value, extra } = target.dataset;
@@ -961,6 +997,10 @@ document.addEventListener('click', (e) => {
     browseToDirectory: () => browseToDirectory(value),
     connectSpecificFolder: () => connectSpecificFolder(value, extra),
     connectSelectedGitHubRepo: () => connectSelectedGitHubRepo(value, extra),
+    openGitHubModalFromBrowser: () => openGitHubModalFromBrowser(),
+    connectGitHubUrl: () => connectGitHubUrl(),
+    connectEnteredPath: () => connectEnteredPath(),
+    triggerNativeFolderPicker: () => triggerNativeFolderPicker(),
   };
 
   actions[action]?.();
@@ -998,3 +1038,5 @@ window.disconnectGitHub = disconnectGitHub;
 window.showGitHubReposModal = showGitHubReposModal;
 window.filterGitHubRepos = filterGitHubRepos;
 window.connectSelectedGitHubRepo = connectSelectedGitHubRepo;
+window.openGitHubModalFromBrowser = openGitHubModalFromBrowser;
+window.connectGitHubUrl = connectGitHubUrl;

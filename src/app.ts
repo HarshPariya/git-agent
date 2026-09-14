@@ -211,6 +211,7 @@ app.get("/api/auth/google-client-id", (_req, res) => {
 app.get("/api/repositories", ...protectedRoute, listRepositoriesHandler);
 app.get("/api/repositories/list", ...protectedRoute, listRepositoriesHandler);
 app.get("/api/repositories/:id", ...protectedRoute, getRepositoryHandler);
+app.post("/api/repositories", ...protectedRoute, connectRepositoryHandler);
 app.post("/api/repositories/connect", ...protectedRoute, connectRepositoryHandler);
 app.post("/api/repositories/:id/sync", ...protectedRoute, syncRepositoryHandler);
 app.post("/api/repositories/:id/disconnect", ...protectedRoute, disconnectRepositoryHandler);

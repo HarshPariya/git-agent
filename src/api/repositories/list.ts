@@ -8,10 +8,14 @@ const getTenantContext = (request: Request) => {
   return context;
 };
 
-export const listRepositoriesHandler = (request: Request, response: Response, next: NextFunction): void => {
+export const listRepositoriesHandler = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): Promise<void> => {
   try {
     const context = getTenantContext(request);
-    const repositories = repositoryStore.listRepositories(context.tenantId);
+    const repositories = await repositoryStore.listRepositories(context.tenantId, context.userId);
     response.status(200).json({ repositories });
   } catch (error) {
     next(error);

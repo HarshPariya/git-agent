@@ -55,7 +55,7 @@ const validateLocalPath = (candidate: string): string => {
 };
 
 const sanitizeDefaultBranch = (branch: string): string =>
-  branch && !branch.startsWith("feature/") && !branch.startsWith("fix/") ? branch : "development";
+  branch && !branch.startsWith("feature/") && !branch.startsWith("fix/") ? branch : "main";
 
 export class RepositoryStore {
   /**
@@ -81,15 +81,22 @@ export class RepositoryStore {
     }
   }
 
-  listRepositories(tenantId: string): readonly Repository[] {
+  async listRepositories(tenantId?: string, userId?: string): Promise<readonly Repository[]> {
+    if (repositories.size === 0 || process.env.VERCEL) {
+      await this.hydrateFromDb();
+    }
     return [...repositories.values()].filter(
-      (r) => (r.tenantId === tenantId || r.tenantId === "tenant-default") && r.status !== "disconnected",
+      (r) =>
+        (!tenantId || r.tenantId === tenantId || r.tenantId === "tenant-default" || (userId && r.userId === userId)) &&
+        r.status !== "disconnected",
     );
   }
 
-  getRepository(repositoryId: string, tenantId: string): Repository | undefined {
+  getRepository(repositoryId: string, tenantId?: string): Repository | undefined {
     const repo = repositories.get(repositoryId);
-    return repo?.tenantId === tenantId || repo?.tenantId === "tenant-default" ? repo : undefined;
+    if (!repo) return undefined;
+    if (!tenantId || repo.tenantId === tenantId || repo.tenantId === "tenant-default") return repo;
+    return repo;
   }
 
   async connectRepository(params: {
@@ -138,6 +145,15 @@ export class RepositoryStore {
       }
     }
 
+    if (params.url) {
+      try {
+        const { execFileAsync } = await import("../git/utils.js");
+        await execFileAsync("git", ["remote", "add", "origin", params.url], { cwd: localPath }).catch(() => {});
+      } catch {
+        // remote might already exist
+      }
+    }
+
     const existing = [...repositories.values()].find(
       (r) => r.tenantId === params.tenantId && (r.url === params.url || r.localPath === localPath),
     );
@@ -172,7 +188,7 @@ export class RepositoryStore {
       status: "connected",
     };
     repositories.set(repositoryId, synced);
-    void persistRepository(synced);
+    await persistRepository(synced);
     logger.info("Repository synced", {
       operation: "repo-sync",
       metadata: { repositoryId, ahead: finalStatus.ahead, behind: finalStatus.behind },
@@ -201,7 +217,7 @@ export class RepositoryStore {
       : { ...repo, status: "error", lastSyncAt: new Date().toISOString() };
 
     repositories.set(repositoryId, updated);
-    void persistRepository(updated);
+    await persistRepository(updated);
     return updated;
   }
 
@@ -274,7 +290,7 @@ export class RepositoryStore {
   private async reconnectExisting(existing: Repository): Promise<Repository> {
     registerRepositoryPath(existing.id, existing.localPath);
     const status = await executeGitStatus(existing.localPath).catch(() => null);
-    const current = status?.branch ?? existing.currentBranch ?? "feature/git-agent";
+    const current = status?.branch ?? existing.currentBranch ?? "main";
     const updated: Repository = {
       ...existing,
       defaultBranch: sanitizeDefaultBranch(existing.defaultBranch),
@@ -284,7 +300,7 @@ export class RepositoryStore {
     };
 
     repositories.set(existing.id, updated);
-    void persistRepository(updated);
+    await persistRepository(updated);
     logger.info("Repository already connected, updating status", {
       operation: "repo-connect",
       metadata: { repositoryId: existing.id },
@@ -300,7 +316,7 @@ export class RepositoryStore {
     localPath: string;
   }): Promise<Repository> {
     const status = await executeGitStatus(params.localPath).catch(() => null);
-    const branch = status?.branch ?? "feature/git-agent";
+    const branch = status?.branch ?? "main";
 
     const repository: Repository = {
       id: generateId("repo-", params.localPath ? params.localPath.toLowerCase() : undefined),
@@ -319,7 +335,7 @@ export class RepositoryStore {
 
     repositories.set(repository.id, repository);
     registerRepositoryPath(repository.id, repository.localPath);
-    void persistRepository(repository);
+    await persistRepository(repository);
     logger.info("Repository connected", {
       operation: "repo-connect",
       metadata: { repositoryId: repository.id, name: params.name },

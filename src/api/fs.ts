@@ -128,8 +128,18 @@ const getSearchRoots = (currentBrowsedPath: string): string[] => {
   const homedir = os.homedir();
   const searchRoots: string[] = [];
 
+  // Active working directory & workspace roots
+  const cwd = process.cwd();
+  if (cwd && fs.existsSync(cwd)) {
+    searchRoots.push(cwd);
+    const parent = path.dirname(cwd);
+    if (parent && fs.existsSync(parent) && !searchRoots.includes(parent)) searchRoots.push(parent);
+    const grandParent = path.dirname(parent);
+    if (grandParent && fs.existsSync(grandParent) && !searchRoots.includes(grandParent)) searchRoots.push(grandParent);
+  }
+
   if (currentBrowsedPath && fs.existsSync(currentBrowsedPath)) {
-    searchRoots.push(currentBrowsedPath);
+    if (!searchRoots.includes(currentBrowsedPath)) searchRoots.push(currentBrowsedPath);
     const parent = path.dirname(currentBrowsedPath);
     if (parent && fs.existsSync(parent) && !searchRoots.includes(parent)) searchRoots.push(parent);
   }
@@ -268,6 +278,22 @@ export async function resolveFolderHandler(request: Request, response: Response,
     const variants = getFolderVariants(folderName);
     const searchRoots = getSearchRoots(currentBrowsedPath);
     const matchedPaths: string[] = [];
+
+    // Direct check: If folderName is already an existing path
+    if (fs.existsSync(folderName)) {
+      try {
+        if (fs.statSync(folderName).isDirectory()) matchedPaths.push(path.resolve(folderName));
+      } catch {
+        // Ignore
+      }
+    }
+
+    // Direct check: Current working directory
+    const cwd = process.cwd();
+    const cwdBase = path.basename(cwd);
+    if (variants.some((v) => v.toLowerCase() === cwdBase.toLowerCase())) {
+      matchedPaths.push(cwd);
+    }
 
     for (const root of searchRoots) {
       if (!fs.existsSync(root)) continue;

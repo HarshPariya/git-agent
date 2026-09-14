@@ -1295,76 +1295,78 @@
   </div>
 
   <!-- ============================================================
-     INTERACTIVE FOLDER BROWSER MODAL
+     INTERACTIVE REPOSITORY SELECTION MODAL (LOCAL OS & GITHUB ONLY)
      ============================================================ -->
   <div id="modal-folder-browser" class="modal-overlay" style="display:none">
-    <div class="modal modal-folder-browser" style="max-width:780px">
+    <div class="modal modal-folder-browser" style="max-width:680px">
       <div class="modal-close" data-action="closeModal" data-value="modal-folder-browser">×</div>
-      <div
-        style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:12px;flex-wrap:wrap">
-        <div class="modal-title" style="margin-bottom:0">Select Repository / Project Folder</div>
-        <button class="btn btn-secondary btn-sm" id="btn-open-os-dialog" data-action="triggerNativeFolderPicker"
-          style="display:flex;align-items:center;gap:6px;font-weight:600">
-          🗔 Open OS File Dialog
-        </button>
-      </div>
-      <div class="modal-desc" style="margin-bottom:12px">
-        Connect any local workspace or Git repository folder from your computer. Select your current workspace, pick
-        directly from the OS dialog, or browse directories below.
+      <div class="modal-title" style="margin-bottom:4px">Select Repository / Project Folder</div>
+      <div class="modal-desc" style="margin-bottom:18px">
+        Choose how you want to connect your repository. Select directly from your local computer files or import from GitHub.
       </div>
 
-      <!-- Drag & Drop / Native OS Dialog Zone -->
-      <div class="folder-drop-zone" id="folder-drop-zone" data-action="triggerNativeFolderPicker"
-        style="border:2px dashed var(--c-border);border-radius:var(--r-md);padding:12px;text-align:center;cursor:pointer;background:var(--c-surface-hover);transition:var(--transition-fast);margin-bottom:10px;font-size:12px">
-        <span style="font-size:15px">📁</span> <strong>Drag &amp; drop any folder here</strong> or click to open native
-        OS Folder Dialog
-      </div>
-
-      <div class="folder-browser-dialog">
-        <!-- Quick Workspace Cards -->
-        <div id="folder-workspace-quickpicks" style="display:flex;gap:8px;flex-wrap:wrap">
-          <!-- Injected local workspaces / current workspace -->
-        </div>
-
-        <!-- Path breadcrumb bar -->
-        <div class="folder-path-bar">
-          <span style="white-space:nowrap;flex-shrink:0">📍 Path:</span>
-          <code id="folder-current-path">Loading folders...</code>
-        </div>
-
-        <!-- Current folder status card (if Git Repo) -->
-        <div id="folder-repo-detected" class="current-target-card" style="display:none">
-          <div style="flex:1;min-width:0">
-            <div class="current-target-title">🌿 Git Repository Detected</div>
-            <div class="current-target-path" id="folder-repo-name">—</div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <!-- Option 1: Direct from Local OS -->
+        <div class="repo-connect-card" style="border:1px solid var(--c-border);border-radius:var(--r-lg);padding:18px;background:var(--c-surface);box-shadow:var(--shadow-sm)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:22px">💻</span>
+              <div>
+                <div style="font-weight:700;font-size:15px;color:var(--c-text)">Direct from Local Computer</div>
+                <div style="font-size:12px;color:var(--c-text-muted)">Open any local folder or Git repository from your OS</div>
+              </div>
+            </div>
+            <button class="btn btn-primary" id="btn-open-os-dialog" data-action="triggerNativeFolderPicker"
+              style="display:flex;align-items:center;gap:8px;font-weight:600;padding:8px 16px">
+              🗔 Open OS Folder Dialog
+            </button>
           </div>
-          <button class="btn btn-primary btn-sm" id="folder-connect-current-btn"
-            data-action="connectCurrentBrowsedFolder" style="white-space:nowrap;flex-shrink:0">
-            Select &amp; Connect Repo
-          </button>
+
+          <!-- Drag & Drop Zone -->
+          <div class="folder-drop-zone" id="folder-drop-zone" data-action="triggerNativeFolderPicker"
+            style="border:2px dashed var(--c-border);border-radius:var(--r-md);padding:18px 14px;text-align:center;cursor:pointer;background:var(--c-surface-hover);transition:var(--transition-fast);margin-bottom:12px">
+            <span style="font-size:24px;display:block;margin-bottom:4px">📂</span>
+            <div style="font-size:13px;font-weight:600;color:var(--c-text)">Drag &amp; drop any project folder here</div>
+            <div style="font-size:11px;color:var(--c-text-muted);margin-top:2px">or click to open native OS Folder Dialog</div>
+          </div>
+
+          <!-- Quick Local Path Paste -->
+          <div style="display:flex;gap:8px">
+            <input class="form-input" id="folder-path-input"
+              placeholder="Or paste local path (e.g. C:\projects\my-app or ~/repos/project)"
+              style="flex:1;font-size:12px;font-family:var(--font-mono)" />
+            <button class="btn btn-secondary btn-sm" data-action="connectEnteredPath" style="white-space:nowrap;font-weight:600">Connect Path</button>
+          </div>
         </div>
 
-        <!-- Manual path input bar -->
-        <div style="display:flex;gap:8px">
-          <input class="form-input" id="folder-path-input"
-            placeholder="Paste or enter any local repository path (e.g. ~/projects/repo, C:\projects\workspace)"
-            style="flex:1;font-size:12px;font-family:var(--font-mono)" />
-          <button class="btn btn-secondary btn-sm" data-action="browseToEnteredPath">Go</button>
-          <button class="btn btn-primary btn-sm" data-action="connectEnteredPath">Connect</button>
-        </div>
+        <!-- Option 2: From GitHub -->
+        <div class="repo-connect-card" style="border:1px solid var(--c-border);border-radius:var(--r-lg);padding:18px;background:var(--c-surface);box-shadow:var(--shadow-sm)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:22px">🐙</span>
+              <div>
+                <div style="font-weight:700;font-size:15px;color:var(--c-text)">From GitHub</div>
+                <div style="font-size:12px;color:var(--c-text-muted)">Import cloud repositories, inspect PRs, and run AI debugging</div>
+              </div>
+            </div>
+            <button class="btn btn-secondary" data-action="openGitHubModalFromBrowser"
+              style="display:flex;align-items:center;gap:8px;font-weight:600;padding:8px 16px">
+              🐙 Connect GitHub
+            </button>
+          </div>
 
-        <!-- Folder + file list container -->
-        <div class="folder-list-container" id="folder-list">
-          <div class="text-muted" style="text-align:center;padding:24px">Loading workspace contents...</div>
+          <!-- Quick GitHub URL Clone -->
+          <div style="display:flex;gap:8px">
+            <input class="form-input" id="github-url-input"
+              placeholder="Or paste GitHub URL (e.g. https://github.com/owner/repository)"
+              style="flex:1;font-size:12px;font-family:var(--font-mono)" />
+            <button class="btn btn-primary btn-sm" data-action="connectGitHubUrl" style="white-space:nowrap;font-weight:600">Import Repo</button>
+          </div>
         </div>
       </div>
 
-      <div class="modal-actions" style="margin-top:14px;display:flex;justify-content:space-between;align-items:center">
-        <button class="btn btn-secondary btn-sm" id="folder-connect-anyway-btn"
-          data-action="connectCurrentBrowsedFolder">
-          📁 Connect Current Folder
-        </button>
-        <button class="btn btn-ghost btn-sm" data-action="closeModal" data-value="modal-folder-browser">Cancel</button>
+      <div class="modal-actions" style="margin-top:18px;display:flex;justify-content:flex-end">
+        <button class="btn btn-secondary btn-sm" data-action="closeModal" data-value="modal-folder-browser">Cancel</button>
       </div>
     </div>
   </div>

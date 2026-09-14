@@ -1,5 +1,5 @@
 import type { Collection, Document } from "mongodb";
-import { getCollection, isDatabaseConnected } from "./mongodb.js";
+import { getCollection, isDatabaseConnected, ensureDatabaseConnected } from "./mongodb.js";
 import type { Repository, DebugSession } from "../types/git.js";
 import { logger } from "../logging/logger.js";
 
@@ -13,7 +13,8 @@ import { logger } from "../logging/logger.js";
 // --- Repositories ---
 
 export async function persistRepository(repo: Repository): Promise<void> {
-  if (!isDatabaseConnected()) return;
+  const isConnected = await ensureDatabaseConnected();
+  if (!isConnected) return;
   try {
     const col: Collection<Document> = getCollection("repositories");
     await col.updateOne(
@@ -99,7 +100,8 @@ export async function backfillUserCreatedAt(): Promise<void> {
 }
 
 export async function loadRepositoriesFromDb(): Promise<Repository[]> {
-  if (!isDatabaseConnected()) return [];
+  const isConnected = await ensureDatabaseConnected();
+  if (!isConnected) return [];
   try {
     const col: Collection<Document> = getCollection("repositories");
     const docs = await col.find({ status: { $ne: "disconnected" } }).toArray();
