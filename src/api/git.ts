@@ -42,13 +42,17 @@ const optionalString = (body: Record<string, unknown>, key: string): string | un
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 };
 
+const noop = (): void => {
+  /* no-op fallback */
+};
+
 const validateRepositoryAccess = async (repoId: string): Promise<void> => {
   try {
     const execPath = getExecutionPath(repoId);
     if (!syncFs.existsSync(path.join(execPath, ".git"))) {
       if (syncFs.existsSync(execPath)) {
         const { execFileAsync } = await import("../git/utils.js");
-        await execFileAsync("git", ["init", "-b", "main"], { cwd: execPath }).catch(() => {});
+        await execFileAsync("git", ["init", "-b", "main"], { cwd: execPath }).catch(noop);
       }
     }
     await executeGitStatus(repoId);
@@ -343,7 +347,7 @@ export async function gitUnstageHandler(request: Request, response: Response, ne
     const filePath = requireString(body, "filePath");
     const repoPath = getExecutionPath(repoId);
     await execAsync(`git reset HEAD "${filePath.replace(/"/g, '\\"')}"`, { cwd: repoPath }).catch(async () => {
-      await execAsync(`git rm --cached "${filePath.replace(/"/g, '\\"')}"`, { cwd: repoPath }).catch(() => {});
+      await execAsync(`git rm --cached "${filePath.replace(/"/g, '\\"')}"`, { cwd: repoPath }).catch(noop);
     });
     const status = await executeGitStatus(repoId);
     response.status(200).json({ success: true, status });
@@ -370,7 +374,7 @@ export async function gitUnstageAllHandler(request: Request, response: Response,
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
     const repoPath = getExecutionPath(repoId);
-    await execAsync("git reset HEAD", { cwd: repoPath }).catch(() => {});
+    await execAsync("git reset HEAD", { cwd: repoPath }).catch(noop);
     const status = await executeGitStatus(repoId);
     response.status(200).json({ success: true, status });
   } catch (error) {
