@@ -7,14 +7,22 @@ import { getDetailedChangedFiles, analyzeAndPlanCommits, executeCommitPlan } fro
 const execAsync = promisify(exec);
 
 async function runGitDesktopTests() {
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nGIT DESKTOP & COMMIT PLAN TEST SUITE\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+  console.log(
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nGIT DESKTOP & COMMIT PLAN TEST SUITE\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+  );
 
-  let passed = 0, failed = 0;
-  const assert = (condition: boolean, name: string) => { console.log(condition ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`); condition ? passed++ : failed++; };
+  let passed = 0,
+    failed = 0;
+  const assert = (condition: boolean, name: string) => {
+    console.log(condition ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`);
+    condition ? passed++ : failed++;
+  };
 
   // 1. Setup isolated test repository
   const testRepoDir = path.resolve(process.cwd(), "scratch", "test_git_desktop_repo");
-  try { await fs.rm(testRepoDir, { recursive: true, force: true }); } catch {}
+  try {
+    await fs.rm(testRepoDir, { recursive: true, force: true });
+  } catch {}
   await fs.mkdir(testRepoDir, { recursive: true });
   await execAsync("git init", { cwd: testRepoDir });
   await execAsync('git config user.name "Harsh Pariya"', { cwd: testRepoDir });
@@ -28,8 +36,14 @@ async function runGitDesktopTests() {
   await fs.mkdir(path.join(testRepoDir, "src", "api"), { recursive: true });
   await fs.mkdir(path.join(testRepoDir, "docs"), { recursive: true });
   await fs.mkdir(path.join(testRepoDir, "tests"), { recursive: true });
-  await fs.writeFile(path.join(testRepoDir, "src", "auth", "service.ts"), "export function verifyToken(token: string) { return Boolean(token); }\n");
-  await fs.writeFile(path.join(testRepoDir, "src", "api", "routes.ts"), "export const routes = ['/api/v1/health', '/api/v1/user'];\n");
+  await fs.writeFile(
+    path.join(testRepoDir, "src", "auth", "service.ts"),
+    "export function verifyToken(token: string) { return Boolean(token); }\n",
+  );
+  await fs.writeFile(
+    path.join(testRepoDir, "src", "api", "routes.ts"),
+    "export const routes = ['/api/v1/health', '/api/v1/user'];\n",
+  );
   await fs.writeFile(path.join(testRepoDir, "docs", "guide.md"), "# Quick Start Guide\nFollow setup steps below.\n");
   await fs.writeFile(path.join(testRepoDir, "tests", "auth.test.ts"), "console.log('auth tests');\n");
   await execAsync('git add "src/auth/service.ts"', { cwd: testRepoDir });
@@ -69,15 +83,25 @@ async function runGitDesktopTests() {
 
   // 6. Verify Git Log
   const { stdout: logOut } = await execAsync("git log -n 5 --oneline", { cwd: testRepoDir });
-  assert(logOut.includes("update") || logOut.includes("chore") || logOut.includes("fix"), "Git log reflects new commits");
+  assert(
+    logOut.includes("update") || logOut.includes("chore") || logOut.includes("fix"),
+    "Git log reflects new commits",
+  );
 
   // 7. Working Tree clean
   const { stdout: finalStatus } = await execAsync("git status --porcelain", { cwd: testRepoDir });
   assert(finalStatus.trim() === "", "Working tree clean after sequential commit execution");
 
-  try { await fs.rm(testRepoDir, { recursive: true, force: true }); } catch {}
-  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nGIT DESKTOP TEST RESULTS: ${passed} Passed, ${failed} Failed.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+  try {
+    await fs.rm(testRepoDir, { recursive: true, force: true });
+  } catch {}
+  console.log(
+    `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nGIT DESKTOP TEST RESULTS: ${passed} Passed, ${failed} Failed.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`,
+  );
   if (failed > 0) process.exit(1);
 }
 
-runGitDesktopTests().catch((err) => { console.error("Git Desktop test error:", err); process.exit(1); });
+runGitDesktopTests().catch((err) => {
+  console.error("Git Desktop test error:", err);
+  process.exit(1);
+});

@@ -7,16 +7,24 @@ import { getDetailedChangedFiles, analyzeAndPlanCommits, executeCommitPlan } fro
 const execAsync = promisify(exec);
 
 async function runE2EWorkflowTests() {
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nE2E GIT DESKTOP WORKFLOW & SYNCHRONIZATION TEST SUITE\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+  console.log(
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nE2E GIT DESKTOP WORKFLOW & SYNCHRONIZATION TEST SUITE\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+  );
 
-  let passed = 0, failed = 0;
-  const assert = (condition: boolean, name: string) => { console.log(condition ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`); condition ? passed++ : failed++; };
+  let passed = 0,
+    failed = 0;
+  const assert = (condition: boolean, name: string) => {
+    console.log(condition ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`);
+    condition ? passed++ : failed++;
+  };
 
   const scratchDir = path.resolve(process.cwd(), "scratch", "e2e_git_desktop");
   const remoteBareDir = path.join(scratchDir, "remote.git");
   const localRepoDir = path.join(scratchDir, "local_repo");
 
-  try { await fs.rm(scratchDir, { recursive: true, force: true }); } catch {}
+  try {
+    await fs.rm(scratchDir, { recursive: true, force: true });
+  } catch {}
   await fs.mkdir(scratchDir, { recursive: true });
 
   // 1. Setup bare remote
@@ -44,8 +52,14 @@ async function runE2EWorkflowTests() {
   await fs.mkdir(path.join(localRepoDir, "src", "api"), { recursive: true });
   await fs.mkdir(path.join(localRepoDir, "public", "views"), { recursive: true });
   await fs.mkdir(path.join(localRepoDir, "docs"), { recursive: true });
-  await fs.writeFile(path.join(localRepoDir, "src", "api", "git-controller.ts"), "export const gitController = { status: () => 'ok' };\n");
-  await fs.writeFile(path.join(localRepoDir, "public", "views", "git-desktop.js"), "console.log('Git Desktop View v2.0');\n");
+  await fs.writeFile(
+    path.join(localRepoDir, "src", "api", "git-controller.ts"),
+    "export const gitController = { status: () => 'ok' };\n",
+  );
+  await fs.writeFile(
+    path.join(localRepoDir, "public", "views", "git-desktop.js"),
+    "console.log('Git Desktop View v2.0');\n",
+  );
   await fs.writeFile(path.join(localRepoDir, "docs", "workflows.md"), "# Git Workflows\nDescribes commit planning.\n");
   await execAsync('git add "src/api/git-controller.ts"', { cwd: localRepoDir });
 
@@ -85,9 +99,17 @@ async function runE2EWorkflowTests() {
   const { stdout: hotfixBranch } = await execAsync("git rev-parse --abbrev-ref HEAD", { cwd: localRepoDir });
   assert(hotfixBranch.trim() === "feature/hotfix-patch", "Branch switcher switched to feature/hotfix-patch");
 
-  try { await fs.rm(scratchDir, { recursive: true, force: true }); } catch {}
-  console.log(`\n════════════════════════════════════════════════════\nTOTAL PASS: ${passed} | TOTAL FAIL: ${failed}\n════════════════════════════════════════════════════\n`);
-  if (failed > 0) process.exit(1); else process.exit(0);
+  try {
+    await fs.rm(scratchDir, { recursive: true, force: true });
+  } catch {}
+  console.log(
+    `\n════════════════════════════════════════════════════\nTOTAL PASS: ${passed} | TOTAL FAIL: ${failed}\n════════════════════════════════════════════════════\n`,
+  );
+  if (failed > 0) process.exit(1);
+  else process.exit(0);
 }
 
-runE2EWorkflowTests().catch((err) => { console.error("E2E Test Suite Error:", err); process.exit(1); });
+runE2EWorkflowTests().catch((err) => {
+  console.error("E2E Test Suite Error:", err);
+  process.exit(1);
+});

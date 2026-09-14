@@ -116,8 +116,8 @@ app.use(
     origin:
       env.nodeEnv === "production"
         ? (process.env.CORS_ORIGIN?.split(",")
-          .map((origin) => origin.trim())
-          .filter(Boolean) ?? [])
+            .map((origin) => origin.trim())
+            .filter(Boolean) ?? [])
         : true,
   }),
 );

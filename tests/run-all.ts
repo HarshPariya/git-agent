@@ -53,7 +53,8 @@ async function runAll() {
       passedSuites++;
     } catch (err: any) {
       const durationMs = Date.now() - suiteStart;
-      const timedOut = err.killed === true || err.signal === "SIGKILL" || err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
+      const timedOut =
+        err.killed === true || err.signal === "SIGKILL" || err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
       console.error(`❌ Suite "${suite.name}" ${timedOut ? "TIMED OUT" : "FAILED"} in ${durationMs}ms`);
       if (err.stdout) console.log(err.stdout);
       if (err.stderr) console.error(err.stderr);

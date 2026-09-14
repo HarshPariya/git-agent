@@ -3,7 +3,15 @@ import path from "node:path";
 import os from "node:os";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
-import { classifyOperation, isProtectedBranch, getProtectedBranchNames, executeGitStatus, executeGitLog, executeGitDiff, executeGitBranches } from "../src/git/engine.js";
+import {
+  classifyOperation,
+  isProtectedBranch,
+  getProtectedBranchNames,
+  executeGitStatus,
+  executeGitLog,
+  executeGitDiff,
+  executeGitBranches,
+} from "../src/git/engine.js";
 import { executeSafeCommit, formatCommitMessage } from "../src/git/commit.js";
 import { validatePrePush } from "../src/git/push.js";
 import { ConflictAnalyzer } from "../src/git/conflicts.js";
@@ -11,15 +19,30 @@ import { ConflictAnalyzer } from "../src/git/conflicts.js";
 const execAsync = promisify(exec);
 
 async function runGitEngineTests() {
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nGIT ENGINE & SAFETY TEST SUITE\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+  console.log(
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nGIT ENGINE & SAFETY TEST SUITE\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+  );
 
-  let passed = 0, failed = 0;
-  const assert = (condition: boolean, name: string) => { console.log(condition ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`); condition ? passed++ : failed++; };
+  let passed = 0,
+    failed = 0;
+  const assert = (condition: boolean, name: string) => {
+    console.log(condition ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`);
+    condition ? passed++ : failed++;
+  };
 
   // 1. Operation Classification
-  assert(classifyOperation("status").risk === "safe" && classifyOperation("status").requiresApproval === false, "Status classified as safe");
-  assert(classifyOperation("commit").risk === "controlled" && classifyOperation("commit").requiresApproval === true, "Commit classified as controlled");
-  assert(classifyOperation("push").risk === "dangerous" && classifyOperation("push").requiresApproval === true, "Push classified as dangerous");
+  assert(
+    classifyOperation("status").risk === "safe" && classifyOperation("status").requiresApproval === false,
+    "Status classified as safe",
+  );
+  assert(
+    classifyOperation("commit").risk === "controlled" && classifyOperation("commit").requiresApproval === true,
+    "Commit classified as controlled",
+  );
+  assert(
+    classifyOperation("push").risk === "dangerous" && classifyOperation("push").requiresApproval === true,
+    "Push classified as dangerous",
+  );
 
   // 2. Protected Branch Safeguards
   assert(isProtectedBranch("main") === true, "Protects 'main' branch");
@@ -28,10 +51,21 @@ async function runGitEngineTests() {
   assert(isProtectedBranch("origin/main") === true, "Protects 'origin/main' ref");
   assert(isProtectedBranch("feature/agent-1") === false, "Allows normal feature branch");
   const protectedList = getProtectedBranchNames();
-  assert(protectedList.includes("main") && protectedList.includes("release"), "Protected branch list contains expected branches");
+  assert(
+    protectedList.includes("main") && protectedList.includes("release"),
+    "Protected branch list contains expected branches",
+  );
 
   // 3. Conventional Commit Formatter
-  assert(formatCommitMessage({ type: "feat", scope: "agent", subject: "support interactive debugging", breakingChange: false }) === "feat(agent): support interactive debugging", "Formats conventional commit message correctly");
+  assert(
+    formatCommitMessage({
+      type: "feat",
+      scope: "agent",
+      subject: "support interactive debugging",
+      breakingChange: false,
+    }) === "feat(agent): support interactive debugging",
+    "Formats conventional commit message correctly",
+  );
 
   // 4. Isolated Git Repository Operations
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "git-engine-test-"));
@@ -61,11 +95,20 @@ async function runGitEngineTests() {
 
     await fs.appendFile(testFile, "Line 3 added\n");
     assert((await executeGitDiff(tempDir)).length > 0, "executeGitDiff detects file modifications");
-    assert((await executeGitBranches(tempDir)).some((b) => b.name === "main"), "executeGitBranches lists main branch");
+    assert(
+      (await executeGitBranches(tempDir)).some((b) => b.name === "main"),
+      "executeGitBranches lists main branch",
+    );
 
     // 5. Push Safeguard
-    assert((await validatePrePush(tempDir, { branch: "main", force: true })).canPush === false, "validatePrePush rejects force-push to protected branch");
-    assert((await validatePrePush(tempDir, { branch: "feature/test", force: false })).canPush === true, "validatePrePush allows safe push to feature branch");
+    assert(
+      (await validatePrePush(tempDir, { branch: "main", force: true })).canPush === false,
+      "validatePrePush rejects force-push to protected branch",
+    );
+    assert(
+      (await validatePrePush(tempDir, { branch: "feature/test", force: false })).canPush === true,
+      "validatePrePush allows safe push to feature branch",
+    );
 
     // 6. Conflict Analyzer
     const conflictReport = await new ConflictAnalyzer().analyzeRepository(tempDir);
@@ -74,8 +117,13 @@ async function runGitEngineTests() {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
 
-  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nGIT ENGINE TEST RESULTS: ${passed} Passed, ${failed} Failed.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+  console.log(
+    `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nGIT ENGINE TEST RESULTS: ${passed} Passed, ${failed} Failed.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`,
+  );
   if (failed > 0) process.exitCode = 1;
 }
 
-runGitEngineTests().catch((err) => { console.error("Git Engine test failed:", err); process.exit(1); });
+runGitEngineTests().catch((err) => {
+  console.error("Git Engine test failed:", err);
+  process.exit(1);
+});
