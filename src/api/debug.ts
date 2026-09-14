@@ -10,7 +10,7 @@ import { fixPlanner } from "../agent/fix-planner.js";
 import { applyPatch, revertPatch, applyDiffHunk, type PatchFileChange } from "../agent/patch-engine.js";
 import { getExecutionPath } from "../git/engine.js";
 import { verifySessionToken } from "../security/auth.js";
-import { loadDebugSessionsFromDb, loadDebugSessionByIdFromDb } from "../db/persistence.js";
+import { loadDebugSessionsFromDb, loadDebugSessionByIdFromDb, persistDebugSession } from "../db/persistence.js";
 
 const getTenantContext = (request: Request) => {
   const context = request.tenantContext;
@@ -58,7 +58,11 @@ const isValidStepType = (value: unknown): value is StepType =>
   value === "verify" ||
   value === "observe";
 
-export function startDebugSessionHandler(request: Request, response: Response, next: NextFunction): void {
+export async function startDebugSessionHandler(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const context = getTenantContext(request);
     const body = getRequestBody(request);
@@ -67,6 +71,7 @@ export function startDebugSessionHandler(request: Request, response: Response, n
     const mode = optionalMode(body) ?? "debug";
 
     const session = debugAgentPipeline.startSession(repoId, context.tenantId, context.userId, mode, query);
+    await persistDebugSession(session);
     response.status(201).json(session);
   } catch (error) {
     next(error);

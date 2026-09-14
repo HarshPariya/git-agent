@@ -240,6 +240,30 @@ export async function executeGitStatus(repoPath: string): Promise<GitStatusOutpu
     behind = behindMatch ? parseInt(behindMatch[1] ?? "0", 10) : 0;
   }
 
+  if (branch === "unknown") {
+    try {
+      const execPath = getExecutionPath(repoPath);
+      const branchOutput = await runGit(execPath, ["branch", "--show-current"]).catch(() => "");
+      const directBranch = branchOutput.trim();
+      if (directBranch) {
+        branch = directBranch;
+      } else {
+        const headOutput = await runGit(execPath, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "");
+        const headBranch = headOutput.trim();
+        if (headBranch && headBranch !== "HEAD") {
+          branch = headBranch;
+        } else if (headBranch === "HEAD") {
+          branch = "detached";
+          detached = true;
+        } else {
+          branch = "main";
+        }
+      }
+    } catch {
+      branch = "main";
+    }
+  }
+
   const entries: GitStatusEntry[] = [];
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];

@@ -22,6 +22,7 @@ const SUITES: TestSuite[] = [
   { name: "Guardrails, Security & Limits", command: "npx tsx tests/guardrails.test.ts" },
   { name: "Git Desktop & Commit Plan Engine", command: "npx tsx tests/git-desktop.test.ts" },
   { name: "E2E Git Desktop Workflow & Synchronization", command: "npx tsx tests/e2e-git-desktop-workflow.test.ts" },
+  { name: "Production System E2E Smoke Test", command: "npx tsx tests/smoke.test.ts" },
 ];
 
 async function runAll() {

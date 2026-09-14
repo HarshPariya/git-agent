@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { Collection, Document } from "mongodb";
 import { getCollection, isDatabaseConnected, ensureDatabaseConnected } from "./mongodb.js";
 import type { Repository, DebugSession } from "../types/git.js";
@@ -112,20 +114,48 @@ export async function loadRepositoriesFromDb(): Promise<Repository[]> {
         local_path: { $nin: ["/tmp/repositories/tmp", "/tmp", "/tmp/"] },
       })
       .toArray();
-    return docs.map((d): Repository => ({
-      id: d.id as string,
-      tenantId: d.tenant_id as string,
-      userId: (d.user_id as string) ?? "",
-      name: d.name as string,
-      url: (d.url as string) ?? undefined,
-      localPath: d.local_path as string,
-      defaultBranch: d.default_branch as string,
-      currentBranch: d.current_branch as string,
-      status: (d.status as Repository["status"]) ?? "connected",
-      lastSyncAt: (d.last_sync_at as string) ?? undefined,
-      createdAt: d.created_at as string,
-      protectedBranches: [],
-    }));
+
+    const isVercel = Boolean(process.env.VERCEL);
+    const cwd = process.cwd();
+    const isCwdGit = fs.existsSync(path.join(cwd, ".git"));
+    const cwdName = path.basename(cwd).toLowerCase();
+
+    const repos: Repository[] = [];
+    for (const d of docs) {
+      let localPath = (d.local_path as string) || "";
+      const status = (d.status as Repository["status"]) ?? "connected";
+      const branch = (d.current_branch as string) || "main";
+
+      if (!isVercel && localPath.startsWith("/tmp/")) {
+        if (!fs.existsSync(localPath)) {
+          const nameLower = (d.name as string)?.toLowerCase() || "";
+          if (isCwdGit && (nameLower === cwdName || nameLower === "git-agent")) {
+            localPath = cwd;
+            await col.updateOne({ id: d.id }, { $set: { local_path: cwd } }).catch(() => {});
+          } else {
+            await col.updateOne({ id: d.id }, { $set: { status: "disconnected" } }).catch(() => {});
+            continue;
+          }
+        }
+      }
+
+      repos.push({
+        id: d.id as string,
+        tenantId: d.tenant_id as string,
+        userId: (d.user_id as string) ?? "",
+        name: d.name as string,
+        url: (d.url as string) ?? undefined,
+        localPath,
+        defaultBranch: (d.default_branch as string) || "main",
+        currentBranch: branch && branch !== "unknown" ? branch : "main",
+        status,
+        lastSyncAt: (d.last_sync_at as string) ?? undefined,
+        createdAt: (d.created_at as string) || new Date().toISOString(),
+        protectedBranches: [],
+      });
+    }
+
+    return repos;
   } catch (err) {
     logger.warn("Failed to load repositories from database", {
       operation: "persistence",

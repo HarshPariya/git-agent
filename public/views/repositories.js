@@ -705,6 +705,9 @@ async function connectSpecificFolder(name, localPath) {
       localPath,
     });
     showToast(`Connected ${name} successfully!`, "success");
+    if (res.repository) {
+      localStorage.setItem('gda_active_repo_id', res.repository.id);
+    }
     await loadRepositories();
     if (typeof window.loadDashboardStats === "function") {
       await window.loadDashboardStats();
@@ -763,6 +766,9 @@ async function connectWorkspaceFolder() {
       localPath: ".",
     });
     showToast("Connected Git-Agent successfully!", "success");
+    if (res.repository) {
+      localStorage.setItem('gda_active_repo_id', res.repository.id);
+    }
     await loadRepositories();
     if (res.repository) {
       await setActiveRepository(res.repository);

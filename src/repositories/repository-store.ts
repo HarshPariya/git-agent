@@ -68,16 +68,24 @@ export class RepositoryStore {
     let count = 0;
     for (const repo of repos) {
       if (repo.name === "tmp" || repo.localPath === "/tmp/repositories/tmp") continue;
-      const effectivePath =
-        !fs.existsSync(repo.localPath) && fs.existsSync(path.join(process.cwd(), ".git"))
-          ? process.cwd()
-          : repo.localPath;
-      const effectiveRepo = { ...repo, localPath: effectivePath };
-      if (!repositories.has(repo.id)) {
-        repositories.set(repo.id, effectiveRepo);
-        registerRepositoryPath(repo.id, effectivePath);
-        count++;
+      let effectivePath = repo.localPath;
+      if (!fs.existsSync(effectivePath)) {
+        if (fs.existsSync(path.join(process.cwd(), ".git"))) {
+          effectivePath = process.cwd();
+        }
       }
+      const status = await executeGitStatus(effectivePath).catch(() => null);
+      const branch = status?.branch && status.branch !== "unknown" ? status.branch : repo.currentBranch || "main";
+      const effectiveRepo: Repository = {
+        ...repo,
+        localPath: effectivePath,
+        currentBranch: branch,
+        defaultBranch: sanitizeDefaultBranch(branch || repo.defaultBranch),
+        status: "connected",
+      };
+      repositories.set(repo.id, effectiveRepo);
+      registerRepositoryPath(repo.id, effectivePath);
+      count++;
     }
     if (count > 0) {
       logger.info("Hydrated repository store from database", {
@@ -114,6 +122,9 @@ export class RepositoryStore {
     url: string | undefined;
     localPath: string | undefined;
   }): Promise<Repository> {
+    if (!params.localPath || params.localPath === "." || params.localPath === "./") {
+      params.localPath = process.cwd();
+    }
     let localPath = params.localPath ? validateLocalPath(params.localPath) : resolveLocalPath(params.name);
 
     // Auto-provision directory if running on Vercel or if path doesn't exist yet
@@ -163,10 +174,22 @@ export class RepositoryStore {
     }
 
     const existing = [...repositories.values()].find(
-      (r) => r.tenantId === params.tenantId && (r.url === params.url || r.localPath === localPath),
+      (r) =>
+        r.tenantId === params.tenantId &&
+        (r.url === params.url ||
+          r.localPath.toLowerCase() === localPath.toLowerCase() ||
+          r.name.toLowerCase() === params.name.toLowerCase()),
     );
 
-    if (existing) return this.reconnectExisting(existing);
+    if (existing) {
+      const existingWithUpdatedPath: Repository = {
+        ...existing,
+        name: params.name || existing.name,
+        localPath,
+        url: params.url ?? existing.url,
+      };
+      return this.reconnectExisting(existingWithUpdatedPath);
+    }
 
     return this.createRepository({ ...params, localPath });
   }
@@ -298,10 +321,10 @@ export class RepositoryStore {
   private async reconnectExisting(existing: Repository): Promise<Repository> {
     registerRepositoryPath(existing.id, existing.localPath);
     const status = await executeGitStatus(existing.localPath).catch(() => null);
-    const current = status?.branch ?? existing.currentBranch ?? "main";
+    const current = status?.branch && status.branch !== "unknown" ? status.branch : existing.currentBranch || "main";
     const updated: Repository = {
       ...existing,
-      defaultBranch: sanitizeDefaultBranch(existing.defaultBranch),
+      defaultBranch: sanitizeDefaultBranch(current || existing.defaultBranch),
       currentBranch: current,
       status: "connected",
       lastSyncAt: new Date().toISOString(),
@@ -311,7 +334,7 @@ export class RepositoryStore {
     await persistRepository(updated);
     logger.info("Repository already connected, updating status", {
       operation: "repo-connect",
-      metadata: { repositoryId: existing.id },
+      metadata: { repositoryId: existing.id, branch: current, path: existing.localPath },
     });
     return updated;
   }
