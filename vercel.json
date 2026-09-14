@@ -1,33 +1,22 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
-  "builds": [
+  "rewrites": [
     {
-      "src": "package.json",
-      "use": "@vercel/node",
-      "config": {
-        "runtime": "nodejs22"
-      }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(health|ready|favicon.ico)",
-      "dest": "dist/src/app.js"
+      "source": "/api/(.*)",
+      "destination": "/api"
     },
     {
-      "src": "/api/(.*)",
-      "dest": "dist/src/app.js"
+      "source": "/health",
+      "destination": "/api"
     },
     {
-      "src": "/(.*)",
-      "dest": "public/$1"
+      "source": "/ready",
+      "destination": "/api"
     }
   ],
-  "framework": null,
   "installCommand": "npm ci --ignore-scripts",
   "buildCommand": "npm run build",
-  "devCommand": "npm run dev",
   "regions": [
     "iad1"
   ]
