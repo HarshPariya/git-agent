@@ -202,12 +202,13 @@ export async function persistDebugSession(session: DebugSession): Promise<void> 
   }
 }
 
-export async function loadDebugSessionsFromDb(tenantId: string, userId?: string): Promise<DebugSession[]> {
+export async function loadDebugSessionsFromDb(tenantId?: string, userId?: string): Promise<DebugSession[]> {
   const isConnected = await ensureDatabaseConnected();
   if (!isConnected) return [];
   try {
     const col: Collection<Document> = getCollection("debug_sessions");
-    const query: Document = { tenant_id: tenantId };
+    const query: Document = {};
+    if (tenantId) query.tenant_id = tenantId;
     if (userId) query.user_id = userId;
     const docs = await col.find(query).sort({ started_at: -1 }).toArray();
     return docs.map((d): DebugSession => ({
@@ -258,7 +259,8 @@ function mapDebugSessionDoc(d: Document): DebugSession {
  * Used to reopen sessions that are no longer held in memory (e.g. after a restart).
  */
 export async function loadDebugSessionByIdFromDb(sessionId: string): Promise<DebugSession | undefined> {
-  if (!isDatabaseConnected()) return undefined;
+  const isConnected = await ensureDatabaseConnected();
+  if (!isConnected) return undefined;
   try {
     const col: Collection<Document> = getCollection("debug_sessions");
     const d = await col.findOne({ id: sessionId });

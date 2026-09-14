@@ -165,6 +165,7 @@ class ApiClient {
 
   // Repositories
   async listRepositories() { return this.request("/api/repositories"); }
+  async getRepositories() { return this.listRepositories(); }
   async connectRepository(data) {
     return this.request("/api/repositories/connect", {
       method: "POST",

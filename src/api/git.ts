@@ -93,6 +93,88 @@ export async function gitStatusHandler(request: Request, response: Response, nex
   }
 }
 
+/**
+ * Server-Sent Events (SSE) stream for real-time repository changes.
+ * Watches the local repository with fs.watch, debouncing by 150ms.
+ * Whenever a file changes, pushes an event with executeGitStatus(repoId).
+ */
+export async function gitStreamStatusHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const repoId = (request.params.repositoryId || request.query.repositoryId) as string;
+    if (!repoId) throw new AppError("repositoryId is required", "VALIDATION_ERROR", 400);
+
+    await validateRepositoryAccess(repoId);
+    const execPath = getExecutionPath(repoId);
+
+    // Set SSE headers
+    response.setHeader("Content-Type", "text/event-stream");
+    response.setHeader("Cache-Control", "no-cache, no-transform");
+    response.setHeader("Connection", "keep-alive");
+    response.setHeader("X-Accel-Buffering", "no");
+    response.flushHeaders?.();
+
+    // Send initial status immediately
+    const initialStatus = await executeGitStatus(repoId).catch(() => null);
+    if (initialStatus) {
+      response.write(`event: git-status\ndata: ${JSON.stringify({ repositoryId: repoId, status: initialStatus })}\n\n`);
+    }
+
+    // Keep-alive heartbeat every 20s
+    const heartbeatTimer = setInterval(() => {
+      response.write(`: heartbeat\n\n`);
+    }, 20000);
+
+    // Setup debounced fs.watch on repository directory
+    let debounceTimer: NodeJS.Timeout | null = null;
+    let isPushing = false;
+
+    const pushLatestStatus = async () => {
+      if (isPushing) return;
+      isPushing = true;
+      try {
+        const latest = await executeGitStatus(repoId);
+        response.write(`event: git-status\ndata: ${JSON.stringify({ repositoryId: repoId, status: latest })}\n\n`);
+      } catch {
+        // Silently skip status failure if git command was locked momentarily
+      } finally {
+        isPushing = false;
+      }
+    };
+
+    const ignoredParts = new Set([".git", "node_modules", ".cache", "dist", ".gemini"]);
+
+    let watcher: syncFs.FSWatcher | null = null;
+    try {
+      watcher = syncFs.watch(execPath, { recursive: true }, (_eventType, filename) => {
+        if (!filename) return;
+        const parts = filename.split(/[\\/]/);
+        if (parts.some((p) => ignoredParts.has(p))) return;
+
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          void pushLatestStatus();
+        }, 150);
+      });
+    } catch (watchErr) {
+      logger.warn("Could not start fs.watch on repository directory", {
+        metadata: { execPath, error: String(watchErr) },
+      });
+    }
+
+    // Clean up on client disconnect
+    request.on("close", () => {
+      clearInterval(heartbeatTimer);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      if (watcher) {
+        watcher.close();
+        watcher = null;
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function gitLogHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
   try {
     const body = getGitRequestData(request);

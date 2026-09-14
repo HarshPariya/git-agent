@@ -933,8 +933,8 @@ export class DebugOrchestrator {
     return ROUTE_PATTERNS.find((r) => r.pattern.test(normalized))?.mode ?? "debug";
   }
 
-  getSession(sessionId: string, tenantId: string): DebugSession {
-    return debugAgentPipeline.getSession(sessionId, tenantId);
+  getSession(sessionId: string, tenantId: string, isAdmin = false): DebugSession {
+    return debugAgentPipeline.getSession(sessionId, tenantId, isAdmin);
   }
 
   listSessions(tenantId: string, userId?: string): readonly DebugSession[] {

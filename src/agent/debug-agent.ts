@@ -434,14 +434,14 @@ export class DebugAgentPipeline {
     };
   }
 
-  getSession(sessionId: string, tenantId: string): DebugSession {
+  getSession(sessionId: string, tenantId: string, isAdmin = false): DebugSession {
     const session = debugSessions.get(sessionId);
 
     if (!session) {
       throw new AppError("Session not found", "NOT_FOUND", 404);
     }
 
-    if (session.tenantId !== tenantId) {
+    if (!isAdmin && session.tenantId !== tenantId && session.tenantId !== "tenant-default") {
       throw new AppError("Unauthorized session access", "AUTHORIZATION_ERROR", 403);
     }
 

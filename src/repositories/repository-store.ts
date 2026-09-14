@@ -99,13 +99,29 @@ export class RepositoryStore {
     if (repositories.size === 0 || process.env.VERCEL) {
       await this.hydrateFromDb();
     }
-    return [...repositories.values()].filter(
+    const list = [...repositories.values()].filter(
       (r) =>
         (!tenantId || r.tenantId === tenantId || r.tenantId === "tenant-default" || (userId && r.userId === userId)) &&
         r.status !== "disconnected" &&
         r.name !== "tmp" &&
         r.localPath !== "/tmp/repositories/tmp",
     );
+
+    // If tenant has no repos configured yet, check if workspace repository (process.cwd()) exists and surface it
+    if (list.length === 0 && tenantId) {
+      const workspaceRepo = [...repositories.values()].find(
+        (r) =>
+          r.status !== "disconnected" &&
+          r.name !== "tmp" &&
+          r.localPath &&
+          path.resolve(r.localPath).toLowerCase() === path.resolve(process.cwd()).toLowerCase(),
+      );
+      if (workspaceRepo) {
+        return [workspaceRepo];
+      }
+    }
+
+    return list;
   }
 
   getRepository(repositoryId: string, tenantId?: string): Repository | undefined {

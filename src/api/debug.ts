@@ -163,24 +163,46 @@ export async function runDebugAsyncHandler(request: Request, response: Response,
   }
 }
 
+const isRequestAdmin = (request: Request): boolean => {
+  const authHeader = request.header("authorization")?.trim();
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : undefined;
+  if (token) {
+    try {
+      const session = verifySessionToken(token);
+      if (session.role === "admin") return true;
+    } catch {
+      // Invalid token
+    }
+  }
+  const roleHeader = request.header("x-user-role")?.trim().toLowerCase();
+  return roleHeader === "admin";
+};
+
 export async function getDebugSessionHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
   try {
     const context = getTenantContext(request);
     const sessionId = getSessionId(request);
+    const isAdmin = isRequestAdmin(request);
 
     // Prefer the live in-memory session, but fall back to the persisted document
     // so completed sessions survive a server restart / eviction from memory.
     let session: DebugSession;
     try {
-      session = debugAgentPipeline.getSession(sessionId, context.tenantId);
+      session = debugAgentPipeline.getSession(sessionId, context.tenantId, isAdmin);
     } catch (err) {
-      const AppErr = err as { status?: number };
-      if (AppErr?.status !== 404) throw err;
+      const appErr = err as { statusCode?: number; status?: number; code?: string };
+      const isNotFound = appErr?.statusCode === 404 || appErr?.status === 404 || appErr?.code === "NOT_FOUND";
+      const isAuthError = appErr?.statusCode === 403 || appErr?.status === 403;
+      if (!isNotFound && (!isAdmin || !isAuthError)) throw err;
+
       const dbSession = await loadDebugSessionByIdFromDb(sessionId);
-      if (dbSession && dbSession.tenantId === context.tenantId) {
+      if (
+        dbSession &&
+        (isAdmin || dbSession.tenantId === context.tenantId || dbSession.tenantId === "tenant-default")
+      ) {
         session = dbSession;
       } else {
-        throw err;
+        throw new AppError("Session not found", "NOT_FOUND", 404);
       }
     }
 
@@ -188,11 +210,11 @@ export async function getDebugSessionHandler(request: Request, response: Respons
 
     response.status(200).json({
       ...session,
-      agentState: extended?.stateMachine.getState() ?? "IDLE",
-      plan: extended?.investigationPlan,
-      fixPlan: extended?.fixPlan,
-      critic: extended?.criticReview,
-      testResult: extended?.testResult,
+      agentState: extended?.stateMachine.getState() ?? (session.status === "completed" ? "COMPLETED" : "IDLE"),
+      plan: extended?.investigationPlan ?? null,
+      fixPlan: extended?.fixPlan ?? null,
+      critic: extended?.criticReview ?? null,
+      testResult: extended?.testResult ?? null,
     });
   } catch (error) {
     next(error);
@@ -207,8 +229,12 @@ export async function listDebugSessionsHandler(
   try {
     const context = getTenantContext(request);
     const userId = getUserIdFromToken(request);
-    const memorySessions = debugAgentPipeline.listSessions(context.tenantId, userId);
-    const dbSessions = await loadDebugSessionsFromDb(context.tenantId, userId);
+    const isAdmin = isRequestAdmin(request);
+    const memorySessions = debugAgentPipeline.listSessions(context.tenantId, isAdmin ? undefined : userId);
+    const dbSessions = await loadDebugSessionsFromDb(
+      isAdmin ? undefined : context.tenantId,
+      isAdmin ? undefined : userId,
+    );
     const byId = new Map<string, DebugSession>();
     for (const s of dbSessions) byId.set(s.id, s);
     for (const s of memorySessions) byId.set(s.id, s);
@@ -222,8 +248,9 @@ export async function listDebugSessionsHandler(
 export async function listAgentRunsHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
   try {
     const context = getTenantContext(request);
+    const isAdmin = isRequestAdmin(request);
     const memorySessions = debugAgentPipeline.listSessions(context.tenantId);
-    const dbSessions = await loadDebugSessionsFromDb(context.tenantId);
+    const dbSessions = await loadDebugSessionsFromDb(isAdmin ? undefined : context.tenantId);
     const byId = new Map<string, DebugSession>();
     for (const s of dbSessions) byId.set(s.id, s);
     for (const s of memorySessions) byId.set(s.id, s);

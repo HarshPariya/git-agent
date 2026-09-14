@@ -87,6 +87,115 @@ const describeFile = (p) =>
 
 // ── Core ──────────────────────────────────────────────────────────────────────
 
+function applyGitStatusUpdate(status, repo = window.state.activeRepository, isBackground = true) {
+  if (!status || !repo) return;
+  setGitDesktopState({ gitStatus: status });
+
+  // Update Header metadata & live branch
+  const branchName = status.branch || repo.currentBranch || repo.defaultBranch || "main";
+  const branchBtn = document.getElementById("gd-branch-name");
+  if (branchBtn) branchBtn.innerHTML = `${escapeHtml(branchName)} <span style="font-size:9px">▾</span>`;
+
+  const commitBranchLabel = document.getElementById("gd-commit-branch-label");
+  if (commitBranchLabel) commitBranchLabel.textContent = branchName;
+
+  const aheadBehindEl = document.getElementById("gd-ahead-behind");
+  if (aheadBehindEl) aheadBehindEl.textContent = `↑ ${status.ahead || 0} · ↓ ${status.behind || 0}`;
+
+  const workingStatusEl = document.getElementById("gd-working-status");
+  if (workingStatusEl) {
+    workingStatusEl.textContent = status.clean ? "Clean" : `${status.entries ? status.entries.length : 0} changes`;
+    workingStatusEl.className = status.clean ? "badge badge-success" : "badge badge-warning";
+  }
+
+  // Sync navbar active repo badge with live branch
+  const headerLabel = document.getElementById("header-active-repo-name");
+  if (headerLabel) {
+    headerLabel.textContent = `${repo.name} · ${branchName}`;
+  }
+
+  // Preserve previously selected checkboxes
+  const prevFiles = window.state.gitDesktop?.changedFiles || [];
+  const prevMap = new Map(prevFiles.map((f) => [f.filePath, f]));
+
+  // Map status entries to changed files
+  const changedFiles = (status.entries || []).map((entry) => {
+    const code = STATUS_CODE_MAP[entry.status] ?? (entry.status === "added" ? "A" : entry.status === "deleted" ? "D" : entry.status === "untracked" ? "U" : "M");
+    const isSensitive = (p) => /auth|key|\.env/.test(p);
+    const isCore = (p) => /api|core/.test(p);
+    const risk = isSensitive(entry.filePath) ? "high" : isCore(entry.filePath) ? "medium" : "low";
+    const prev = prevMap.get(entry.filePath);
+    const isSelected = prev ? prev.selected !== false : true;
+
+    return {
+      filePath: entry.filePath,
+      status: entry.status,
+      code,
+      staged: entry.staged,
+      selected: isSelected,
+      additions: entry.status === "added" ? 1 : 0,
+      deletions: 0,
+      risk,
+      logicalGroup: null,
+    };
+  });
+
+  setGitDesktopState({ changedFiles });
+
+  const countLabel = `${changedFiles.length}`;
+  const changesCountEl = document.getElementById("gd-changes-count");
+  if (changesCountEl) changesCountEl.textContent = countLabel;
+
+  const statChanges = document.getElementById("stat-changes");
+  if (statChanges) statChanges.textContent = `${countLabel} files`;
+
+  renderGitDesktopChanges();
+
+  // Auto-preview first changed file diff or keep current file diff if available
+  if (changedFiles.length > 0) {
+    const currentSelected = window.state.gitDesktop?.selectedFile;
+    const fileToView = changedFiles.some((f) => f.filePath === currentSelected)
+      ? currentSelected
+      : changedFiles[0].filePath;
+    viewGitDesktopDiff(fileToView, !isBackground);
+  } else {
+    const pathEl = document.getElementById("gd-diff-filepath");
+    const currentPath = pathEl?.textContent || "";
+    if (!currentPath.includes("Push to") && !currentPath.includes("Successful") && !currentPath.includes("Published")) {
+      if (pathEl) pathEl.textContent = "Working tree is clean";
+      const metaEl = document.getElementById("gd-diff-meta");
+      if (metaEl) metaEl.textContent = "No uncommitted or modified files in repository.";
+      const statusBadge = document.getElementById("gd-diff-status-badge");
+      if (statusBadge) {
+        statusBadge.textContent = "CLEAN";
+        statusBadge.className = "badge badge-success";
+        statusBadge.style.display = "inline-block";
+      }
+      const countBadge = document.getElementById("gd-all-diff-count");
+      if (countBadge) countBadge.textContent = "0";
+
+      const revealBtn = document.getElementById("gd-btn-reveal-os");
+      const editBtn = document.getElementById("gd-btn-open-editor");
+      if (revealBtn) revealBtn.style.display = "none";
+      if (editBtn) editBtn.style.display = "none";
+
+      const viewer = document.getElementById("gd-diff-viewer");
+      if (viewer) {
+        viewer.innerHTML = `
+          <div class="empty-state" style="padding:60px 20px">
+            <div class="empty-icon" style="font-size:32px;color:#10b981">✓</div>
+            <div class="empty-title" style="font-size:15px;margin-top:8px">Working tree is clean</div>
+            <div class="empty-desc" style="max-width:400px;margin:8px auto 0;color:var(--c-text-muted)">
+              All changes committed and synchronized with your branch.
+            </div>
+          </div>`;
+        window._currentRenderedDiffFile = null;
+        window._currentRenderedDiffText = null;
+      }
+    }
+  }
+}
+
 async function loadGitDesktop(manual = false) {
   let repo = window.state.activeRepository || window.state.repositories?.[0];
   if (!repo) {
@@ -95,7 +204,7 @@ async function loadGitDesktop(manual = false) {
       repo = window.state.repositories.find((r) => r.id === savedId) || window.state.repositories[0];
     } else {
       try {
-        const res = await api.getRepositories();
+        const res = await api.listRepositories();
         const repos = res.repositories || res || [];
         window.setState("repositories", repos);
         if (repos.length > 0) {
@@ -103,6 +212,18 @@ async function loadGitDesktop(manual = false) {
         }
       } catch (_) { }
     }
+  }
+
+  // Auto-connect workspace if still no repo connected
+  if (!repo) {
+    try {
+      const res = await api.connectRepository({ name: "Git-Agent", localPath: "." });
+      if (res?.repository) {
+        repo = res.repository;
+        localStorage.setItem("gda_active_repo_id", repo.id);
+        window.setState("activeRepository", repo);
+      }
+    } catch (_) { }
   }
 
   if (!repo) {
@@ -126,110 +247,9 @@ async function loadGitDesktop(manual = false) {
   if (repoNameEl) repoNameEl.textContent = repo.name || repo.path || "Repository";
 
   try {
+    connectGitDesktopStream(repo.id);
     const status = await api.getGitStatus(repo.id);
-    setGitDesktopState({ gitStatus: status });
-
-    // Update Header metadata & live branch
-    const branchName = status.branch || repo.currentBranch || repo.defaultBranch || "main";
-    const branchBtn = document.getElementById("gd-branch-name");
-    if (branchBtn) branchBtn.innerHTML = `${escapeHtml(branchName)} <span style="font-size:9px">▾</span>`;
-
-    const commitBranchLabel = document.getElementById("gd-commit-branch-label");
-    if (commitBranchLabel) commitBranchLabel.textContent = branchName;
-
-    const aheadBehindEl = document.getElementById("gd-ahead-behind");
-    if (aheadBehindEl) aheadBehindEl.textContent = `↑ ${status.ahead || 0} · ↓ ${status.behind || 0}`;
-
-    const workingStatusEl = document.getElementById("gd-working-status");
-    if (workingStatusEl) {
-      workingStatusEl.textContent = status.clean ? "Clean" : `${status.entries ? status.entries.length : 0} changes`;
-      workingStatusEl.className = status.clean ? "badge badge-success" : "badge badge-warning";
-    }
-
-    // Sync navbar active repo badge with live branch
-    const headerLabel = document.getElementById("header-active-repo-name");
-    if (headerLabel) {
-      headerLabel.textContent = `${repo.name} · ${branchName}`;
-    }
-
-    // Preserve previously selected checkboxes
-    const prevFiles = window.state.gitDesktop?.changedFiles || [];
-    const prevMap = new Map(prevFiles.map((f) => [f.filePath, f]));
-
-    // Map status entries to changed files
-    const changedFiles = (status.entries || []).map((entry) => {
-      const code = STATUS_CODE_MAP[entry.status] ?? (entry.status === "added" ? "A" : entry.status === "deleted" ? "D" : entry.status === "untracked" ? "U" : "M");
-      const isSensitive = (p) => /auth|key|\.env/.test(p);
-      const isCore = (p) => /api|core/.test(p);
-      const risk = isSensitive(entry.filePath) ? "high" : isCore(entry.filePath) ? "medium" : "low";
-      const prev = prevMap.get(entry.filePath);
-      const isSelected = prev ? prev.selected !== false : true;
-
-      return {
-        filePath: entry.filePath,
-        status: entry.status,
-        code,
-        staged: entry.staged,
-        selected: isSelected,
-        additions: entry.status === "added" ? 1 : 0,
-        deletions: 0,
-        risk,
-        logicalGroup: null,
-      };
-    });
-
-    setGitDesktopState({ changedFiles });
-
-    const countLabel = `${changedFiles.length}`;
-    const changesCountEl = document.getElementById("gd-changes-count");
-    if (changesCountEl) changesCountEl.textContent = countLabel;
-
-    const statChanges = document.getElementById("stat-changes");
-    if (statChanges) statChanges.textContent = `${countLabel} files`;
-
-    renderGitDesktopChanges();
-
-    // Auto-preview first changed file diff or keep current file diff if available
-    if (changedFiles.length > 0) {
-      const currentSelected = window.state.gitDesktop?.selectedFile;
-      const fileToView = changedFiles.some((f) => f.filePath === currentSelected)
-        ? currentSelected
-        : changedFiles[0].filePath;
-      viewGitDesktopDiff(fileToView);
-    } else {
-      const pathEl = document.getElementById("gd-diff-filepath");
-      const currentPath = pathEl?.textContent || "";
-      if (!currentPath.includes("Push to") && !currentPath.includes("Successful") && !currentPath.includes("Published")) {
-        if (pathEl) pathEl.textContent = "Working tree is clean";
-        const metaEl = document.getElementById("gd-diff-meta");
-        if (metaEl) metaEl.textContent = "No uncommitted or modified files in repository.";
-        const statusBadge = document.getElementById("gd-diff-status-badge");
-        if (statusBadge) {
-          statusBadge.textContent = "CLEAN";
-          statusBadge.className = "badge badge-success";
-          statusBadge.style.display = "inline-block";
-        }
-        const countBadge = document.getElementById("gd-all-diff-count");
-        if (countBadge) countBadge.textContent = "0";
-
-        const revealBtn = document.getElementById("gd-btn-reveal-os");
-        const editBtn = document.getElementById("gd-btn-open-editor");
-        if (revealBtn) revealBtn.style.display = "none";
-        if (editBtn) editBtn.style.display = "none";
-
-        const viewer = document.getElementById("gd-diff-viewer");
-        if (viewer) {
-          viewer.innerHTML = `
-            <div class="empty-state" style="padding:60px 20px">
-              <div class="empty-icon" style="font-size:32px;color:#10b981">✓</div>
-              <div class="empty-title" style="font-size:15px;margin-top:8px">Working tree is clean</div>
-              <div class="empty-desc" style="max-width:400px;margin:8px auto 0;color:var(--c-text-muted)">
-                All changes committed and synchronized with your branch.
-              </div>
-            </div>`;
-        }
-      }
-    }
+    applyGitStatusUpdate(status, repo, !manual);
   } catch (err) {
     console.error("Failed to load Git Desktop status:", err);
     if (manual) showToast(`Git Desktop error: ${err.message}`, "error");
@@ -435,7 +455,7 @@ async function generateAutoCommitMessage(force = false) {
   }
 }
 
-async function viewGitDesktopDiff(filePath) {
+async function viewGitDesktopDiff(filePath, showLoading = true) {
   const repo = window.state.activeRepository;
   if (!repo) {
     showToast("Select a repository first", "warning");
@@ -475,28 +495,33 @@ async function viewGitDesktopDiff(filePath) {
   }
 
   const viewer = document.getElementById("gd-diff-viewer");
-  if (viewer) {
+  const isDifferentFile = window._currentRenderedDiffFile !== filePath;
+  if (viewer && (showLoading || isDifferentFile)) {
     viewer.innerHTML = `<div style="text-align:center;padding:32px 16px;color:var(--c-text-muted)"><div class="spinner"></div><div style="margin-top:8px">Loading unified diff for ${escapeHtml(filePath)}...</div></div>`;
   }
   switchGitDesktopTab("gd-diff");
 
   try {
     const res = await api.getGitDiff(repo.id, filePath);
+    let diffText = "";
     if (res?.diff?.trim()) {
-      renderFormattedDiff("gd-diff-viewer", res.diff, filePath);
-      return;
-    }
-    if (typeof res === "string" && res.trim()) {
-      renderFormattedDiff("gd-diff-viewer", res, filePath);
-      return;
-    }
-    if (res?.files && Array.isArray(res.files)) {
+      diffText = res.diff;
+    } else if (typeof res === "string" && res.trim()) {
+      diffText = res;
+    } else if (res?.files && Array.isArray(res.files)) {
       const match = res.files.find((f) => f.filePath === filePath);
-      if (match?.diff?.trim()) {
-        renderFormattedDiff("gd-diff-viewer", match.diff, filePath);
-        return;
-      }
+      if (match?.diff?.trim()) diffText = match.diff;
     }
+
+    if (diffText) {
+      if (diffText !== window._currentRenderedDiffText || isDifferentFile) {
+        window._currentRenderedDiffFile = filePath;
+        window._currentRenderedDiffText = diffText;
+        renderFormattedDiff("gd-diff-viewer", diffText, filePath);
+      }
+      return;
+    }
+
     if (viewer) {
       viewer.innerHTML = `
         <div class="empty-state" style="padding:40px 16px">
@@ -504,6 +529,8 @@ async function viewGitDesktopDiff(filePath) {
           <div class="empty-title">In sync with repository</div>
           <div class="empty-desc">No active line differences detected for "${escapeHtml(filePath)}".</div>
         </div>`;
+      window._currentRenderedDiffFile = filePath;
+      window._currentRenderedDiffText = "";
     }
   } catch (err) {
     if (viewer) viewer.innerHTML = `<div class="text-danger" style="padding:16px">Error loading diff: ${escapeHtml(err.message)}</div>`;
@@ -1296,6 +1323,40 @@ async function refreshGitDesktop() {
   }
 }
 
+let _sseSource = null;
+
+function connectGitDesktopStream(repoId) {
+  if (!repoId || typeof EventSource === "undefined") return;
+  if (_sseSource && _sseSource._repoId === repoId && _sseSource.readyState !== EventSource.CLOSED) return;
+
+  if (_sseSource) {
+    _sseSource.close();
+    _sseSource = null;
+  }
+
+  try {
+    const token = localStorage.getItem("gda_token");
+    const streamUrl = `/api/git/stream/${encodeURIComponent(repoId)}${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+    _sseSource = new EventSource(streamUrl);
+    _sseSource._repoId = repoId;
+
+    _sseSource.addEventListener("git-status", (e) => {
+      try {
+        const payload = JSON.parse(e.data);
+        if (payload?.status && window.state?.currentPage === "git-desktop" && !window.state?.gitDesktop?.isActionRunning) {
+          applyGitStatusUpdate(payload.status, window.state.activeRepository, true);
+        }
+      } catch (_) {}
+    });
+
+    _sseSource.onerror = () => {
+      // EventSource auto-reconnects
+    };
+  } catch (err) {
+    console.warn("SSE connection error:", err);
+  }
+}
+
 // Auto-refresh when window focus or tab visibility changes
 window.addEventListener("focus", () => {
   if (window.state?.currentPage === "git-desktop" && !window.state?.gitDesktop?.isActionRunning) {
@@ -1309,18 +1370,18 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// Periodic background polling (every 3.5s) like GitHub Desktop
+// Periodic background polling (every 2s) like GitHub Desktop
 if (!window._gitDesktopPoller) {
   window._gitDesktopPoller = setInterval(() => {
     if (
       document.visibilityState === "visible" &&
       window.state?.currentPage === "git-desktop" &&
-      window.state?.activeRepository &&
+      (window.state?.activeRepository || localStorage.getItem("gda_active_repo_id")) &&
       !window.state?.gitDesktop?.isActionRunning
     ) {
       loadGitDesktop(false).catch(() => { });
     }
-  }, 3500);
+  }, 2000);
 }
 
 // Window exports

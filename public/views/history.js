@@ -108,11 +108,11 @@ async function reopenDebugSession(sessionId) {
     window.setState("currentSession", session);
     window.setState("currentFixPlan", session.fixPlan);
     window.setState("currentCritic", session.critic);
+    const findings = session.findings || [];
 
     // Render hypotheses
     const hypothesesContainer = document.getElementById("session-hypotheses");
     if (hypothesesContainer) {
-      const findings = session.findings || [];
       const hyps = findings.length
         ? findings.map((f, i) => ({
           title: f.title || `Finding #${i + 1}`,

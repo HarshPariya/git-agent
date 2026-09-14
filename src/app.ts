@@ -29,6 +29,7 @@ import {
   gitUnstageHandler,
   gitStageAllHandler,
   gitUnstageAllHandler,
+  gitStreamStatusHandler,
 } from "./api/git.js";
 import {
   startDebugSessionHandler,
@@ -232,6 +233,9 @@ app.post("/api/fs/open-in-os", ...protectedRoute, openInOsHandler);
 app.get("/api/git/catalog", ...protectedRoute, gitOperationCatalogHandler);
 app.get("/api/git/classify/:operation", ...protectedRoute, gitClassifyHandler);
 app.get("/api/git/status", ...protectedRoute, gitStatusHandler);
+app.get("/api/git/stream/:repositoryId", ...protectedRoute, gitStreamStatusHandler);
+app.get("/api/git/:repositoryId/stream", ...protectedRoute, gitStreamStatusHandler);
+app.get("/api/git/stream", ...protectedRoute, gitStreamStatusHandler);
 app.get("/api/git/log", ...protectedRoute, gitLogHandler);
 app.get("/api/git/diff", ...protectedRoute, gitDiffHandler);
 app.get("/api/git/branches", ...protectedRoute, gitBranchesHandler);
@@ -370,7 +374,17 @@ app.use(errorHandler);
 
 // Serve static frontend
 const publicDir = process.env.PUBLIC_DIR ? path.resolve(process.env.PUBLIC_DIR) : path.resolve(process.cwd(), "public");
-app.use(express.static(publicDir));
+app.use(
+  express.static(publicDir, {
+    etag: false,
+    maxAge: 0,
+    setHeaders: (res) => {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+    },
+  }),
+);
 app.use((_req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));
 });
