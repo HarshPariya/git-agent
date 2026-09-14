@@ -14,9 +14,16 @@ let allRepoBranches = [];
 
 // ── Lookups / Maps ────────────────────────────────────────────────────────────
 
-const STATUS_CODE_MAP = { added: "A", deleted: "D", renamed: "R", untracked: "U", modified: "M" };
+const STATUS_CODE_MAP = { added: "A", deleted: "D", renamed: "R", untracked: "U", modified: "M", copied: "C" };
 const RISK_BADGE_MAP = { high: "badge-danger", medium: "badge-warning" };
-const STATUS_BADGE_MAP = { ADDED: "badge-success", DELETED: "badge-danger", UNTRACKED: "badge-accent", MODIFIED: "badge-warning" };
+const STATUS_BADGE_MAP = {
+  ADDED: "badge-success",
+  DELETED: "badge-danger",
+  UNTRACKED: "badge-accent",
+  MODIFIED: "badge-warning",
+  COPIED: "badge-info",
+  RENAMED: "badge-info",
+};
 const TAB_PANEL_MAP = {
   "gd-diff": { btn: "gd-tab-btn-diff", panel: "panel-gd-diff" },
   "gd-all-diff": { btn: "gd-tab-btn-all-diff", panel: "panel-gd-all-diff" },
@@ -43,11 +50,24 @@ const DESCRIPTION_RULES = [
 ];
 const DESCRIPTION_DEFAULT = (p) => `- ${p}: apply component modifications and sync verified changes`;
 const ACTION_DISPATCH = {
+  refreshGitDesktop: () => refreshGitDesktop(),
   viewGitDesktopDiff: (value) => viewGitDesktopDiff(value),
-  openSpecificFileInOs: (value, target) => openSpecificFileInOs(value, target.dataset.mode || "reveal"),
+  openSpecificFileInOs: (value, target) => openSpecificFileInOs(value, target?.dataset?.mode || "reveal"),
   checkoutSelectedBranch: (value) => checkoutSelectedBranch(value),
-  toggleFileStaging: (value, target) => toggleFileStaging(target.dataset.path, target),
+  toggleFileStaging: (value, target) => toggleFileStaging(target?.dataset?.path, target),
   toggleAllStaging: (value, target) => toggleAllStaging(target),
+  generateAutoCommitMessage: (value) => generateAutoCommitMessage(value === "true"),
+  commitFromGitDesktop: () => commitFromGitDesktop(),
+  switchGitDesktopTab: (value) => switchGitDesktopTab(value),
+  switchGitDesktopLeftTab: (value) => switchGitDesktopLeftTab(value),
+  filterChangedFiles: (value) => filterChangedFiles(value),
+  triggerAIAnalyzeChanges: () => triggerAIAnalyzeChanges(),
+  triggerAICommitAll: () => triggerAICommitAll(),
+  triggerGitFetch: () => triggerGitFetch(),
+  triggerGitPull: () => triggerGitPull(),
+  triggerGitSync: () => triggerGitSync(),
+  openPushPreviewModal: () => openPushPreviewModal(),
+  triggerAIShip: () => triggerAIShip(),
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -67,8 +87,24 @@ const describeFile = (p) =>
 
 // ── Core ──────────────────────────────────────────────────────────────────────
 
-async function loadGitDesktop() {
-  const repo = window.state.activeRepository || window.state.repositories[0];
+async function loadGitDesktop(manual = false) {
+  let repo = window.state.activeRepository || window.state.repositories?.[0];
+  if (!repo) {
+    const savedId = localStorage.getItem("gda_active_repo_id");
+    if (window.state.repositories?.length) {
+      repo = window.state.repositories.find((r) => r.id === savedId) || window.state.repositories[0];
+    } else {
+      try {
+        const res = await api.getRepositories();
+        const repos = res.repositories || res || [];
+        window.setState("repositories", repos);
+        if (repos.length > 0) {
+          repo = repos.find((r) => r.id === savedId) || repos[0];
+        }
+      } catch (_) { }
+    }
+  }
+
   if (!repo) {
     const repoNameEl = document.getElementById("gd-repo-name");
     if (repoNameEl) repoNameEl.textContent = "No repository connected";
@@ -116,18 +152,25 @@ async function loadGitDesktop() {
       headerLabel.textContent = `${repo.name} · ${branchName}`;
     }
 
+    // Preserve previously selected checkboxes
+    const prevFiles = window.state.gitDesktop?.changedFiles || [];
+    const prevMap = new Map(prevFiles.map((f) => [f.filePath, f]));
+
     // Map status entries to changed files
     const changedFiles = (status.entries || []).map((entry) => {
-      const code = STATUS_CODE_MAP[entry.status] ?? "M";
+      const code = STATUS_CODE_MAP[entry.status] ?? (entry.status === "added" ? "A" : entry.status === "deleted" ? "D" : entry.status === "untracked" ? "U" : "M");
       const isSensitive = (p) => /auth|key|\.env/.test(p);
       const isCore = (p) => /api|core/.test(p);
       const risk = isSensitive(entry.filePath) ? "high" : isCore(entry.filePath) ? "medium" : "low";
+      const prev = prevMap.get(entry.filePath);
+      const isSelected = prev ? prev.selected !== false : true;
 
       return {
         filePath: entry.filePath,
         status: entry.status,
         code,
         staged: entry.staged,
+        selected: isSelected,
         additions: entry.status === "added" ? 1 : 0,
         deletions: 0,
         risk,
@@ -146,9 +189,13 @@ async function loadGitDesktop() {
 
     renderGitDesktopChanges();
 
-    // Auto-preview first changed file diff if available
+    // Auto-preview first changed file diff or keep current file diff if available
     if (changedFiles.length > 0) {
-      viewGitDesktopDiff(changedFiles[0].filePath);
+      const currentSelected = window.state.gitDesktop?.selectedFile;
+      const fileToView = changedFiles.some((f) => f.filePath === currentSelected)
+        ? currentSelected
+        : changedFiles[0].filePath;
+      viewGitDesktopDiff(fileToView);
     } else {
       const pathEl = document.getElementById("gd-diff-filepath");
       const currentPath = pathEl?.textContent || "";
@@ -185,7 +232,7 @@ async function loadGitDesktop() {
     }
   } catch (err) {
     console.error("Failed to load Git Desktop status:", err);
-    showToast(`Git Desktop error: ${err.message}`, "error");
+    if (manual) showToast(`Git Desktop error: ${err.message}`, "error");
   }
 }
 
@@ -195,8 +242,8 @@ function updateCommitButtonText() {
   const repo = window.state.activeRepository;
   const branch = window.state.gitDesktop.gitStatus?.branch || repo?.currentBranch || repo?.defaultBranch || "main";
   const files = window.state.gitDesktop.changedFiles || [];
-  const stagedCount = files.filter((f) => f.staged).length;
-  const countLabel = stagedCount > 0 ? ` (${stagedCount} files)` : files.length > 0 ? ` (${files.length} files)` : "";
+  const selectedCount = files.filter((f) => f.selected !== false).length;
+  const countLabel = selectedCount > 0 ? ` (${selectedCount} files)` : files.length > 0 ? ` (${files.length} files)` : "";
   btn.innerHTML = `Commit to <span id="gd-commit-branch-label" style="font-weight:700;margin-left:2px">${escapeHtml(branch)}</span>${countLabel}`;
 }
 
@@ -204,20 +251,20 @@ async function toggleFileStaging(filePath, target) {
   const repo = window.state.activeRepository;
   if (!repo || !filePath) return;
   const isChecked = target ? target.checked : true;
+  const changedFiles = (window.state.gitDesktop.changedFiles || []).map((f) =>
+    f.filePath === filePath ? { ...f, selected: isChecked, staged: isChecked } : f
+  );
+  setGitDesktopState({ changedFiles });
+  renderGitDesktopChanges();
+
   try {
     if (isChecked) {
       await api.stageFile(repo.id, filePath);
     } else {
       await api.unstageFile(repo.id, filePath);
     }
-    const changedFiles = (window.state.gitDesktop.changedFiles || []).map((f) =>
-      f.filePath === filePath ? { ...f, staged: isChecked } : f
-    );
-    setGitDesktopState({ changedFiles });
-    renderGitDesktopChanges();
   } catch (err) {
-    showToast(`Staging error: ${err.message}`, "error");
-    await loadGitDesktop();
+    console.warn("Staging sync warning:", err);
   }
 }
 
@@ -225,21 +272,22 @@ async function toggleAllStaging(target) {
   const repo = window.state.activeRepository;
   if (!repo) return;
   const isChecked = target ? target.checked : true;
+  const changedFiles = (window.state.gitDesktop.changedFiles || []).map((f) => ({
+    ...f,
+    selected: isChecked,
+    staged: isChecked,
+  }));
+  setGitDesktopState({ changedFiles });
+  renderGitDesktopChanges();
+
   try {
     if (isChecked) {
       await api.stageAll(repo.id);
     } else {
       await api.unstageAll(repo.id);
     }
-    const changedFiles = (window.state.gitDesktop.changedFiles || []).map((f) => ({
-      ...f,
-      staged: isChecked,
-    }));
-    setGitDesktopState({ changedFiles });
-    renderGitDesktopChanges();
   } catch (err) {
-    showToast(`Staging error: ${err.message}`, "error");
-    await loadGitDesktop();
+    console.warn("Staging all sync warning:", err);
   }
 }
 
@@ -285,7 +333,7 @@ function renderGitDesktopChanges() {
     return;
   }
 
-  const allStaged = allChanged.length > 0 && allChanged.every((f) => f.staged);
+  const allSelected = allChanged.length > 0 && allChanged.every((f) => f.selected !== false);
 
   let html = `<div style="display:flex;flex-direction:column">`;
 
@@ -293,7 +341,7 @@ function renderGitDesktopChanges() {
   html += `
     <div class="git-change-row all-files-row" style="background:var(--c-surface-hover);font-weight:600;border-bottom:1.5px solid var(--c-border);display:flex;align-items:center;justify-content:space-between;padding:8px 12px">
       <div style="display:flex;align-items:center;gap:10px">
-        <input type="checkbox" id="gd-select-all" ${allStaged ? "checked" : ""} style="cursor:pointer;width:15px;height:15px;accent-color:var(--c-accent)" title="Stage / Unstage All" data-action="toggleAllStaging">
+        <input type="checkbox" id="gd-select-all" ${allSelected ? "checked" : ""} style="cursor:pointer;width:15px;height:15px;accent-color:var(--c-accent)" title="Select / Deselect All for commit" data-action="toggleAllStaging">
         <span class="git-file-name" style="font-weight:700;color:var(--c-accent);cursor:pointer" data-action="switchGitDesktopTab" data-value="gd-all-diff">
           All Changed Files (${allChanged.length})
         </span>
@@ -311,7 +359,7 @@ function renderGitDesktopChanges() {
     html += `
       <div class="git-change-row ${isSelected ? "selected-row" : ""}" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:7px 12px;${isSelected ? "background:var(--c-surface-active, rgba(59,130,246,0.08));border-left:3px solid var(--c-accent);" : ""}" data-action="viewGitDesktopDiff" data-value="${escapeHtml(f.filePath)}">
         <div class="git-change-left" style="display:flex;align-items:center;gap:8px;min-width:0;flex:1">
-          <input type="checkbox" class="gd-file-check" data-path="${escapeHtml(f.filePath)}" ${f.staged ? "checked" : ""} style="cursor:pointer;width:14px;height:14px;accent-color:var(--c-accent);flex-shrink:0" data-stopprop="true" data-action="toggleFileStaging">
+          <input type="checkbox" class="gd-file-check" data-path="${escapeHtml(f.filePath)}" ${f.selected !== false ? "checked" : ""} style="cursor:pointer;width:14px;height:14px;accent-color:var(--c-accent);flex-shrink:0" data-stopprop="true" data-action="toggleFileStaging">
           <span class="git-status-badge ${f.code}" style="flex-shrink:0">${f.code}</span>
           <span class="git-file-name" title="${escapeHtml(f.filePath)}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${escapeHtml(f.filePath)}</span>
           ${groupBadge}
@@ -752,93 +800,102 @@ async function commitFromGitDesktop() {
   const fullMessage = desc ? `${summary}\n\n${desc}` : summary;
   const btn = document.getElementById("gd-btn-commit");
   if (btn) {
-    btn.disabled = true;
     const allFiles = window.state.gitDesktop.changedFiles || [];
-    const stagedFiles = allFiles.filter((f) => f.staged);
-    const stagedPaths = stagedFiles.map((f) => f.filePath);
+    const selectedFiles = allFiles.filter((f) => f.selected !== false);
+    if (allFiles.length > 0 && selectedFiles.length === 0) {
+      showToast("Please select at least one changed file to commit", "warning");
+      return;
+    }
+
+    btn.disabled = true;
+    setGitDesktopState({ isActionRunning: true });
+    const stageAll = selectedFiles.length === allFiles.length;
+    const filesToCommit = stageAll ? null : selectedFiles.map((f) => f.filePath);
 
     try {
       const res = await api.gitCommit(
         repo.id,
         fullMessage,
-        stagedPaths.length === 0,
-        stagedPaths.length > 0 ? stagedPaths : null,
+        stageAll,
+        filesToCommit,
       );
       if (res.success) {
         showToast(`Committed: ${summary}`, "success");
         if (summaryInput) summaryInput.value = "";
         if (descInput) descInput.value = "";
-        await loadGitDesktop();
+        await loadGitDesktop(false);
       } else {
         showToast(`Commit failed: ${res.error || res.message}`, "error");
       }
     } catch (err) {
       showToast(`Commit error: ${err.message}`, "error");
     } finally {
+      setGitDesktopState({ isActionRunning: false });
       if (btn) {
         btn.disabled = false;
         updateCommitButtonText();
       }
     }
   }
+}
 
-  async function triggerAIAnalyzeChanges() {
-    const repo = window.state.activeRepository;
-    if (!repo) {
-      showToast("Please select a repository first", "warning");
-      return;
+async function triggerAIAnalyzeChanges() {
+  const repo = window.state.activeRepository;
+  if (!repo) {
+    showToast("Please select a repository first", "warning");
+    return;
+  }
+
+  const btn = document.getElementById("gd-btn-analyze");
+  const summaryEl = document.getElementById("gd-ai-summary");
+  const planContainer = document.getElementById("gd-commit-plan-container");
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `⚡ Analyzing...`;
+  }
+  if (summaryEl) summaryEl.textContent = "AI is inspecting AST symbols, imports, and git diffs...";
+
+  try {
+    const data = await api.analyzeChanges(repo.id);
+    const plan = data.plan || data;
+    setGitDesktopState({ commitPlan: plan });
+
+    if (summaryEl) {
+      summaryEl.textContent = plan.summary || `${plan.totalFiles} files grouped into ${plan.groups.length} logical commits.`;
     }
 
-    const btn = document.getElementById("gd-btn-analyze");
-    const summaryEl = document.getElementById("gd-ai-summary");
-    const planContainer = document.getElementById("gd-commit-plan-container");
-
-    if (btn) {
-      btn.disabled = true;
-      btn.innerHTML = `⚡ Analyzing...`;
+    if (plan.changedFiles && Array.isArray(plan.changedFiles)) {
+      const changedFiles = plan.changedFiles.map((f) => ({
+        ...f,
+        code: STATUS_CODE_MAP[f.status] ?? "M",
+      }));
+      setGitDesktopState({ changedFiles });
+      renderGitDesktopChanges();
     }
-    if (summaryEl) summaryEl.textContent = "AI is inspecting AST symbols, imports, and git diffs...";
 
-    try {
-      const data = await api.analyzeChanges(repo.id);
-      const plan = data.plan || data;
-      setGitDesktopState({ commitPlan: plan });
-
-      if (summaryEl) {
-        summaryEl.textContent = plan.summary || `${plan.totalFiles} files grouped into ${plan.groups.length} logical commits.`;
-      }
-
-      if (plan.changedFiles && Array.isArray(plan.changedFiles)) {
-        const changedFiles = plan.changedFiles.map((f) => ({
-          ...f,
-          code: STATUS_CODE_MAP[f.status] ?? "M",
-        }));
-        setGitDesktopState({ changedFiles });
-        renderGitDesktopChanges();
-      }
-
-      // Call modular commit plan component renderer if available
-      if (typeof window.renderCommitPlanView === "function") {
-        window.renderCommitPlanView(plan);
-      } else if (planContainer) {
-        if (!plan.groups?.length) {
-          planContainer.innerHTML = `
+    // Call modular commit plan component renderer if available
+    if (typeof window.renderCommitPlanView === "function") {
+      window.renderCommitPlanView(plan);
+    } else if (planContainer) {
+      if (!plan.groups?.length) {
+        planContainer.innerHTML = `
           <div class="empty-state" style="padding:24px">
             <div class="empty-title">Working tree clean</div>
             <div class="empty-desc">No changes required for commit planning.</div>
           </div>`;
-          const commitAllBtn = document.getElementById("gd-btn-commit-all");
-          if (commitAllBtn) commitAllBtn.style.display = "none";
-          return;
-        }
+        const commitAllBtn = document.getElementById("gd-btn-commit-all");
+        if (commitAllBtn) commitAllBtn.style.display = "none";
+        return;
+      }
 
-        let planHtml = "";
-        plan.groups.forEach((grp, idx) => {
-          const { type, scope, subject } = grp.suggestedCommit || {};
-          const commitMsg = grp.suggestedCommit ? `${type}${scope ? `(${scope})` : ""}: ${subject}` : grp.name;
-          const riskClass = resolveRiskBadgeClass(grp.risk);
+      let planHtml = "";
+      plan.groups.forEach((grp, idx) => {
+        const { type, scope, subject } = grp.suggestedCommit || {};
+        const commitMsg = grp.suggestedCommit ? `${type}${scope ? `(${scope})` : ""}: ${subject}` : grp.name;
+        const riskClass = resolveRiskBadgeClass(grp.risk);
 
-          planHtml += `
+        planHtml += `
           <div class="commit-plan-card">
             <div class="commit-plan-header">
               <div>
@@ -856,282 +913,282 @@ async function commitFromGitDesktop() {
               ${grp.files.map((f) => `<span class="commit-file-pill">${escapeHtml(f)}</span>`).join("")}
             </div>
           </div>`;
-        });
-        planContainer.innerHTML = planHtml;
-        const commitAllBtn = document.getElementById("gd-btn-commit-all");
-        if (commitAllBtn) commitAllBtn.style.display = "inline-flex";
-      }
+      });
+      planContainer.innerHTML = planHtml;
+      const commitAllBtn = document.getElementById("gd-btn-commit-all");
+      if (commitAllBtn) commitAllBtn.style.display = "inline-flex";
+    }
 
-      switchGitDesktopLeftTab("commit-plan");
-      showToast(`AI grouped ${plan.totalFiles || plan.groups.length} files into ${plan.groups.length} logical commits!`, "success");
-    } catch (err) {
-      if (summaryEl) summaryEl.textContent = `Analysis failed: ${err.message}`;
-      showToast(`Error analyzing changes: ${err.message}`, "error");
-    } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = `⚡ AI Analyze Changes`;
-      }
+    switchGitDesktopLeftTab("commit-plan");
+    showToast(`AI grouped ${plan.totalFiles || plan.groups.length} files into ${plan.groups.length} logical commits!`, "success");
+  } catch (err) {
+    if (summaryEl) summaryEl.textContent = `Analysis failed: ${err.message}`;
+    showToast(`Error analyzing changes: ${err.message}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `⚡ AI Analyze Changes`;
     }
   }
+}
 
-  async function triggerAICommitAll() {
-    const repo = window.state.activeRepository;
-    if (!repo) return;
+async function triggerAICommitAll() {
+  const repo = window.state.activeRepository;
+  if (!repo) return;
 
-    const btn = document.getElementById("gd-btn-commit-all");
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = "Committing...";
-    }
+  const btn = document.getElementById("gd-btn-commit-all");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Committing...";
+  }
 
-    try {
-      const groups = window.state.gitDesktop.commitPlan?.groups;
-      const res = await api.executeCommitPlan(repo.id, groups);
+  try {
+    const groups = window.state.gitDesktop.commitPlan?.groups;
+    const res = await api.executeCommitPlan(repo.id, groups);
 
-      if (res.success) {
-        showToast(`Successfully created ${res.totalCreated} logical commits!`, "success");
-        await loadGitDesktop();
-        const commitAllBtn = document.getElementById("gd-btn-commit-all");
-        if (commitAllBtn) commitAllBtn.style.display = "none";
-        const planContainer = document.getElementById("gd-commit-plan-container");
-        if (planContainer) {
-          planContainer.innerHTML = `
+    if (res.success) {
+      showToast(`Successfully created ${res.totalCreated} logical commits!`, "success");
+      await loadGitDesktop();
+      const commitAllBtn = document.getElementById("gd-btn-commit-all");
+      if (commitAllBtn) commitAllBtn.style.display = "none";
+      const planContainer = document.getElementById("gd-commit-plan-container");
+      if (planContainer) {
+        planContainer.innerHTML = `
           <div class="empty-state" style="padding:24px">
             <div class="empty-icon">✓</div>
             <div class="empty-title">All groups committed!</div>
             <div class="empty-desc">${res.totalCreated} verified commits created on branch '${res.branch}'.</div>
           </div>`;
-        }
-      } else {
-        showToast(`Commit failed: ${res.message || res.error}`, "error");
       }
-    } catch (err) {
-      showToast(`Commit error: ${err.message}`, "error");
-    } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = "⚡ Commit All Groups";
-      }
+    } else {
+      showToast(`Commit failed: ${res.message || res.error}`, "error");
+    }
+  } catch (err) {
+    showToast(`Commit error: ${err.message}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "⚡ Commit All Groups";
     }
   }
+}
 
-  async function triggerGitFetch() {
-    const repo = window.state.activeRepository;
-    if (!repo) return;
+async function triggerGitFetch() {
+  const repo = window.state.activeRepository;
+  if (!repo) return;
 
-    showToast("Fetching remote references...", "info");
-    try {
-      await api.gitFetch(repo.id);
-      await loadGitDesktop();
-      showToast("Fetched latest refs from origin", "success");
-    } catch (err) {
-      showToast(`Fetch error: ${err.message}`, "error");
-    }
+  showToast("Fetching remote references...", "info");
+  try {
+    await api.gitFetch(repo.id);
+    await loadGitDesktop();
+    showToast("Fetched latest refs from origin", "success");
+  } catch (err) {
+    showToast(`Fetch error: ${err.message}`, "error");
   }
+}
 
-  async function triggerGitPull() {
-    const repo = window.state.activeRepository;
-    if (!repo) return;
+async function triggerGitPull() {
+  const repo = window.state.activeRepository;
+  if (!repo) return;
 
-    try {
-      const res = await api.gitPull(repo.id);
+  try {
+    const res = await api.gitPull(repo.id);
 
-      const hasConflict = !res.success && (res.error?.includes("conflict") || res.output?.includes("conflict"));
-      if (hasConflict) {
-        showToast("Merge conflict encountered during pull! Opening Conflict Center...", "warning");
-        navigate("conflicts");
-        return;
-      }
-
-      await loadGitDesktop();
-      showToast(res.success ? "Pulled successfully" : "Pull failed", res.success ? "success" : "error");
-    } catch (err) {
-      showToast(`Pull error: ${err.message}`, "error");
-    }
-  }
-
-  async function triggerGitSync() {
-    const repo = window.state.activeRepository;
-    if (!repo) return;
-
-    showToast("Syncing with remote...", "info");
-    try {
-      const res = await api.gitSync(repo.id);
-      await loadGitDesktop();
-
-      if (res.actionRequired === "diverged") {
-        showToast("Branches have diverged! Rebase or merge required.", "warning");
-      } else {
-        showToast(res.message, "success");
-      }
-    } catch (err) {
-      showToast(`Sync error: ${err.message}`, "error");
-    }
-  }
-
-  async function openPushPreviewModal() {
-    const repo = window.state.activeRepository;
-    if (!repo) {
-      showToast("Select a repository first", "warning");
+    const hasConflict = !res.success && (res.error?.includes("conflict") || res.output?.includes("conflict"));
+    if (hasConflict) {
+      showToast("Merge conflict encountered during pull! Opening Conflict Center...", "warning");
+      navigate("conflicts");
       return;
     }
 
-    const targetRepoEl = document.getElementById("push-target-repo");
-    if (targetRepoEl) targetRepoEl.textContent = repo.name || repo.path;
+    await loadGitDesktop();
+    showToast(res.success ? "Pulled successfully" : "Pull failed", res.success ? "success" : "error");
+  } catch (err) {
+    showToast(`Pull error: ${err.message}`, "error");
+  }
+}
 
-    const currentBranch = window.state.gitDesktop.gitStatus?.branch || repo.currentBranch || repo.defaultBranch || "main";
-    const currentBranchEl = document.getElementById("push-current-branch");
-    if (currentBranchEl) currentBranchEl.textContent = currentBranch;
+async function triggerGitSync() {
+  const repo = window.state.activeRepository;
+  if (!repo) return;
 
-    const branchSelect = document.getElementById("push-target-branch-select");
-    const customInput = document.getElementById("push-custom-branch-input");
-    if (customInput) customInput.style.display = "none";
+  showToast("Syncing with remote...", "info");
+  try {
+    const res = await api.gitSync(repo.id);
+    await loadGitDesktop();
 
+    if (res.actionRequired === "diverged") {
+      showToast("Branches have diverged! Rebase or merge required.", "warning");
+    } else {
+      showToast(res.message, "success");
+    }
+  } catch (err) {
+    showToast(`Sync error: ${err.message}`, "error");
+  }
+}
+
+async function openPushPreviewModal() {
+  const repo = window.state.activeRepository;
+  if (!repo) {
+    showToast("Select a repository first", "warning");
+    return;
+  }
+
+  const targetRepoEl = document.getElementById("push-target-repo");
+  if (targetRepoEl) targetRepoEl.textContent = repo.name || repo.path;
+
+  const currentBranch = window.state.gitDesktop.gitStatus?.branch || repo.currentBranch || repo.defaultBranch || "main";
+  const currentBranchEl = document.getElementById("push-current-branch");
+  if (currentBranchEl) currentBranchEl.textContent = currentBranch;
+
+  const branchSelect = document.getElementById("push-target-branch-select");
+  const customInput = document.getElementById("push-custom-branch-input");
+  if (customInput) customInput.style.display = "none";
+
+  if (branchSelect) {
+    branchSelect.innerHTML = `<option value="${escapeHtml(currentBranch)}">🌿 Current branch: ${escapeHtml(currentBranch)}</option>`;
+  }
+
+  const PROTECTED_BRANCHES = ["main", "master", "production"];
+  const isProtected = PROTECTED_BRANCHES.includes(currentBranch);
+  const branchRuleEl = document.getElementById("push-check-branch");
+  if (branchRuleEl) {
+    branchRuleEl.textContent = isProtected ? "Protected branch (requires review)" : "PASSED (Safe branch)";
+    branchRuleEl.className = isProtected ? "badge badge-warning" : "badge badge-success";
+  }
+
+  const commitsListEl = document.getElementById("push-commits-list");
+  if (commitsListEl) {
+    commitsListEl.innerHTML = `<div class="text-muted" style="font-size:12px;text-align:center;padding:10px"><div class="spinner"></div><div style="margin-top:4px">Checking outgoing commits...</div></div>`;
+  }
+  openModal("modal-push-preview");
+
+  try {
+    const branchesData = await api.getGitBranches(repo.id);
+    const branches = branchesData.branches || [];
     if (branchSelect) {
-      branchSelect.innerHTML = `<option value="${escapeHtml(currentBranch)}">🌿 Current branch: ${escapeHtml(currentBranch)}</option>`;
-    }
-
-    const PROTECTED_BRANCHES = ["main", "master", "production"];
-    const isProtected = PROTECTED_BRANCHES.includes(currentBranch);
-    const branchRuleEl = document.getElementById("push-check-branch");
-    if (branchRuleEl) {
-      branchRuleEl.textContent = isProtected ? "Protected branch (requires review)" : "PASSED (Safe branch)";
-      branchRuleEl.className = isProtected ? "badge badge-warning" : "badge badge-success";
-    }
-
-    const commitsListEl = document.getElementById("push-commits-list");
-    if (commitsListEl) {
-      commitsListEl.innerHTML = `<div class="text-muted" style="font-size:12px;text-align:center;padding:10px"><div class="spinner"></div><div style="margin-top:4px">Checking outgoing commits...</div></div>`;
-    }
-    openModal("modal-push-preview");
-
-    try {
-      const branchesData = await api.getGitBranches(repo.id);
-      const branches = branchesData.branches || [];
-      if (branchSelect) {
-        const otherBranches = branches.filter((b) => b.name !== currentBranch);
-        const otherOpts = otherBranches.map((b) => `<option value="${escapeHtml(b.name)}">${escapeHtml(b.name)}</option>`).join("");
-        branchSelect.innerHTML = `
+      const otherBranches = branches.filter((b) => b.name !== currentBranch);
+      const otherOpts = otherBranches.map((b) => `<option value="${escapeHtml(b.name)}">${escapeHtml(b.name)}</option>`).join("");
+      branchSelect.innerHTML = `
         <option value="${escapeHtml(currentBranch)}">🌿 Current branch (${escapeHtml(currentBranch)})</option>
         ${otherBranches.length > 0 ? `<optgroup label="Available Repository Branches">${otherOpts}</optgroup>` : ""}
         <option value="__custom__">➕ Push to custom / new branch name...</option>`;
-      }
-    } catch (e) {
-      console.warn("Could not fetch branches for push modal:", e);
     }
+  } catch (e) {
+    console.warn("Could not fetch branches for push modal:", e);
+  }
 
-    try {
-      const logData = await api.getGitLog(repo.id, 10);
-      const commits = logData.commits || logData.entries || [];
-      const countEl = document.getElementById("push-commits-count");
-      if (countEl) countEl.textContent = `${commits.length} outgoing commit(s)`;
+  try {
+    const logData = await api.getGitLog(repo.id, 10);
+    const commits = logData.commits || logData.entries || [];
+    const countEl = document.getElementById("push-commits-count");
+    if (countEl) countEl.textContent = `${commits.length} outgoing commit(s)`;
 
-      if (commitsListEl) {
-        commitsListEl.innerHTML = commits.length === 0
-          ? `<div class="text-muted" style="font-size:12px;text-align:center;padding:12px">No outgoing commits waiting. Remote is up to date.</div>`
-          : commits.map((c) => `
+    if (commitsListEl) {
+      commitsListEl.innerHTML = commits.length === 0
+        ? `<div class="text-muted" style="font-size:12px;text-align:center;padding:12px">No outgoing commits waiting. Remote is up to date.</div>`
+        : commits.map((c) => `
           <div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:5px 8px;border-bottom:1px solid var(--c-border-subtle)">
             <code style="font-weight:700;color:var(--c-accent);font-size:11px">${escapeHtml(c.shortHash || c.hash?.slice(0, 7) || "")}</code>
             <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(c.subject || c.message || "")}</span>
           </div>`).join("");
-      }
-    } catch (err) {
-      if (commitsListEl) {
-        commitsListEl.innerHTML = `<div class="text-muted" style="font-size:12px">Commit log checked.</div>`;
-      }
+    }
+  } catch (err) {
+    if (commitsListEl) {
+      commitsListEl.innerHTML = `<div class="text-muted" style="font-size:12px">Commit log checked.</div>`;
     }
   }
+}
 
-  function onPushTargetBranchChanged() {
-    const select = document.getElementById("push-target-branch-select");
-    const customInput = document.getElementById("push-custom-branch-input");
-    if (!select || !customInput) return;
+function onPushTargetBranchChanged() {
+  const select = document.getElementById("push-target-branch-select");
+  const customInput = document.getElementById("push-custom-branch-input");
+  if (!select || !customInput) return;
 
-    const showCustom = select.value === "__custom__";
-    customInput.style.display = showCustom ? "block" : "none";
-    if (showCustom) customInput.focus();
+  const showCustom = select.value === "__custom__";
+  customInput.style.display = showCustom ? "block" : "none";
+  if (showCustom) customInput.focus();
+}
+
+async function executePushFromModal() {
+  const repo = window.state.activeRepository;
+  if (!repo) return;
+
+  const select = document.getElementById("push-target-branch-select");
+  const customInput = document.getElementById("push-custom-branch-input");
+  let targetBranch = select?.value ?? "";
+  if (targetBranch === "__custom__" && customInput) {
+    targetBranch = customInput.value.trim();
+  }
+  targetBranch ||= window.state.gitDesktop.gitStatus?.branch || repo.currentBranch || "main";
+
+  const remote = document.getElementById("push-remote-select")?.value || "origin";
+  const setUpstream = document.getElementById("push-set-upstream")?.checked !== false;
+  const forceWithLease = document.getElementById("push-force-with-lease")?.checked === true;
+
+  const btn = document.getElementById("confirm-push-btn");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = `Pushing to ${targetBranch}...`;
   }
 
-  async function executePushFromModal() {
-    const repo = window.state.activeRepository;
-    if (!repo) return;
+  try {
+    const res = await api.gitPush(repo.id, remote, targetBranch, setUpstream, forceWithLease);
+    closeModal("modal-push-preview");
+    await loadGitDesktop();
 
-    const select = document.getElementById("push-target-branch-select");
-    const customInput = document.getElementById("push-custom-branch-input");
-    let targetBranch = select?.value ?? "";
-    if (targetBranch === "__custom__" && customInput) {
-      targetBranch = customInput.value.trim();
+    if (typeof window.renderPushSummaryView === "function") {
+      await window.renderPushSummaryView(remote, targetBranch, res.output || res.message);
     }
-    targetBranch ||= window.state.gitDesktop.gitStatus?.branch || repo.currentBranch || "main";
-
-    const remote = document.getElementById("push-remote-select")?.value || "origin";
-    const setUpstream = document.getElementById("push-set-upstream")?.checked !== false;
-    const forceWithLease = document.getElementById("push-force-with-lease")?.checked === true;
-
-    const btn = document.getElementById("confirm-push-btn");
+    showToast(`Successfully pushed to ${remote}/${targetBranch}!`, "success");
+  } catch (err) {
+    showToast(`Push failed: ${err.message}`, "error");
+  } finally {
     if (btn) {
-      btn.disabled = true;
-      btn.textContent = `Pushing to ${targetBranch}...`;
-    }
-
-    try {
-      const res = await api.gitPush(repo.id, remote, targetBranch, setUpstream, forceWithLease);
-      closeModal("modal-push-preview");
-      await loadGitDesktop();
-
-      if (typeof window.renderPushSummaryView === "function") {
-        await window.renderPushSummaryView(remote, targetBranch, res.output || res.message);
-      }
-      showToast(`Successfully pushed to ${remote}/${targetBranch}!`, "success");
-    } catch (err) {
-      showToast(`Push failed: ${err.message}`, "error");
-    } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = "Confirm & Push to Remote";
-      }
+      btn.disabled = false;
+      btn.textContent = "Confirm & Push to Remote";
     }
   }
+}
 
-  async function openBranchSwitcherModal() {
-    const repo = window.state.activeRepository;
-    if (!repo) {
-      showToast("Select a repository first", "warning");
-      return;
-    }
+async function openBranchSwitcherModal() {
+  const repo = window.state.activeRepository;
+  if (!repo) {
+    showToast("Select a repository first", "warning");
+    return;
+  }
 
-    const container = document.getElementById("branch-list-container");
+  const container = document.getElementById("branch-list-container");
+  if (container) {
+    container.innerHTML = `<div class="text-muted" style="text-align:center;padding:20px;font-size:12px"><div class="spinner"></div><div style="margin-top:6px">Loading branches...</div></div>`;
+  }
+  openModal("modal-branch-switcher");
+
+  try {
+    const data = await api.getGitBranches(repo.id);
+    allRepoBranches = data.branches || [];
+    renderBranchSwitcherList(allRepoBranches);
+  } catch (err) {
     if (container) {
-      container.innerHTML = `<div class="text-muted" style="text-align:center;padding:20px;font-size:12px"><div class="spinner"></div><div style="margin-top:6px">Loading branches...</div></div>`;
-    }
-    openModal("modal-branch-switcher");
-
-    try {
-      const data = await api.getGitBranches(repo.id);
-      allRepoBranches = data.branches || [];
-      renderBranchSwitcherList(allRepoBranches);
-    } catch (err) {
-      if (container) {
-        container.innerHTML = `<div class="text-danger" style="padding:16px;font-size:12px">Error loading branches: ${escapeHtml(err.message)}</div>`;
-      }
+      container.innerHTML = `<div class="text-danger" style="padding:16px;font-size:12px">Error loading branches: ${escapeHtml(err.message)}</div>`;
     }
   }
+}
 
-  function renderBranchSwitcherList(branches) {
-    const container = document.getElementById("branch-list-container");
-    if (!container) return;
+function renderBranchSwitcherList(branches) {
+  const container = document.getElementById("branch-list-container");
+  if (!container) return;
 
-    const currentBranch = window.state.gitDesktop.gitStatus?.branch || window.state.activeRepository?.currentBranch || "main";
+  const currentBranch = window.state.gitDesktop.gitStatus?.branch || window.state.activeRepository?.currentBranch || "main";
 
-    if (branches.length === 0) {
-      container.innerHTML = `<div class="text-muted" style="text-align:center;padding:20px;font-size:12px">No branches found.</div>`;
-      return;
-    }
+  if (branches.length === 0) {
+    container.innerHTML = `<div class="text-muted" style="text-align:center;padding:20px;font-size:12px">No branches found.</div>`;
+    return;
+  }
 
-    container.innerHTML = branches.map((b) => {
-      const isCurrent = b.name === currentBranch || b.current;
-      return `
+  container.innerHTML = branches.map((b) => {
+    const isCurrent = b.name === currentBranch || b.current;
+    return `
       <div class="branch-list-item ${isCurrent ? "active-branch" : ""}" data-action="checkoutSelectedBranch" data-value="${escapeHtml(b.name)}">
         <div style="display:flex;align-items:center;gap:8px">
           <span>${isCurrent ? "✓" : "🌿"}</span>
@@ -1139,125 +1196,173 @@ async function commitFromGitDesktop() {
         </div>
         ${isCurrent ? '<span class="badge badge-accent">current</span>' : '<span style="font-size:11px;color:var(--c-text-muted)">checkout</span>'}
       </div>`;
-    }).join("");
+  }).join("");
+}
+
+function filterBranchList() {
+  const query = document.getElementById("branch-search-input")?.value?.toLowerCase() || "";
+  const filtered = allRepoBranches.filter((b) => b.name.toLowerCase().includes(query));
+  renderBranchSwitcherList(filtered);
+}
+
+async function checkoutSelectedBranch(branchName) {
+  const repo = window.state.activeRepository;
+  if (!repo) return;
+
+  try {
+    await api.checkoutBranch(repo.id, branchName, false);
+    closeModal("modal-branch-switcher");
+    showToast(`Switched to branch '${branchName}'`, "success");
+    if (typeof window.setActiveRepository === "function") {
+      await window.setActiveRepository(repo);
+    }
+  } catch (err) {
+    showToast(`Failed to switch branch: ${err.message}`, "error");
+  }
+}
+
+async function createAndCheckoutBranch() {
+  const repo = window.state.activeRepository;
+  if (!repo) return;
+
+  const input = document.getElementById("new-branch-name-input");
+  const branchName = input ? input.value.trim() : "";
+
+  if (!branchName) {
+    showToast("Branch name is required", "warning");
+    input?.focus();
+    return;
   }
 
-  function filterBranchList() {
-    const query = document.getElementById("branch-search-input")?.value?.toLowerCase() || "";
-    const filtered = allRepoBranches.filter((b) => b.name.toLowerCase().includes(query));
-    renderBranchSwitcherList(filtered);
-  }
-
-  async function checkoutSelectedBranch(branchName) {
-    const repo = window.state.activeRepository;
-    if (!repo) return;
-
-    try {
-      await api.checkoutBranch(repo.id, branchName, false);
-      closeModal("modal-branch-switcher");
-      showToast(`Switched to branch '${branchName}'`, "success");
-      if (typeof window.setActiveRepository === "function") {
-        await window.setActiveRepository(repo);
-      }
-    } catch (err) {
-      showToast(`Failed to switch branch: ${err.message}`, "error");
+  try {
+    await api.checkoutBranch(repo.id, branchName, true);
+    closeModal("modal-branch-switcher");
+    if (input) input.value = "";
+    showToast(`Created & switched to new branch '${branchName}'`, "success");
+    if (typeof window.setActiveRepository === "function") {
+      await window.setActiveRepository(repo);
     }
+  } catch (err) {
+    showToast(`Failed to create branch: ${err.message}`, "error");
   }
+}
 
-  async function createAndCheckoutBranch() {
-    const repo = window.state.activeRepository;
-    if (!repo) return;
+async function triggerAIShip() {
+  const repo = window.state.activeRepository;
+  if (!repo) return;
 
-    const input = document.getElementById("new-branch-name-input");
-    const branchName = input ? input.value.trim() : "";
+  const confirmed = confirm("🚀 Launch AI Ship?\n\nThis will automatically:\n1. Analyze and group all changed files\n2. Commit with verified Conventional Commits\n3. Push to remote\n4. Create a Pull Request on GitHub\n\nProceed?");
+  if (!confirmed) return;
 
-    if (!branchName) {
-      showToast("Branch name is required", "warning");
-      input?.focus();
-      return;
-    }
-
-    try {
-      await api.checkoutBranch(repo.id, branchName, true);
-      closeModal("modal-branch-switcher");
-      if (input) input.value = "";
-      showToast(`Created & switched to new branch '${branchName}'`, "success");
-      if (typeof window.setActiveRepository === "function") {
-        await window.setActiveRepository(repo);
-      }
-    } catch (err) {
-      showToast(`Failed to create branch: ${err.message}`, "error");
-    }
+  showToast("AI Ship in progress...", "info");
+  try {
+    const res = await api.gitShip(repo.id);
+    await loadGitDesktop();
+    showToast(res.message, "success");
+  } catch (err) {
+    showToast(`AI Ship error: ${err.message}`, "error");
   }
+}
 
-  async function triggerAIShip() {
-    const repo = window.state.activeRepository;
-    if (!repo) return;
+// Event delegation for data-action attributes
+document.addEventListener("click", (e) => {
+  const target = e.target.closest("[data-action]");
+  if (!target) return;
 
-    const confirmed = confirm("🚀 Launch AI Ship?\n\nThis will automatically:\n1. Analyze and group all changed files\n2. Commit with verified Conventional Commits\n3. Push to remote\n4. Create a Pull Request on GitHub\n\nProceed?");
-    if (!confirmed) return;
+  if (target.dataset.stopprop === "true") e.stopPropagation();
 
-    showToast("AI Ship in progress...", "info");
-    try {
-      const res = await api.gitShip(repo.id);
-      await loadGitDesktop();
-      showToast(res.message, "success");
-    } catch (err) {
-      showToast(`AI Ship error: ${err.message}`, "error");
+  const action = target.dataset.action;
+  const handler = ACTION_DISPATCH[action];
+  if (handler) handler(target.dataset.value, target);
+});
+
+async function refreshGitDesktop() {
+  const btn = document.getElementById("gd-btn-refresh");
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = "🔄 Refreshing...";
+  }
+  showToast("Refreshing Git status...", "info");
+  try {
+    await loadGitDesktop(false);
+    showToast("Git status up to date", "success");
+  } catch (err) {
+    showToast(`Refresh error: ${err.message}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = "🔄 Refresh";
     }
   }
+}
 
-  // Event delegation for data-action attributes
-  document.addEventListener("click", (e) => {
-    const target = e.target.closest("[data-action]");
-    if (!target) return;
+// Auto-refresh when window focus or tab visibility changes
+window.addEventListener("focus", () => {
+  if (window.state?.currentPage === "git-desktop" && !window.state?.gitDesktop?.isActionRunning) {
+    loadGitDesktop(false).catch(() => { });
+  }
+});
 
-    if (target.dataset.stopprop === "true") e.stopPropagation();
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && window.state?.currentPage === "git-desktop" && !window.state?.gitDesktop?.isActionRunning) {
+    loadGitDesktop(false).catch(() => { });
+  }
+});
 
-    const action = target.dataset.action;
-    const handler = ACTION_DISPATCH[action];
-    if (handler) handler(target.dataset.value, target);
-  });
-
-  // Window exports
-  window.loadGitDesktop = loadGitDesktop;
-  window.filterChangedFiles = filterChangedFiles;
-  window.renderGitDesktopChanges = renderGitDesktopChanges;
-  window.generateAutoCommitMessage = generateAutoCommitMessage;
-  window.viewGitDesktopDiff = viewGitDesktopDiff;
-  window.openCurrentFileInOs = openCurrentFileInOs;
-  window.openSpecificFileInOs = openSpecificFileInOs;
-  window.viewAllFilesDiff = viewAllFilesDiff;
-  window.renderMultiFileDiff = renderMultiFileDiff;
-  window.renderFormattedDiff = renderFormattedDiff;
-  window.switchGitDesktopTab = switchGitDesktopTab;
-  window.switchGitDesktopLeftTab = switchGitDesktopLeftTab;
-  window.commitFromGitDesktop = commitFromGitDesktop;
-  window.triggerAIAnalyzeChanges = triggerAIAnalyzeChanges;
-  window.triggerAICommitAll = triggerAICommitAll;
-  window.triggerGitFetch = triggerGitFetch;
-  window.triggerGitPull = triggerGitPull;
-  window.triggerGitSync = triggerGitSync;
-  window.openPushPreviewModal = openPushPreviewModal;
-  window.onPushTargetBranchChanged = onPushTargetBranchChanged;
-  window.executePushFromModal = executePushFromModal;
-  window.openBranchSwitcherModal = openBranchSwitcherModal;
-  window.renderBranchSwitcherList = renderBranchSwitcherList;
-  window.filterBranchList = filterBranchList;
-  window.checkoutSelectedBranch = checkoutSelectedBranch;
-  window.createAndCheckoutBranch = createAndCheckoutBranch;
-  window.triggerAIShip = triggerAIShip;
-  window.toggleFileStaging = toggleFileStaging;
-  window.toggleAllStaging = toggleAllStaging;
-  window.updateCommitButtonText = updateCommitButtonText;
-
-  document.addEventListener("change", (e) => {
-    const target = e.target.closest("[data-action]");
-    if (!target) return;
-    const action = target.dataset.action;
-    if (action === "toggleFileStaging") {
-      toggleFileStaging(target.dataset.path, target);
-    } else if (action === "toggleAllStaging") {
-      toggleAllStaging(target);
+// Periodic background polling (every 3.5s) like GitHub Desktop
+if (!window._gitDesktopPoller) {
+  window._gitDesktopPoller = setInterval(() => {
+    if (
+      document.visibilityState === "visible" &&
+      window.state?.currentPage === "git-desktop" &&
+      window.state?.activeRepository &&
+      !window.state?.gitDesktop?.isActionRunning
+    ) {
+      loadGitDesktop(false).catch(() => { });
     }
-  });
+  }, 3500);
+}
+
+// Window exports
+window.refreshGitDesktop = refreshGitDesktop;
+window.loadGitDesktop = loadGitDesktop;
+window.filterChangedFiles = filterChangedFiles;
+window.renderGitDesktopChanges = renderGitDesktopChanges;
+window.generateAutoCommitMessage = generateAutoCommitMessage;
+window.viewGitDesktopDiff = viewGitDesktopDiff;
+window.openCurrentFileInOs = openCurrentFileInOs;
+window.openSpecificFileInOs = openSpecificFileInOs;
+window.viewAllFilesDiff = viewAllFilesDiff;
+window.renderMultiFileDiff = renderMultiFileDiff;
+window.renderFormattedDiff = renderFormattedDiff;
+window.switchGitDesktopTab = switchGitDesktopTab;
+window.switchGitDesktopLeftTab = switchGitDesktopLeftTab;
+window.commitFromGitDesktop = commitFromGitDesktop;
+window.triggerAIAnalyzeChanges = triggerAIAnalyzeChanges;
+window.triggerAICommitAll = triggerAICommitAll;
+window.triggerGitFetch = triggerGitFetch;
+window.triggerGitPull = triggerGitPull;
+window.triggerGitSync = triggerGitSync;
+window.openPushPreviewModal = openPushPreviewModal;
+window.onPushTargetBranchChanged = onPushTargetBranchChanged;
+window.executePushFromModal = executePushFromModal;
+window.openBranchSwitcherModal = openBranchSwitcherModal;
+window.renderBranchSwitcherList = renderBranchSwitcherList;
+window.filterBranchList = filterBranchList;
+window.checkoutSelectedBranch = checkoutSelectedBranch;
+window.createAndCheckoutBranch = createAndCheckoutBranch;
+window.triggerAIShip = triggerAIShip;
+window.toggleFileStaging = toggleFileStaging;
+window.toggleAllStaging = toggleAllStaging;
+window.updateCommitButtonText = updateCommitButtonText;
+
+document.addEventListener("change", (e) => {
+  const target = e.target.closest("[data-action]");
+  if (!target) return;
+  const action = target.dataset.action;
+  if (action === "toggleFileStaging") {
+    toggleFileStaging(target.dataset.path, target);
+  } else if (action === "toggleAllStaging") {
+    toggleAllStaging(target);
+  }
+});

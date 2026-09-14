@@ -217,8 +217,8 @@ export function getProtectedBranchNames(): readonly string[] {
 }
 
 export async function executeGitStatus(repoPath: string): Promise<GitStatusOutput> {
-  const output = await runGit(getExecutionPath(repoPath), "status --porcelain -b");
-  const lines = output.trim().split("\n").filter(Boolean);
+  const output = await runGit(getExecutionPath(repoPath), ["status", "--porcelain=v1", "-b", "-u"]);
+  const lines = output.replace(/\r/g, "").trim().split("\n").filter(Boolean);
   const branchLine = lines[0] ?? "";
   const branchMatch = branchLine.match(/^## (?:(.+?)(?:\.\.\.(.+?))?(?:\s*\[(.+?)\])?)$/);
 
@@ -271,7 +271,7 @@ export async function executeGitStatus(repoPath: string): Promise<GitStatusOutpu
 
     const x = line.charAt(0);
     const y = line.charAt(1);
-    const rawPath = line.substring(3).trim();
+    const rawPath = line.substring(3).trim().replace(/^"|"$/g, "");
     if (!rawPath) continue;
 
     const filePath = rawPath.includes(" -> ") ? (rawPath.split(" -> ")[1] ?? rawPath).trim() : rawPath;
@@ -324,6 +324,7 @@ export async function executeGitLog(
   if (!output.trim()) return [];
 
   return output
+    .replace(/\r/g, "")
     .trim()
     .split("\n")
     .map((line) => {
@@ -346,33 +347,40 @@ export async function executeGitDiff(
 ): Promise<GitDiffEntry[]> {
   const parts = ["diff"];
   if (options?.staged) parts.push("--cached");
-  parts.push("--stat");
+  parts.push("--numstat");
   if (options?.filePath) parts.push("--", options.filePath);
 
   const output = await runGit(getExecutionPath(repoPath), parts);
   if (!output.trim()) return [];
 
   return output
+    .replace(/\r/g, "")
     .trim()
     .split("\n")
     .filter(Boolean)
     .map((line) => {
-      const diffMatch = line.match(/^(.+?)\s+\|\s*(\d+)\s+(\d+)?$/);
-      if (!diffMatch) return { filePath: line, status: "modified" as const, additions: 0, deletions: 0 };
-      return {
-        filePath: diffMatch[1] ?? "",
-        status: "modified" as const,
-        additions: parseInt(diffMatch[2] ?? "0", 10),
-        deletions: parseInt(diffMatch[3] ?? "0", 10),
-      };
+      const tabParts = line.split("\t");
+      if (tabParts.length >= 3) {
+        const additions = tabParts[0] === "-" ? 0 : parseInt(tabParts[0] ?? "0", 10) || 0;
+        const deletions = tabParts[1] === "-" ? 0 : parseInt(tabParts[1] ?? "0", 10) || 0;
+        const filePath = tabParts.slice(2).join("\t").replace(/^"|"$/g, "").trim();
+        return {
+          filePath,
+          status: "modified" as const,
+          additions,
+          deletions,
+        };
+      }
+      return { filePath: line.trim(), status: "modified" as const, additions: 0, deletions: 0 };
     });
 }
 
 export async function executeGitBranches(repoPath: string): Promise<GitBranch[]> {
-  const output = await runGit(getExecutionPath(repoPath), "branch -a --no-color");
+  const output = await runGit(getExecutionPath(repoPath), ["branch", "-a", "--no-color"]);
   if (!output.trim()) return [];
 
   return output
+    .replace(/\r/g, "")
     .trim()
     .split("\n")
     .map((line) => {

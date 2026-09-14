@@ -5,8 +5,8 @@ import { connectDatabase, getDb, closeDatabase } from "../src/db/mongodb.js";
 async function runSmokeTests(): Promise<void> {
   console.log(
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-    "PRODUCTION SYSTEM END-TO-END SMOKE TEST SUITE\n" +
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+      "PRODUCTION SYSTEM END-TO-END SMOKE TEST SUITE\n" +
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
   );
 
   let passed = 0;
@@ -177,8 +177,8 @@ async function runSmokeTests(): Promise<void> {
 
     console.log(
       `\n════════════════════════════════════════════════════\n` +
-      `SMOKE TEST RESULTS: ${passed} Passed, ${failed} Failed.\n` +
-      `════════════════════════════════════════════════════\n`,
+        `SMOKE TEST RESULTS: ${passed} Passed, ${failed} Failed.\n` +
+        `════════════════════════════════════════════════════\n`,
     );
 
     if (failed > 0) {
@@ -186,7 +186,7 @@ async function runSmokeTests(): Promise<void> {
     }
   } finally {
     server.close();
-    await closeDatabase().catch(() => { });
+    await closeDatabase().catch(() => {});
   }
 }
 

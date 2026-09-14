@@ -629,6 +629,7 @@ document.addEventListener("click", (e) => {
     loadIssues: () => typeof loadIssues === "function" && loadIssues(),
     filterGitHubRepos: () => typeof filterGitHubRepos === "function" && filterGitHubRepos(),
     generateAutoCommitMessage: () => typeof generateAutoCommitMessage === "function" && generateAutoCommitMessage(value === "true"),
+    refreshGitDesktop: () => typeof refreshGitDesktop === "function" ? refreshGitDesktop() : (typeof loadGitDesktop === "function" && loadGitDesktop(true)),
     commitFromGitDesktop: () => typeof commitFromGitDesktop === "function" && commitFromGitDesktop(),
     triggerAIAnalyzeChanges: () => typeof triggerAIAnalyzeChanges === "function" && triggerAIAnalyzeChanges(),
     triggerAICommitAll: () => typeof triggerAICommitAll === "function" && triggerAICommitAll(),

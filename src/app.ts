@@ -238,6 +238,7 @@ app.get("/api/git/branches", ...protectedRoute, gitBranchesHandler);
 app.get("/api/git/conflicts", ...protectedRoute, gitConflictsHandler);
 app.post("/api/git/conflicts", ...protectedRoute, gitConflictsHandler);
 app.post("/api/git/conflicts/resolve", ...protectedRoute, gitConflictResolveHandler);
+app.post("/api/git/conflict/resolve", ...protectedRoute, gitConflictResolveHandler);
 app.post("/api/git/commit", ...protectedRoute, gitCommitHandler);
 app.post("/api/git/stage", ...protectedRoute, gitStageHandler);
 app.post("/api/git/unstage", ...protectedRoute, gitUnstageHandler);
