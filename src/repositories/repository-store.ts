@@ -31,6 +31,23 @@ const validateLocalPath = (candidate: string): string => {
   if (!candidate?.trim()) throw new Error("Repository path must be a non-empty string");
   const cleaned = candidate.replace(/^["']|["']$/g, "").trim();
 
+  // If candidate is "." or matches current workspace basename
+  const cwd = process.cwd();
+  if (cleaned === "." || cleaned === "./" || cleaned.toLowerCase() === path.basename(cwd).toLowerCase()) {
+    return cwd;
+  }
+
+  // If candidate already exists on the local machine
+  if (fs.existsSync(cleaned)) {
+    return path.resolve(cleaned);
+  }
+
+  // Check sibling directory: e.g. parent of cwd
+  const sibling = path.resolve(path.dirname(cwd), cleaned);
+  if (fs.existsSync(sibling)) {
+    return sibling;
+  }
+
   // If in Vercel serverless environment, local client paths (e.g. C:\... or custom paths)
   // are mapped into the writable /tmp storage.
   if (process.env.VERCEL) {
@@ -69,11 +86,21 @@ export class RepositoryStore {
     for (const repo of repos) {
       if (repo.name === "tmp" || repo.localPath === "/tmp/repositories/tmp") continue;
       let effectivePath = repo.localPath;
-      if (!fs.existsSync(effectivePath)) {
-        if (fs.existsSync(path.join(process.cwd(), ".git"))) {
-          effectivePath = process.cwd();
+      let needsPersist = false;
+
+      // Self-heal: If repo points to /tmp/repositories/ or a non-existent path,
+      // but process.cwd() is a git repository matching this repo name, point to process.cwd()
+      if (!fs.existsSync(effectivePath) || (effectivePath.includes("/tmp/repositories") && !process.env.VERCEL)) {
+        const cwdGit = path.join(process.cwd(), ".git");
+        if (fs.existsSync(cwdGit)) {
+          const cwdName = path.basename(process.cwd());
+          if (repo.name.toLowerCase() === cwdName.toLowerCase() || repos.length === 1) {
+            effectivePath = process.cwd();
+            needsPersist = true;
+          }
         }
       }
+
       const status = await executeGitStatus(effectivePath).catch(() => null);
       const branch = status?.branch && status.branch !== "unknown" ? status.branch : repo.currentBranch || "main";
       const effectiveRepo: Repository = {
@@ -85,6 +112,10 @@ export class RepositoryStore {
       };
       repositories.set(repo.id, effectiveRepo);
       registerRepositoryPath(repo.id, effectivePath);
+
+      if (needsPersist) {
+        await persistRepository(effectiveRepo).catch(() => {});
+      }
       count++;
     }
     if (count > 0) {
@@ -140,6 +171,12 @@ export class RepositoryStore {
   }): Promise<Repository> {
     if (!params.localPath || params.localPath === "." || params.localPath === "./") {
       params.localPath = process.cwd();
+    }
+    const cwdBase = path.basename(process.cwd()).toLowerCase();
+    if (params.name && params.name.toLowerCase() === cwdBase) {
+      if (!params.localPath || !fs.existsSync(params.localPath)) {
+        params.localPath = process.cwd();
+      }
     }
     let localPath = params.localPath ? validateLocalPath(params.localPath) : resolveLocalPath(params.name);
 

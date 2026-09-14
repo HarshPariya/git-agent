@@ -42,6 +42,17 @@ async function loadRepositories() {
   }
 }
 
+function formatRepoDisplayPath(r) {
+  if (!r) return "";
+  if (r.url) return r.url;
+  const pathStr = r.localPath || "";
+  if (!pathStr) return r.name || "Local Project";
+  if (pathStr.startsWith("/tmp/repositories/")) {
+    return `${r.name} (Local Project)`;
+  }
+  return pathStr;
+}
+
 function renderRepositoriesList() {
   const listEl = document.getElementById("repos-list");
   if (!listEl) return;
@@ -81,7 +92,7 @@ function renderRepositoriesList() {
                 ${isActive ? '<span class="badge badge-accent">active</span>' : ""}
               </div>
               <div style="font-size:11px;color:var(--c-text-muted);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%">
-                ${escapeHtml(r.localPath || r.url || "")}
+                ${escapeHtml(formatRepoDisplayPath(r))}
               </div>
             </div>
           </div>
@@ -404,22 +415,51 @@ async function triggerNativeFolderPicker() {
   const btn = document.getElementById("btn-open-os-dialog") || document.getElementById("open-os-dialog-btn");
   const origHtml = btn ? btn.innerHTML : "";
 
-  // Priority 1: Browser's native File System Access API (opens OS picker directly on user's computer)
+  // Priority 1: Backend native OS dialog (for local desktop / Electron instances)
+  let backendDialogAttempted = false;
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `⏳ Opening OS Dialog...`;
+    }
+    showToast("Opening system folder dialog...", "info");
+
+    const res = await api.pickNativeFolderDialog();
+    backendDialogAttempted = true;
+    if (res && res.path && !res.cancelled) {
+      showToast(`Selected: ${res.path}`, "success");
+      await connectSpecificFolder(res.folderName || "Repository", res.path);
+      return;
+    } else if (res && res.cancelled && !res.isCloud) {
+      showToast("Folder selection cancelled", "info");
+      return;
+    }
+  } catch (err) {
+    console.warn("Backend OS native dialog error, trying browser picker:", err);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+    }
+  }
+
+  // Priority 2: Browser's native File System Access API (for deployed cloud mode / Chrome)
   if (typeof window.showDirectoryPicker === "function") {
     try {
-      const dirHandle = await window.showDirectoryPicker({ mode: "read" });
+      const dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
       if (dirHandle && dirHandle.name) {
         showToast(`Connecting repository "${dirHandle.name}"...`, "info");
+        window._activeLocalDirHandle = dirHandle;
+        let resolvedPath = dirHandle.name;
         try {
           const res = await api.resolveFolder(dirHandle.name, [], window.state.currentBrowsedPath);
           if (res && res.resolvedPath && res.exists) {
-            await connectSpecificFolder(res.folderName || dirHandle.name, res.resolvedPath);
-            return;
+            resolvedPath = res.resolvedPath;
           }
-        } catch (err) {
-          // Local resolution not applicable in cloud mode
+        } catch (_) {
+          // Cloud mode
         }
-        await connectSpecificFolder(dirHandle.name, dirHandle.name);
+        await connectSpecificFolder(dirHandle.name, resolvedPath, dirHandle);
         return;
       }
     } catch (fsErr) {
@@ -428,40 +468,6 @@ async function triggerNativeFolderPicker() {
         return;
       }
       console.warn("Browser showDirectoryPicker fallback error:", fsErr);
-    }
-  }
-
-  // Priority 2: Backend native OS dialog (for local desktop / Electron instances)
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = `⏳ Opening OS Dialog...`;
-  }
-  showToast("Opening system folder dialog...", "info");
-
-  try {
-    const res = await api.pickNativeFolderDialog();
-    if (res && res.path && !res.cancelled) {
-      showToast(`Selected: ${res.path}`, "success");
-      await connectSpecificFolder(res.folderName || "Repository", res.path);
-      return;
-    } else if (res && res.isCloud) {
-      // Backend is in cloud — trigger HTML directory input
-      const input = document.getElementById("native-folder-input");
-      if (input) {
-        input.value = "";
-        input.click();
-        return;
-      }
-    } else if (res && res.cancelled) {
-      showToast("Folder selection cancelled", "info");
-      return;
-    }
-  } catch (err) {
-    console.warn("Backend OS native dialog error, falling back to input:", err);
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = origHtml;
     }
   }
 
@@ -696,7 +702,7 @@ async function connectCurrentBrowsedFolder() {
   await connectSpecificFolder(folderName, window.state.currentBrowsedPath);
 }
 
-async function connectSpecificFolder(name, localPath) {
+async function connectSpecificFolder(name, localPath, dirHandle = null) {
   closeModal("modal-folder-browser");
   try {
     showToast(`Connecting ${name}...`, "info");
@@ -713,6 +719,12 @@ async function connectSpecificFolder(name, localPath) {
       await window.loadDashboardStats();
     }
     if (res.repository) {
+      if (dirHandle) {
+        window._activeLocalDirHandle = dirHandle;
+        if (typeof window.startLocalDirectorySync === "function") {
+          window.startLocalDirectorySync(res.repository.id, dirHandle);
+        }
+      }
       await setActiveRepository(res.repository);
       const debugSelect = document.getElementById("debug-repo");
       if (debugSelect) debugSelect.value = res.repository.id;

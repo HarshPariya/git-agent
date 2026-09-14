@@ -48,7 +48,7 @@ const validateRepositoryAccess = async (repoId: string): Promise<void> => {
     if (!syncFs.existsSync(path.join(execPath, ".git"))) {
       if (syncFs.existsSync(execPath)) {
         const { execFileAsync } = await import("../git/utils.js");
-        await execFileAsync("git", ["init", "-b", "main"], { cwd: execPath }).catch(() => {});
+        await execFileAsync("git", ["init", "-b", "main"], { cwd: execPath }).catch(() => { });
       }
     }
     await executeGitStatus(repoId);
@@ -175,6 +175,68 @@ export async function gitStreamStatusHandler(request: Request, response: Respons
   }
 }
 
+export async function gitSyncFileHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    const filePath = requireString(body, "filePath");
+    const content = typeof body.content === "string" ? body.content : undefined;
+    const action = typeof body.action === "string" ? body.action : "write";
+
+    await validateRepositoryAccess(repoId);
+    const execPath = getExecutionPath(repoId);
+    const targetFile = path.resolve(execPath, filePath);
+
+    // Prevent path traversal outside repo
+    const relative = path.relative(execPath, targetFile);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new AppError("Invalid file path for sync", "AUTHORIZATION_ERROR", 403);
+    }
+
+    if (action === "delete") {
+      if (syncFs.existsSync(targetFile)) {
+        await syncFs.promises.unlink(targetFile);
+      }
+    } else {
+      await syncFs.promises.mkdir(path.dirname(targetFile), { recursive: true });
+      await syncFs.promises.writeFile(targetFile, content ?? "", "utf8");
+    }
+
+    const latest = await executeGitStatus(repoId);
+    response.status(200).json({ success: true, filePath, status: latest });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function gitSyncWorkspaceHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    const files = Array.isArray(body.files) ? (body.files as Array<{ filePath: string; content: string }>) : [];
+
+    await validateRepositoryAccess(repoId);
+    const execPath = getExecutionPath(repoId);
+
+    let written = 0;
+    for (const f of files) {
+      if (!f || typeof f.filePath !== "string") continue;
+      const targetFile = path.resolve(execPath, f.filePath);
+      const relative = path.relative(execPath, targetFile);
+      if (relative.startsWith("..") || path.isAbsolute(relative)) continue;
+
+      await syncFs.promises.mkdir(path.dirname(targetFile), { recursive: true });
+      await syncFs.promises.writeFile(targetFile, typeof f.content === "string" ? f.content : "", "utf8");
+      written++;
+    }
+
+    const latest = await executeGitStatus(repoId);
+    response.status(200).json({ success: true, count: written, status: latest });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function gitLogHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
   try {
     const body = getGitRequestData(request);
@@ -281,7 +343,7 @@ export async function gitUnstageHandler(request: Request, response: Response, ne
     const filePath = requireString(body, "filePath");
     const repoPath = getExecutionPath(repoId);
     await execAsync(`git reset HEAD "${filePath.replace(/"/g, '\\"')}"`, { cwd: repoPath }).catch(async () => {
-      await execAsync(`git rm --cached "${filePath.replace(/"/g, '\\"')}"`, { cwd: repoPath }).catch(() => {});
+      await execAsync(`git rm --cached "${filePath.replace(/"/g, '\\"')}"`, { cwd: repoPath }).catch(() => { });
     });
     const status = await executeGitStatus(repoId);
     response.status(200).json({ success: true, status });
@@ -308,7 +370,7 @@ export async function gitUnstageAllHandler(request: Request, response: Response,
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
     const repoPath = getExecutionPath(repoId);
-    await execAsync("git reset HEAD", { cwd: repoPath }).catch(() => {});
+    await execAsync("git reset HEAD", { cwd: repoPath }).catch(() => { });
     const status = await executeGitStatus(repoId);
     response.status(200).json({ success: true, status });
   } catch (error) {

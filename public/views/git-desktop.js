@@ -1346,7 +1346,7 @@ function connectGitDesktopStream(repoId) {
         if (payload?.status && window.state?.currentPage === "git-desktop" && !window.state?.gitDesktop?.isActionRunning) {
           applyGitStatusUpdate(payload.status, window.state.activeRepository, true);
         }
-      } catch (_) {}
+      } catch (_) { }
     });
 
     _sseSource.onerror = () => {
@@ -1384,9 +1384,87 @@ if (!window._gitDesktopPoller) {
   }, 2000);
 }
 
+// ── Client Directory Watcher (File System Access API for Deployed / Cloud Mode) ──
+let _localDirWatcherInterval = null;
+const _knownLocalFileMtimes = new Map();
+let _isScanningLocalDir = false;
+
+async function scanDirectoryHandle(dirHandle, basePath = "") {
+  const files = [];
+  const IGNORED = new Set([".git", "node_modules", ".cache", "dist", "build", ".gemini", "$RECYCLE.BIN"]);
+  for await (const [name, entry] of dirHandle.entries()) {
+    if (IGNORED.has(name) || name.startsWith(".")) continue;
+    const relPath = basePath ? `${basePath}/${name}` : name;
+    if (entry.kind === "file") {
+      try {
+        const file = await entry.getFile();
+        if (file.size <= 1048576) {
+          const content = await file.text();
+          files.push({ filePath: relPath, content, lastModified: file.lastModified, size: file.size });
+        }
+      } catch (_) { }
+    } else if (entry.kind === "directory") {
+      const subFiles = await scanDirectoryHandle(entry, relPath);
+      files.push(...subFiles);
+    }
+  }
+  return files;
+}
+
+async function startLocalDirectorySync(repoId, dirHandle) {
+  if (!repoId || !dirHandle) return;
+  window._activeLocalDirHandle = dirHandle;
+
+  try {
+    const files = await scanDirectoryHandle(dirHandle);
+    _knownLocalFileMtimes.clear();
+    for (const f of files) {
+      _knownLocalFileMtimes.set(f.filePath, f.lastModified);
+    }
+    // Batch sync to server
+    if (files.length > 0) {
+      await api.syncGitWorkspace(repoId, files.map((f) => ({ filePath: f.filePath, content: f.content })));
+      await loadGitDesktop(false);
+    }
+  } catch (err) {
+    console.warn("Initial local directory sync warning:", err);
+  }
+
+  // Start polling directory handle for changes (every 1.5s)
+  if (_localDirWatcherInterval) clearInterval(_localDirWatcherInterval);
+  _localDirWatcherInterval = setInterval(() => {
+    checkLocalDirectoryChanges(repoId, dirHandle).catch(() => { });
+  }, 1500);
+}
+
+async function checkLocalDirectoryChanges(repoId, dirHandle) {
+  if (_isScanningLocalDir || !dirHandle || !repoId) return;
+  _isScanningLocalDir = true;
+  try {
+    const files = await scanDirectoryHandle(dirHandle);
+    let hasChanges = false;
+    for (const f of files) {
+      const prevMtime = _knownLocalFileMtimes.get(f.filePath);
+      if (prevMtime === undefined || prevMtime !== f.lastModified) {
+        _knownLocalFileMtimes.set(f.filePath, f.lastModified);
+        hasChanges = true;
+        await api.syncGitFile(repoId, f.filePath, f.content, "write");
+      }
+    }
+    if (hasChanges) {
+      await loadGitDesktop(false);
+    }
+  } catch (_) {
+  } finally {
+    _isScanningLocalDir = false;
+  }
+}
+
 // Window exports
 window.refreshGitDesktop = refreshGitDesktop;
 window.loadGitDesktop = loadGitDesktop;
+window.startLocalDirectorySync = startLocalDirectorySync;
+window.scanDirectoryHandle = scanDirectoryHandle;
 window.filterChangedFiles = filterChangedFiles;
 window.renderGitDesktopChanges = renderGitDesktopChanges;
 window.generateAutoCommitMessage = generateAutoCommitMessage;

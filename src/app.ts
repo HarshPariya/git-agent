@@ -30,6 +30,8 @@ import {
   gitStageAllHandler,
   gitUnstageAllHandler,
   gitStreamStatusHandler,
+  gitSyncFileHandler,
+  gitSyncWorkspaceHandler,
 } from "./api/git.js";
 import {
   startDebugSessionHandler,
@@ -248,6 +250,8 @@ app.post("/api/git/stage", ...protectedRoute, gitStageHandler);
 app.post("/api/git/unstage", ...protectedRoute, gitUnstageHandler);
 app.post("/api/git/stage-all", ...protectedRoute, gitStageAllHandler);
 app.post("/api/git/unstage-all", ...protectedRoute, gitUnstageAllHandler);
+app.post("/api/git/sync-file", ...protectedRoute, gitSyncFileHandler);
+app.post("/api/git/sync-workspace", ...protectedRoute, gitSyncWorkspaceHandler);
 app.post("/api/git/push", ...protectedRoute, gitPushHandler);
 app.post("/api/git/pull", ...protectedRoute, gitPullHandler);
 app.post("/api/git/fetch", ...protectedRoute, gitFetchHandler);
