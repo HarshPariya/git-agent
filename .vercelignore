@@ -1,0 +1,20 @@
+**/tests
+/**
+**/
+*.test.ts **
+/*.spec.ts
+**/
+docs
+/**
+**/
+.github
+/**
+**/
+.env* **
+/*.md
+**/
+scripts
+/**
+**/
+config
+/**
