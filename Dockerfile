@@ -31,9 +31,6 @@ COPY --from=builder /app/dist ./dist
 # Copy static assets served by Express
 COPY public/ ./public/
 
-# Copy DB migration files used at startup
-COPY migrations/ ./migrations/
-
 # Non-root user for security
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser
