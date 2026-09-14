@@ -29,7 +29,8 @@ const referenceKind = (node: ts.Identifier): SymbolReferenceKind => {
   if (
     (ts.isCallExpression(parent) && parent.expression === node) ||
     (ts.isPropertyAccessExpression(parent) && parent.name === node && ts.isCallExpression(parent.parent))
-  ) return "call";
+  )
+    return "call";
   return "reference";
 };
 

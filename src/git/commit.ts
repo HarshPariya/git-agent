@@ -89,8 +89,12 @@ export async function executeSafeCommit(
   try {
     const { stdout } = await safeExec(`git commit -m "${escapedMsg}"`, repoPath);
     const hashMatch = /\[(?:.+?\s+)?([a-f0-9]{7,40})\]/.exec(stdout);
-    const commitHash = hashMatch?.[1] ?? await resolveHeadHash(repoPath);
-    return { success: true, ...(commitHash ? { commitHash } : {}), message: `Committed successfully: ${commitMsg.slice(0, 60)}` };
+    const commitHash = hashMatch?.[1] ?? (await resolveHeadHash(repoPath));
+    return {
+      success: true,
+      ...(commitHash ? { commitHash } : {}),
+      message: `Committed successfully: ${commitMsg.slice(0, 60)}`,
+    };
   } catch (err: unknown) {
     return { success: false, message: "Commit failed", error: err instanceof Error ? err.message : String(err) };
   }
@@ -118,7 +122,11 @@ export async function safeCommit(
     const escapedMsg = commitMessage.replace(/"/g, '\\"').replace(/`/g, "\\`");
     const { stdout } = await safeExec(`git commit -m "${escapedMsg}"`, repoPath);
     const hashMatch = /\[[\w/]+ ([a-f0-9]+)\]/.exec(stdout);
-    return { success: true, ...(hashMatch?.[1] ? { commitHash: hashMatch[1] } : {}), message: `Committed successfully: ${commitMessage.slice(0, 60)}` };
+    return {
+      success: true,
+      ...(hashMatch?.[1] ? { commitHash: hashMatch[1] } : {}),
+      message: `Committed successfully: ${commitMessage.slice(0, 60)}`,
+    };
   } catch (err: unknown) {
     return { success: false, message: "Commit failed", error: err instanceof Error ? err.message : String(err) };
   }
@@ -130,14 +138,24 @@ export async function safePush(
   branch?: string,
   options: { dryRun?: boolean; force?: boolean } = {},
 ): Promise<CommitResult> {
-  if (options.force) return { success: false, message: "Force push is disabled by safety policy. Use a PR instead.", error: "FORCE_PUSH_BLOCKED" };
+  if (options.force)
+    return {
+      success: false,
+      message: "Force push is disabled by safety policy. Use a PR instead.",
+      error: "FORCE_PUSH_BLOCKED",
+    };
 
   const repoPath = resolveRepoPath(repositoryId, tenantId);
   if (!repoPath) return { success: false, message: "Repository not found", error: "Repository not found in store" };
 
   try {
     const { stdout: statusOut } = await safeExec("git status --porcelain", repoPath);
-    if (statusOut.trim()) return { success: false, message: "Working tree has uncommitted changes. Commit or stash them before pushing.", error: "UNCOMMITTED_CHANGES" };
+    if (statusOut.trim())
+      return {
+        success: false,
+        message: "Working tree has uncommitted changes. Commit or stash them before pushing.",
+        error: "UNCOMMITTED_CHANGES",
+      };
 
     const branchArg = branch ? `HEAD:${branch.replace(/[^a-zA-Z0-9._/-]/g, "_")}` : "";
     const dryRunFlag = options.dryRun ? "--dry-run" : "";
@@ -153,7 +171,11 @@ export async function safePush(
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { success: false, message: "Push failed", error: msg.includes("rejected") ? "Push rejected by remote — you may need to pull first." : msg };
+    return {
+      success: false,
+      message: "Push failed",
+      error: msg.includes("rejected") ? "Push rejected by remote — you may need to pull first." : msg,
+    };
   }
 }
 

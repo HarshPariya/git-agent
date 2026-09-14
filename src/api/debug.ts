@@ -31,7 +31,7 @@ const getUserIdFromToken = (request: Request): string | undefined => {
 };
 
 const getRequestBody = (request: Request): Record<string, unknown> =>
-  typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {};
+  typeof request.body === "object" && request.body !== null ? (request.body as Record<string, unknown>) : {};
 
 const requireString = (body: Record<string, unknown>, key: string): string => {
   const value = body[key];
@@ -51,7 +51,12 @@ const getSessionId = (request: Request): string => (request.params.sessionId as 
 
 type StepType = "isolate" | "reproduce" | "diagnose" | "fix" | "verify" | "observe";
 const isValidStepType = (value: unknown): value is StepType =>
-  value === "isolate" || value === "reproduce" || value === "diagnose" || value === "fix" || value === "verify" || value === "observe";
+  value === "isolate" ||
+  value === "reproduce" ||
+  value === "diagnose" ||
+  value === "fix" ||
+  value === "verify" ||
+  value === "observe";
 
 export function startDebugSessionHandler(request: Request, response: Response, next: NextFunction): void {
   try {
@@ -81,10 +86,17 @@ export async function executeDebugStepHandler(request: Request, response: Respon
 
     const session = debugAgentPipeline.getSession(sessionId, context.tenantId);
     const result = await debugAgentPipeline.executeStep(
-      { repositoryId: session.repositoryId, tenantId: context.tenantId, userId: context.userId, sessionId: session.id, mode: session.mode, query },
+      {
+        repositoryId: session.repositoryId,
+        tenantId: context.tenantId,
+        userId: context.userId,
+        sessionId: session.id,
+        mode: session.mode,
+        query,
+      },
       stepType,
       description,
-      () => Promise.resolve("Step completed")
+      () => Promise.resolve("Step completed"),
     );
 
     response.status(200).json(result);
@@ -182,7 +194,11 @@ export async function getDebugSessionHandler(request: Request, response: Respons
   }
 }
 
-export async function listDebugSessionsHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export async function listDebugSessionsHandler(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const context = getTenantContext(request);
     const userId = getUserIdFromToken(request);
@@ -260,24 +276,31 @@ export function streamSessionHandler(request: Request, response: Response, next:
     response.flushHeaders();
 
     const extended = debugAgentPipeline.getExtendedData(sessionId);
-    response.write(`data: ${JSON.stringify({
-      type: "snapshot",
-      sessionId,
-      session,
-      agentState: extended?.stateMachine.getState() ?? "IDLE",
-      plan: extended?.investigationPlan,
-      fixPlan: extended?.fixPlan,
-      critic: extended?.criticReview,
-      testResult: extended?.testResult,
-      timestamp: new Date().toISOString(),
-    })}\n\n`);
+    response.write(
+      `data: ${JSON.stringify({
+        type: "snapshot",
+        sessionId,
+        session,
+        agentState: extended?.stateMachine.getState() ?? "IDLE",
+        plan: extended?.investigationPlan,
+        fixPlan: extended?.fixPlan,
+        critic: extended?.criticReview,
+        testResult: extended?.testResult,
+        timestamp: new Date().toISOString(),
+      })}\n\n`,
+    );
 
     const unsubscribe = debugAgentPipeline.subscribeToSession(sessionId, (event) => {
       response.write(`data: ${JSON.stringify(event)}\n\n`);
     });
 
-    const heartbeat = setInterval(() => { response.write(": ping\n\n"); }, 15_000);
-    request.on("close", () => { clearInterval(heartbeat); unsubscribe(); });
+    const heartbeat = setInterval(() => {
+      response.write(": ping\n\n");
+    }, 15_000);
+    request.on("close", () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+    });
   } catch (error) {
     next(error);
   }
@@ -324,7 +347,11 @@ export async function approveFixHandler(request: Request, response: Response, ne
 
     for (const fc of plan.filesToChange) {
       let originalContent = "";
-      try { originalContent = await fs.readFile(path.resolve(repoPath, fc.filePath), "utf-8"); } catch { originalContent = ""; }
+      try {
+        originalContent = await fs.readFile(path.resolve(repoPath, fc.filePath), "utf-8");
+      } catch {
+        originalContent = "";
+      }
       changes.push({
         filePath: fc.filePath,
         originalContent,

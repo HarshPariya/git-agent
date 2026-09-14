@@ -64,7 +64,12 @@ export const listGitHubIssues = async (
   }
 };
 
-export const getGitHubIssue = async (userId: string, owner: string, repo: string, issueNumber: number): Promise<IssueSummary> => {
+export const getGitHubIssue = async (
+  userId: string,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+): Promise<IssueSummary> => {
   try {
     const issue = await makeGitHubRequest<GitHubIssue>(userId, `/repos/${owner}/${repo}/issues/${issueNumber}`);
     return mapIssue(issue);

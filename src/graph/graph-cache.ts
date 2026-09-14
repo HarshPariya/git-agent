@@ -39,7 +39,7 @@ export const loadGraphCache = async (cachePath: string = DEFAULT_CACHE_PATH): Pr
 
 export const saveGraphCache = async (
   data: Omit<GraphCacheData, "version" | "createdAt">,
-  cachePath: string = DEFAULT_CACHE_PATH
+  cachePath: string = DEFAULT_CACHE_PATH,
 ): Promise<void> => {
   let dirCreated = false;
   try {

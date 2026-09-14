@@ -115,7 +115,10 @@ export function activityMiddleware(request: Request, _response: Response, next: 
   }
 
   // Extract meaningful details from the request body
-  const body = (typeof request.body === "object" && request.body !== null ? request.body : {}) as Record<string, unknown>;
+  const body = (typeof request.body === "object" && request.body !== null ? request.body : {}) as Record<
+    string,
+    unknown
+  >;
   const details: Record<string, unknown> = {};
   if (body.repositoryId) details.repositoryId = body.repositoryId;
   if (typeof body.query === "string") details.query = body.query.slice(0, 200);

@@ -6,7 +6,8 @@ import { getRetrievalRuntimeStatus } from "../retrieval/runtime-status.js";
 export const healthHandler = async (_request: Request, response: Response): Promise<void> => {
   const dbHealth = await getDatabaseHealth();
   const retrieval = getRetrievalRuntimeStatus();
-  const retrievalState = retrieval.graph === "ready" ? (retrieval.vector === "ready" ? "ready" : "degraded") : retrieval.graph;
+  const retrievalState =
+    retrieval.graph === "ready" ? (retrieval.vector === "ready" ? "ready" : "degraded") : retrieval.graph;
   const status = dbHealth.status === "healthy" || process.env.NODE_ENV !== "production" ? "ok" : "degraded";
 
   response.status(200).json({

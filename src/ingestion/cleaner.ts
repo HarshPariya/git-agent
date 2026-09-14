@@ -8,7 +8,17 @@ export const SECRET_PATTERNS = [
   /^(id_rsa|id_ed25519|credentials\.json|secrets\.json|service-account.*\.json)$/i,
 ];
 
-export const IGNORED_DIRECTORIES = new Set(["node_modules", ".git", "dist", "build", ".next", "coverage", ".turbo", ".cache", ".claude"]);
+export const IGNORED_DIRECTORIES = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  ".next",
+  "coverage",
+  ".turbo",
+  ".cache",
+  ".claude",
+]);
 export const IGNORED_FILES = new Set(["package-lock.json", "pnpm-lock.yaml", "yarn.lock"]);
 
 export const isPathWithinRoot = (filePath: string, rootDirectory: string): boolean => {

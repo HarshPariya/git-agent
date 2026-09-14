@@ -50,15 +50,13 @@ export async function listUsersHandler(request: Request, response: Response, nex
     const usersCol = getCollection("users");
     const identitiesCol = getCollection("identities");
 
-    const dbUsers = await usersCol.find(
-      {},
-      { projection: { id: 1, email: 1, name: 1, tenant_id: 1, role: 1, created_at: 1 } },
-    ).toArray();
+    const dbUsers = await usersCol
+      .find({}, { projection: { id: 1, email: 1, name: 1, tenant_id: 1, role: 1, created_at: 1 } })
+      .toArray();
 
-    const identities = await identitiesCol.find(
-      {},
-      { projection: { user_id: 1, provider: 1, avatar_url: 1 } },
-    ).toArray();
+    const identities = await identitiesCol
+      .find({}, { projection: { user_id: 1, provider: 1, avatar_url: 1 } })
+      .toArray();
     const avatarMap = new Map<string, string>();
     for (const ident of identities) {
       if (ident.provider === "google" && ident.avatar_url) {

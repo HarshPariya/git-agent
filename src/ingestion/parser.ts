@@ -34,7 +34,22 @@ export interface ParsedFile {
   classes: ParsedClass[];
 }
 
-const SUPPORTED_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".json", ".html", ".css", ".md", ".sql", ".yml", ".yaml"]);
+const SUPPORTED_EXTENSIONS = new Set([
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".py",
+  ".json",
+  ".html",
+  ".css",
+  ".md",
+  ".sql",
+  ".yml",
+  ".yaml",
+]);
 
 const LANG_MAP: Record<string, SupportedLanguage> = {
   ".ts": "typescript",
@@ -57,7 +72,10 @@ const findBlockEnd = (lines: string[], startIndex: number): number => {
     const line = lines[i];
     if (!line) continue;
     for (const ch of line) {
-      if (ch === "{") { braceDepth++; started = true; }
+      if (ch === "{") {
+        braceDepth++;
+        started = true;
+      }
       if (ch === "}") braceDepth--;
     }
     if (started && braceDepth === 0) return i;
@@ -70,7 +88,10 @@ const findIndentBlockEnd = (lines: string[], startIndex: number, indentation: nu
   for (let i = startIndex + 1; i < lines.length; i++) {
     const nextLine = lines[i];
     if (!nextLine) break;
-    if (nextLine.trim() === "") { endIndex = i; continue; }
+    if (nextLine.trim() === "") {
+      endIndex = i;
+      continue;
+    }
     const nextIndent = nextLine.match(/^\s*/)?.[0]?.length ?? 0;
     if (nextIndent <= indentation) break;
     endIndex = i;
@@ -83,7 +104,17 @@ const extractTSImports = (lines: string[]): ParsedImport[] =>
     const trimmed = line.trim();
     const fromMatch = trimmed.match(/^import\s+(.+?)\s+from\s+["'](.+?)["']/);
     if (fromMatch?.[1] && fromMatch[2])
-      return [{ source: fromMatch[2], names: fromMatch[1].replace(/[{}]/g, "").split(",").map((n) => n.trim()).filter(Boolean), line: index + 1 }];
+      return [
+        {
+          source: fromMatch[2],
+          names: fromMatch[1]
+            .replace(/[{}]/g, "")
+            .split(",")
+            .map((n) => n.trim())
+            .filter(Boolean),
+          line: index + 1,
+        },
+      ];
     const sideEffect = trimmed.match(/^import\s+["'](.+?)["']/);
     return sideEffect?.[1] ? [{ source: sideEffect[1], names: [], line: index + 1 }] : [];
   });
@@ -93,10 +124,23 @@ const extractPyImports = (lines: string[]): ParsedImport[] =>
     const trimmed = line.trim();
     const fromMatch = trimmed.match(/^from\s+([\w.]+)\s+import\s+(.+)$/);
     if (fromMatch?.[1] && fromMatch[2])
-      return [{ source: fromMatch[1], names: fromMatch[2].split(",").map((n) => n.trim()).filter(Boolean), line: index + 1 }];
+      return [
+        {
+          source: fromMatch[1],
+          names: fromMatch[2]
+            .split(",")
+            .map((n) => n.trim())
+            .filter(Boolean),
+          line: index + 1,
+        },
+      ];
     const importMatch = trimmed.match(/^import\s+(.+)$/);
     return importMatch?.[1]
-      ? importMatch[1].split(",").map((n) => n.trim()).filter(Boolean).map((source) => ({ source, names: [], line: index + 1 }))
+      ? importMatch[1]
+          .split(",")
+          .map((n) => n.trim())
+          .filter(Boolean)
+          .map((source) => ({ source, names: [], line: index + 1 }))
       : [];
   });
 
@@ -121,7 +165,9 @@ export const extractJavaScriptFunctions = (lines: string[]): ParsedFunction[] =>
     const match = trimmed && JS_FUNC_PATTERNS.map((p) => trimmed.match(p)).find(Boolean);
     if (!match?.[1]) return [];
     const end = findBlockEnd(lines, index);
-    return [{ name: match[1], startLine: index + 1, endLine: end + 1, content: lines.slice(index, end + 1).join("\n") }];
+    return [
+      { name: match[1], startLine: index + 1, endLine: end + 1, content: lines.slice(index, end + 1).join("\n") },
+    ];
   });
 
 const extractPythonFunctions = (lines: string[]): ParsedFunction[] =>
@@ -129,7 +175,9 @@ const extractPythonFunctions = (lines: string[]): ParsedFunction[] =>
     const match = line?.match(/^(\s*)def\s+([A-Za-z_]\w*)\s*\(/);
     if (!match?.[1] || !match[2]) return [];
     const end = findIndentBlockEnd(lines, index, match[1].length);
-    return [{ name: match[2], startLine: index + 1, endLine: end + 1, content: lines.slice(index, end + 1).join("\n") }];
+    return [
+      { name: match[2], startLine: index + 1, endLine: end + 1, content: lines.slice(index, end + 1).join("\n") },
+    ];
   });
 
 export const extractJavaScriptClasses = (lines: string[]): ParsedClass[] =>
@@ -137,7 +185,9 @@ export const extractJavaScriptClasses = (lines: string[]): ParsedClass[] =>
     const match = line?.trim().match(/^(?:export\s+)?(?:default\s+)?class\s+([A-Za-z_$][\w$]*)/);
     if (!match?.[1]) return [];
     const end = findBlockEnd(lines, index);
-    return [{ name: match[1], startLine: index + 1, endLine: end + 1, content: lines.slice(index, end + 1).join("\n") }];
+    return [
+      { name: match[1], startLine: index + 1, endLine: end + 1, content: lines.slice(index, end + 1).join("\n") },
+    ];
   });
 
 const extractPythonClasses = (lines: string[]): ParsedClass[] =>
@@ -145,10 +195,16 @@ const extractPythonClasses = (lines: string[]): ParsedClass[] =>
     const match = line?.match(/^(\s*)class\s+([A-Za-z_]\w*)/);
     if (!match?.[1] || !match[2]) return [];
     const end = findIndentBlockEnd(lines, index, match[1].length);
-    return [{ name: match[2], startLine: index + 1, endLine: end + 1, content: lines.slice(index, end + 1).join("\n") }];
+    return [
+      { name: match[2], startLine: index + 1, endLine: end + 1, content: lines.slice(index, end + 1).join("\n") },
+    ];
   });
 
-const parseByLanguage = (filePath: string, language: SupportedLanguage, content: string): { imports: ParsedImport[]; functions: ParsedFunction[]; classes: ParsedClass[] } => {
+const parseByLanguage = (
+  filePath: string,
+  language: SupportedLanguage,
+  content: string,
+): { imports: ParsedImport[]; functions: ParsedFunction[]; classes: ParsedClass[] } => {
   if (language === "typescript" || language === "javascript") return parseTypeScriptAST(content, filePath);
   if (language === "python") {
     const lines = content.split(/\r?\n/);
@@ -202,7 +258,10 @@ export const scanRepository = async (rootDirectory: string): Promise<string[]> =
       }
 
       if (!entry.isFile()) continue;
-      if (isIgnoredFile(entry.name)) { console.warn(`🛡 Security: Filtered secret/artifact file: ${entry.name}`); continue; }
+      if (isIgnoredFile(entry.name)) {
+        console.warn(`🛡 Security: Filtered secret/artifact file: ${entry.name}`);
+        continue;
+      }
 
       let stat;
       try {

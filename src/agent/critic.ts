@@ -7,13 +7,7 @@ export type CriticVerdict = "APPROVED" | "REJECTED" | "NEEDS_REVISION";
 export interface CriticFinding {
   readonly severity: "critical" | "major" | "minor" | "info";
   readonly category:
-    | "correctness"
-    | "security"
-    | "performance"
-    | "test_coverage"
-    | "scope_creep"
-    | "git_safety"
-    | "regression_risk";
+    "correctness" | "security" | "performance" | "test_coverage" | "scope_creep" | "git_safety" | "regression_risk";
   readonly description: string;
   readonly suggestion?: string;
 }
@@ -46,22 +40,12 @@ const DEFAULT_REVIEW: CriticReview = {
 };
 
 export class CriticAgent {
-  async review(
-    plan: FixPlan,
-    ctx: DebugContext,
-    testsPassed: boolean
-  ): Promise<CriticReview> {
+  async review(plan: FixPlan, ctx: DebugContext, testsPassed: boolean): Promise<CriticReview> {
     const useLlm = isLlmAvailable();
-    return useLlm
-      ? this.reviewWithLlm(plan, ctx, testsPassed)
-      : this.reviewDeterministic(plan, ctx, testsPassed);
+    return useLlm ? this.reviewWithLlm(plan, ctx, testsPassed) : this.reviewDeterministic(plan, ctx, testsPassed);
   }
 
-  private async reviewWithLlm(
-    plan: FixPlan,
-    ctx: DebugContext,
-    testsPassed: boolean
-  ): Promise<CriticReview> {
+  private async reviewWithLlm(plan: FixPlan, ctx: DebugContext, testsPassed: boolean): Promise<CriticReview> {
     const prompt = this.buildReviewPrompt(plan, ctx, testsPassed);
 
     try {
@@ -79,14 +63,8 @@ export class CriticAgent {
     }
   }
 
-  private buildReviewPrompt(
-    plan: FixPlan,
-    ctx: DebugContext,
-    testsPassed: boolean
-  ): string {
-    const filesChanged =
-      plan.filesToChange.map((f) => `- ${f.filePath}: ${f.description}`).join("\n") ||
-      "None";
+  private buildReviewPrompt(plan: FixPlan, ctx: DebugContext, testsPassed: boolean): string {
+    const filesChanged = plan.filesToChange.map((f) => `- ${f.filePath}: ${f.description}`).join("\n") || "None";
     const evidenceUsed = plan.evidence.slice(0, 5).join("\n");
 
     return `You are a senior software engineer conducting a critical code review.
@@ -118,10 +96,7 @@ REVIEW CRITERIA:
 - Score < 60 => REJECTED`;
   }
 
-  private parseLlmResponse(
-    content: string,
-    testsPassed: boolean
-  ): CriticReview {
+  private parseLlmResponse(content: string, testsPassed: boolean): CriticReview {
     const jsonMatch = /\{[\s\S]*\}/.exec(content);
     if (!jsonMatch) {
       throw new Error("No JSON found in LLM response");
@@ -149,11 +124,7 @@ REVIEW CRITERIA:
     };
   }
 
-  private reviewDeterministic(
-    plan: FixPlan,
-    _ctx: DebugContext,
-    testsPassed: boolean
-  ): CriticReview {
+  private reviewDeterministic(plan: FixPlan, _ctx: DebugContext, testsPassed: boolean): CriticReview {
     const findings: CriticFinding[] = [];
     let score = 75;
 
@@ -176,11 +147,7 @@ REVIEW CRITERIA:
     };
   }
 
-  private applyTestPenalty(
-    score: number,
-    testsPassed: boolean,
-    findings: CriticFinding[]
-  ): number {
+  private applyTestPenalty(score: number, testsPassed: boolean, findings: CriticFinding[]): number {
     if (testsPassed) {
       return score;
     }
@@ -194,11 +161,7 @@ REVIEW CRITERIA:
     return score - 30;
   }
 
-  private applyEmptyChangePenalty(
-    score: number,
-    plan: FixPlan,
-    findings: CriticFinding[]
-  ): number {
+  private applyEmptyChangePenalty(score: number, plan: FixPlan, findings: CriticFinding[]): number {
     if (plan.filesToChange.length > 0) {
       return score;
     }
@@ -211,11 +174,7 @@ REVIEW CRITERIA:
     return score - 10;
   }
 
-  private applyRiskPenalty(
-    score: number,
-    plan: FixPlan,
-    findings: CriticFinding[]
-  ): number {
+  private applyRiskPenalty(score: number, plan: FixPlan, findings: CriticFinding[]): number {
     if (plan.riskLevel !== "HIGH" && plan.riskLevel !== "CRITICAL") {
       return score;
     }
@@ -229,9 +188,7 @@ REVIEW CRITERIA:
   }
 
   private determineVerdict(score: number): CriticVerdict {
-    return (
-      SCORE_THRESHOLDS.find((t) => score >= t.minScore)?.verdict ?? "REJECTED"
-    );
+    return SCORE_THRESHOLDS.find((t) => score >= t.minScore)?.verdict ?? "REJECTED";
   }
 }
 

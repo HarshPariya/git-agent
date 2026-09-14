@@ -15,7 +15,10 @@ export interface GraphEntity {
 }
 
 const normalizeId = (value: string): string =>
-  value.replace(/\\/g, "/").replace(/[^a-zA-Z0-9/_-]/g, "-").toLowerCase();
+  value
+    .replace(/\\/g, "/")
+    .replace(/[^a-zA-Z0-9/_-]/g, "-")
+    .toLowerCase();
 
 const createFileEntity = (file: ParsedFile): GraphEntity => ({
   id: `file:${normalizeId(file.filePath)}`,
@@ -73,5 +76,5 @@ export const extractEntities = (parsedFiles: ParsedFile[]): GraphEntity[] =>
     parsedFiles
       .flatMap((file) => extractEntitiesFromFile(file))
       .reduce((map, entity) => map.set(entity.id, entity), new Map<string, GraphEntity>())
-      .values()
+      .values(),
   );

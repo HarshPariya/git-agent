@@ -42,7 +42,12 @@ export const validateGitHubToken = async (token: string): Promise<GitHubTokenInf
 
     if (!response.ok) throw new AppError("Invalid GitHub token or insufficient permissions", "GITHUB_ERROR", 401);
 
-    const data = (await response.json()) as { login: string; name: string | null; email: string | null; avatar_url: string };
+    const data = (await response.json()) as {
+      login: string;
+      name: string | null;
+      email: string | null;
+      avatar_url: string;
+    };
 
     return {
       token,

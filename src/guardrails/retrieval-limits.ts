@@ -12,7 +12,9 @@ export const validateQueryLength = (query: string): string => {
   const trimmed = query.trim();
   if (trimmed.length === 0) throw new ResourceLimitError("Query cannot be empty or blank.");
   if (trimmed.length > LIMITS.maxQueryLength) {
-    throw new ResourceLimitError(`Query length (${trimmed.length} chars) exceeds maximum limit of ${LIMITS.maxQueryLength} characters.`);
+    throw new ResourceLimitError(
+      `Query length (${trimmed.length} chars) exceeds maximum limit of ${LIMITS.maxQueryLength} characters.`,
+    );
   }
   return trimmed;
 };
@@ -41,16 +43,22 @@ const formatMB = (bytes: number): string => (bytes / 1024 / 1024).toFixed(1);
 
 export const validateRepositoryScan = (fileCount: number, totalSizeBytes: number): void => {
   if (fileCount > LIMITS.maxRepositoryFiles) {
-    throw new ResourceLimitError(`Repository file count (${fileCount}) exceeds limit of ${LIMITS.maxRepositoryFiles} files.`);
+    throw new ResourceLimitError(
+      `Repository file count (${fileCount}) exceeds limit of ${LIMITS.maxRepositoryFiles} files.`,
+    );
   }
   if (totalSizeBytes > LIMITS.maxRepositorySizeBytes) {
-    throw new ResourceLimitError(`Repository total size (${formatMB(totalSizeBytes)} MB) exceeds limit of ${formatMB(LIMITS.maxRepositorySizeBytes)} MB.`);
+    throw new ResourceLimitError(
+      `Repository total size (${formatMB(totalSizeBytes)} MB) exceeds limit of ${formatMB(LIMITS.maxRepositorySizeBytes)} MB.`,
+    );
   }
 };
 
 export const validateRepositoryChunkCount = (totalChunks: number): void => {
   if (totalChunks > LIMITS.maxRepositoryChunks) {
-    throw new ResourceLimitError(`Repository chunk count (${totalChunks}) exceeds limit of ${LIMITS.maxRepositoryChunks} chunks.`);
+    throw new ResourceLimitError(
+      `Repository chunk count (${totalChunks}) exceeds limit of ${LIMITS.maxRepositoryChunks} chunks.`,
+    );
   }
 };
 

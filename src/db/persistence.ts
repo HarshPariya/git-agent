@@ -80,9 +80,7 @@ export async function backfillUserCreatedAt(): Promise<void> {
       const userId = user.id as string;
       const earliest = await activityCol.find({ userId }).sort({ timestamp: 1 }).limit(1).next();
       const created_at =
-        earliest?.timestamp instanceof Date
-          ? earliest.timestamp.toISOString()
-          : new Date().toISOString();
+        earliest?.timestamp instanceof Date ? earliest.timestamp.toISOString() : new Date().toISOString();
       await usersCol.updateOne({ id: userId }, { $set: { created_at } });
       fixed++;
     }

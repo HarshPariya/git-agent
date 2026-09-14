@@ -50,4 +50,4 @@ async function runGuardrailTests() {
   if (failed > 0) process.exitCode = 1;
 }
 
-runGuardrailTests().catch((err) => { console.error("Guardrails test failed:", err); process.exitCode = 1; });
+runGuardrailTests().catch((err) => { console.error("Guardrails test failed:", err); process.exit(1); });

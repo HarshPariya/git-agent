@@ -60,11 +60,7 @@ export class AgentStateMachine {
     return [...this.history];
   }
 
-  public transition(
-    to: AgentState,
-    reason?: string,
-    metadata?: Record<string, unknown>
-  ): AgentState {
+  public transition(to: AgentState, reason?: string, metadata?: Record<string, unknown>): AgentState {
     const from = this.currentState;
     const event: StateTransitionEvent = {
       from,

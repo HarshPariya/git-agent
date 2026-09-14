@@ -47,16 +47,23 @@ export const buildGraph = (entities: GraphEntity[], relationships: GraphRelation
   entities.forEach((e) => nodes.set(e.id, e));
   relationships.forEach((r) => {
     const outgoingList = outgoing.get(r.sourceId);
-    if (outgoingList) { outgoingList.push(r); } else { outgoing.set(r.sourceId, [r]); }
+    if (outgoingList) {
+      outgoingList.push(r);
+    } else {
+      outgoing.set(r.sourceId, [r]);
+    }
     const incomingList = incoming.get(r.targetId);
-    if (incomingList) { incomingList.push(r); } else { incoming.set(r.targetId, [r]); }
+    if (incomingList) {
+      incomingList.push(r);
+    } else {
+      incoming.set(r.targetId, [r]);
+    }
   });
 
   return { nodes, edges: relationships, outgoing, incoming };
 };
 
-export const getNode = (graph: CodeGraph, entityId: string): GraphEntity | undefined =>
-  graph.nodes.get(entityId);
+export const getNode = (graph: CodeGraph, entityId: string): GraphEntity | undefined => graph.nodes.get(entityId);
 
 const filterByTypes = (edges: GraphRelationship[], types?: RelationshipType[]) =>
   types?.length ? edges.filter((e) => types.includes(e.type)) : edges;
@@ -72,13 +79,15 @@ export const getNeighbors = (graph: CodeGraph, entityId: string, types?: Relatio
     new Set([
       ...getOutgoing(graph, entityId, types).map(({ targetId }) => targetId),
       ...getIncoming(graph, entityId, types).map(({ sourceId }) => sourceId),
-    ])
-  ).map((id) => graph.nodes.get(id)!).filter(Boolean);
+    ]),
+  )
+    .map((id) => graph.nodes.get(id)!)
+    .filter(Boolean);
 
 export const traverseGraph = (
   graph: CodeGraph,
   startEntityId: string,
-  { maxDepth = 2, relationshipTypes }: TraverseOptions = {}
+  { maxDepth = 2, relationshipTypes }: TraverseOptions = {},
 ): TraversalResult[] => {
   const visited = new Set<string>();
   const results: TraversalResult[] = [];
@@ -118,7 +127,7 @@ export const findEntitiesByName = (graph: CodeGraph, name: string): GraphEntity[
 export const getGraphStats = (graph: CodeGraph) => {
   const countByType = <T extends { type: string }>(items: T[]): Record<string, number> =>
     Object.fromEntries(
-      items.reduce((acc, item) => acc.set(item.type, (acc.get(item.type) ?? 0) + 1), new Map<string, number>())
+      items.reduce((acc, item) => acc.set(item.type, (acc.get(item.type) ?? 0) + 1), new Map<string, number>()),
     );
 
   return {

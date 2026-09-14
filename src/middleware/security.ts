@@ -9,9 +9,10 @@ import { getPermissionFromPath } from "./permission.js";
 const DEFAULT_RATE_LIMIT_MAX = 100;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 
-const WORKSPACE_ALLOWLIST: readonly string[] = (
-  process.env.WORKSPACE_ALLOWLIST?.trim() || ""
-).split(",").map((p) => p.trim()).filter(Boolean);
+const WORKSPACE_ALLOWLIST: readonly string[] = (process.env.WORKSPACE_ALLOWLIST?.trim() || "")
+  .split(",")
+  .map((p) => p.trim())
+  .filter(Boolean);
 
 const isPathTraversal = (candidate: string): boolean =>
   candidate.includes("\0") || candidate.includes("..") || !path.isAbsolute(candidate);
@@ -34,8 +35,7 @@ export const rateLimiter = new InMemoryRateLimiter(
 );
 
 const getHeaderOrQuery = (req: Request, name: string): string | undefined =>
-  req.header(name)?.trim() ||
-  (typeof req.query?.[name] === "string" ? req.query[name].trim() : undefined);
+  req.header(name)?.trim() || (typeof req.query?.[name] === "string" ? req.query[name].trim() : undefined);
 
 const extractBearerToken = (req: Request): string | undefined => {
   const authHeader = req.header("authorization")?.trim();
@@ -53,7 +53,8 @@ const sendError = (res: Response, status: number, code: string, message: string)
   res.status(status).json({ error: { code, message } });
 };
 
-export const createSecurityMiddleware = (requiredPermission?: Permission) =>
+export const createSecurityMiddleware =
+  (requiredPermission?: Permission) =>
   (request: Request, response: Response, next: NextFunction): void => {
     try {
       const rawToken = extractBearerToken(request);
@@ -68,7 +69,12 @@ export const createSecurityMiddleware = (requiredPermission?: Permission) =>
           userId = session.userId;
           role = session.role;
         } catch (authErr) {
-          sendError(response, 401, "AUTHENTICATION_ERROR", authErr instanceof Error ? authErr.message : "Invalid authentication token");
+          sendError(
+            response,
+            401,
+            "AUTHENTICATION_ERROR",
+            authErr instanceof Error ? authErr.message : "Invalid authentication token",
+          );
           return;
         }
       }
@@ -91,7 +97,8 @@ export const createSecurityMiddleware = (requiredPermission?: Permission) =>
       }
 
       const context = createTenantContext(tenantId, userId);
-      const permissionToCheck: Permission = requiredPermission ?? getPermissionFromPath(request.path ?? "", request.method ?? "POST");
+      const permissionToCheck: Permission =
+        requiredPermission ?? getPermissionFromPath(request.path ?? "", request.method ?? "POST");
 
       if (!authorize({ context, role, permission: permissionToCheck })) {
         sendError(response, 403, "AUTHORIZATION_ERROR", "You are not authorized to perform this operation.");
@@ -100,7 +107,9 @@ export const createSecurityMiddleware = (requiredPermission?: Permission) =>
 
       const rateLimit = rateLimiter.check(context.tenantId);
       if (!rateLimit.allowed) {
-        response.status(429).json({ error: { code: "RATE_LIMITED", message: "Too many requests." }, retryAt: rateLimit.resetAt });
+        response
+          .status(429)
+          .json({ error: { code: "RATE_LIMITED", message: "Too many requests." }, retryAt: rateLimit.resetAt });
         return;
       }
 

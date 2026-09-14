@@ -36,12 +36,11 @@ export interface RevertResult {
 
 const backupStore = new Map<string, PatchBackup>();
 
-const generateId = (): string =>
-  `patch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const generateId = (): string => `patch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export function validatePrePatch(
   repoPath: string,
-  changes: readonly { filePath: string }[]
+  changes: readonly { filePath: string }[],
 ): { valid: boolean; errors: string[] } {
   const resolvedRepo = path.resolve(repoPath);
   const errors = changes
@@ -57,7 +56,7 @@ export function validatePrePatch(
 export async function createPatchBackup(
   repoPath: string,
   filePaths: readonly string[],
-  description = "Pre-patch backup"
+  description = "Pre-patch backup",
 ): Promise<PatchBackup> {
   const backupId = generateId();
   const filesMap = new Map<string, string>();
@@ -74,7 +73,7 @@ export async function createPatchBackup(
         }
         throw err;
       }
-    })
+    }),
   );
 
   const backup: PatchBackup = {
@@ -92,7 +91,7 @@ export async function createPatchBackup(
 export async function applyPatch(
   repoPath: string,
   changes: readonly PatchFileChange[],
-  description = "Agent Fix Patch"
+  description = "Agent Fix Patch",
 ): Promise<PatchResult> {
   const validation = validatePrePatch(repoPath, changes);
   if (!validation.valid) {

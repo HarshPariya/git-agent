@@ -55,7 +55,10 @@ export async function logActivity(
     await col.insertOne(entry);
   } catch (err) {
     // Never block the main request — just log the failure
-    console.warn(`[ACTIVITY] Failed to log activity "${action}" for user ${user.userId}:`, err instanceof Error ? err.message : err);
+    console.warn(
+      `[ACTIVITY] Failed to log activity "${action}" for user ${user.userId}:`,
+      err instanceof Error ? err.message : err,
+    );
   }
 }
 

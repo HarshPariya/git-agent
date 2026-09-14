@@ -9,14 +9,18 @@ const getTenantContext = (request: Request) => {
 };
 
 const getRequestBody = (request: Request): Record<string, unknown> =>
-  typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {};
+  typeof request.body === "object" && request.body !== null ? (request.body as Record<string, unknown>) : {};
 
 const optionalString = (body: Record<string, unknown>, key: string): string | undefined => {
   const value = body[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 };
 
-export const connectRepositoryHandler = async (request: Request, response: Response, next: NextFunction): Promise<void> => {
+export const connectRepositoryHandler = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): Promise<void> => {
   try {
     const context = getTenantContext(request);
     const body = getRequestBody(request);

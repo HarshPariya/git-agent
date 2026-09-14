@@ -54,7 +54,8 @@ export function getAuditEntryHandler(request: Request, response: Response, next:
 
     const entry = auditLog.find((e) => e.id === id);
     if (!entry) throw new AppError("Audit entry not found", "NOT_FOUND", 404);
-    if (entry.tenantId !== context.tenantId) throw new AppError("Unauthorized access to audit log", "AUTHORIZATION_ERROR", 403);
+    if (entry.tenantId !== context.tenantId)
+      throw new AppError("Unauthorized access to audit log", "AUTHORIZATION_ERROR", 403);
 
     response.status(200).json(entry);
   } catch (error) {

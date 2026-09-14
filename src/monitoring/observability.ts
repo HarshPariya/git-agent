@@ -74,18 +74,12 @@ const MAX_SLOW_QUERIES = 50;
 const calculatePercentile = (sorted: readonly number[], p: number): number =>
   sorted[Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)] ?? 0;
 
-const avgLatency = (total: number, count: number): number =>
-  count > 0 ? Math.round(total / count) : 0;
+const avgLatency = (total: number, count: number): number => (count > 0 ? Math.round(total / count) : 0);
 
-const buildHealthScore = (
-  score: number,
-  percentiles: PercentileMetrics,
-): SystemMetrics["healthScore"] => {
+const buildHealthScore = (score: number, percentiles: PercentileMetrics): SystemMetrics["healthScore"] => {
   const clamped = Math.max(0, Math.min(100, Math.round(score)));
   const status: SystemMetrics["healthScore"]["status"] =
-    clamped >= 95 ? "EXCELLENT" :
-      clamped >= 80 ? "GOOD" :
-        clamped >= 50 ? "DEGRADED" : "CRITICAL";
+    clamped >= 95 ? "EXCELLENT" : clamped >= 80 ? "GOOD" : clamped >= 50 ? "DEGRADED" : "CRITICAL";
 
   return {
     status,
@@ -94,7 +88,9 @@ const buildHealthScore = (
   };
 };
 
-const buildPerRepoSummary = (map: Map<string, { total: number; failed: number; totalLatencyMs: number }>): Record<string, RepositoryMetricSummary> => {
+const buildPerRepoSummary = (
+  map: Map<string, { total: number; failed: number; totalLatencyMs: number }>,
+): Record<string, RepositoryMetricSummary> => {
   const result: Record<string, RepositoryMetricSummary> = {};
   for (const [repo, data] of map.entries()) {
     result[repo] = {
@@ -125,7 +121,15 @@ class MetricsCollector {
   private deletedFiles = 0;
   private lastIndexingDurationMs = 0;
 
-  recordRetrieval(totalMs: number, vectorMs: number, graphMs: number, rerankMs: number, success = true, queryText = "", repository = "ai-chatbot"): void {
+  recordRetrieval(
+    totalMs: number,
+    vectorMs: number,
+    graphMs: number,
+    rerankMs: number,
+    success = true,
+    queryText = "",
+    repository = "ai-chatbot",
+  ): void {
     this.retrievalRequests++;
     if (!success) this.failedRetrievals++;
     this.totalRetrievalLatencyMs += totalMs;
@@ -161,7 +165,11 @@ class MetricsCollector {
   };
 
   recordCacheHit = (hit: boolean): void => {
-    if (hit) { this.cacheHits++; } else { this.cacheMisses++; }
+    if (hit) {
+      this.cacheHits++;
+    } else {
+      this.cacheMisses++;
+    }
   };
 
   recordRagMetrics(metrics: {

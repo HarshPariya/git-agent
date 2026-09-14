@@ -3,7 +3,17 @@ import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
 
-interface TestSuite { name: string; command: string; }
+// Each suite gets 120 seconds. This prevents a hanging process (e.g. an
+// unclosed MongoDB connection keeping the event loop alive) from blocking the
+// entire CI run for 10+ minutes.
+const SUITE_TIMEOUT_MS = 120_000;
+
+interface TestSuite {
+  name: string;
+  command: string;
+  /** Optional per-suite override when 120 s is not enough. */
+  timeoutMs?: number;
+}
 
 const SUITES: TestSuite[] = [
   { name: "Git Engine & Safety Controls", command: "npx tsx tests/git-engine.test.ts" },
@@ -15,16 +25,27 @@ const SUITES: TestSuite[] = [
 ];
 
 async function runAll() {
-  console.log("════════════════════════════════════════════════════════════════\nPRODUCTION GIT DEBUGGING AGENT — FULL TEST SUITE RUNNER\n════════════════════════════════════════════════════════════════\n");
+  console.log(
+    "════════════════════════════════════════════════════════════════\n" +
+      "PRODUCTION GIT DEBUGGING AGENT — FULL TEST SUITE RUNNER\n" +
+      "════════════════════════════════════════════════════════════════\n",
+  );
 
   const startTime = Date.now();
-  let passedSuites = 0, failedSuites = 0;
+  let passedSuites = 0;
+  let failedSuites = 0;
 
   for (const suite of SUITES) {
-    console.log(`▶ Running Suite: ${suite.name}...`);
+    const timeout = suite.timeoutMs ?? SUITE_TIMEOUT_MS;
+    console.log(`▶ Running Suite: ${suite.name} (timeout: ${timeout / 1000}s)...`);
     const suiteStart = Date.now();
     try {
-      const { stdout, stderr } = await execAsync(suite.command, { cwd: process.cwd(), env: { ...process.env, NODE_ENV: "test" } });
+      const { stdout, stderr } = await execAsync(suite.command, {
+        cwd: process.cwd(),
+        env: { ...process.env, NODE_ENV: "test" },
+        timeout,
+        killSignal: "SIGKILL",
+      });
       const durationMs = Date.now() - suiteStart;
       console.log(stdout.trim());
       if (stderr?.trim()) console.warn(stderr.trim());
@@ -32,7 +53,8 @@ async function runAll() {
       passedSuites++;
     } catch (err: any) {
       const durationMs = Date.now() - suiteStart;
-      console.error(`❌ Suite "${suite.name}" FAILED in ${durationMs}ms`);
+      const timedOut = err.killed === true || err.signal === "SIGKILL" || err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
+      console.error(`❌ Suite "${suite.name}" ${timedOut ? "TIMED OUT" : "FAILED"} in ${durationMs}ms`);
       if (err.stdout) console.log(err.stdout);
       if (err.stderr) console.error(err.stderr);
       failedSuites++;
@@ -40,11 +62,25 @@ async function runAll() {
   }
 
   const totalTimeMs = Date.now() - startTime;
-  console.log(`════════════════════════════════════════════════════════════════\nSUMMARY OF TEST EXECUTION\n════════════════════════════════════════════════════════════════`);
-  console.log(`Total Suites:   ${SUITES.length}\nPassed Suites:  ${passedSuites}\nFailed Suites:  ${failedSuites}\nTotal Duration: ${(totalTimeMs / 1000).toFixed(2)}s\n`);
+  console.log(
+    "════════════════════════════════════════════════════════════════\n" +
+      "SUMMARY OF TEST EXECUTION\n" +
+      "════════════════════════════════════════════════════════════════",
+  );
+  console.log(
+    `Total Suites:   ${SUITES.length}\nPassed Suites:  ${passedSuites}\nFailed Suites:  ${failedSuites}\nTotal Duration: ${(totalTimeMs / 1000).toFixed(2)}s\n`,
+  );
 
-  if (failedSuites > 0) { console.error("CI TEST SUITE FAILED"); process.exit(1); }
-  else { console.log("ALL TEST SUITES PASSED CLEANLY!"); process.exit(0); }
+  if (failedSuites > 0) {
+    console.error("CI TEST SUITE FAILED");
+    process.exit(1);
+  } else {
+    console.log("ALL TEST SUITES PASSED CLEANLY!");
+    process.exit(0);
+  }
 }
 
-runAll().catch((err) => { console.error("Master test runner error:", err); process.exit(1); });
+runAll().catch((err) => {
+  console.error("Master test runner error:", err);
+  process.exit(1);
+});

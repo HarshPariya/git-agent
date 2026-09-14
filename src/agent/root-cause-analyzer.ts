@@ -62,7 +62,7 @@ export class RootCauseAnalyzer {
     symptom: string,
     hypotheses: readonly Hypothesis[],
     evidence: readonly EvidenceItem[],
-    affectedFiles: readonly string[] = []
+    affectedFiles: readonly string[] = [],
   ): RootCauseReport {
     const winning = this.selectWinningHypothesis(hypotheses);
     const relevantEvidence = this.filterRelevantEvidence(evidence, winning);
@@ -90,7 +90,7 @@ export class RootCauseAnalyzer {
 
   private filterRelevantEvidence(
     evidence: readonly EvidenceItem[],
-    winningHypothesis: Hypothesis
+    winningHypothesis: Hypothesis,
   ): readonly EvidenceItem[] {
     if (winningHypothesis.evidenceIds.length === 0) {
       return evidence;
@@ -98,13 +98,8 @@ export class RootCauseAnalyzer {
     return evidence.filter((e) => winningHypothesis.evidenceIds.includes(e.id));
   }
 
-  private determineRiskLevel(
-    hypothesis: Hypothesis,
-    affectedFiles: readonly string[]
-  ): RiskLevel {
-    const matchedPattern = RISK_PATTERNS.find((pattern) =>
-      pattern.matcher(hypothesis, affectedFiles)
-    );
+  private determineRiskLevel(hypothesis: Hypothesis, affectedFiles: readonly string[]): RiskLevel {
+    const matchedPattern = RISK_PATTERNS.find((pattern) => pattern.matcher(hypothesis, affectedFiles));
     return matchedPattern?.level ?? "low";
   }
 

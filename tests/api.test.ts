@@ -1,5 +1,6 @@
 import http from "node:http";
 import { app } from "../src/app.js";
+import { closeDatabase } from "../src/db/mongodb.js";
 
 async function runApiTests() {
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nEXPRESS API & SERVICE ENDPOINT TEST SUITE\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
@@ -82,10 +83,11 @@ async function runApiTests() {
     assert(Array.isArray(fsData.directories) && Array.isArray(fsData.files), "Filesystem browser returns directories and files arrays");
   } finally {
     await new Promise<void>((resolve) => { server.close(() => resolve()); });
+    await closeDatabase();
   }
 
   console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nAPI TEST RESULTS: ${passed} Passed, ${failed} Failed.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
   if (failed > 0) process.exitCode = 1;
 }
 
-runApiTests().catch((err) => { console.error("API test failed:", err); process.exitCode = 1; });
+runApiTests().catch((err) => { console.error("API test failed:", err); process.exit(1); });

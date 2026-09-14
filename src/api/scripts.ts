@@ -51,7 +51,7 @@ const getTenantContext = (request: Request) => {
 };
 
 const getRequestBody = (request: Request): Record<string, unknown> =>
-  typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {};
+  typeof request.body === "object" && request.body !== null ? (request.body as Record<string, unknown>) : {};
 
 const optionalString = (body: Record<string, unknown>, key: string): string | undefined => {
   const value = body[key];
@@ -153,7 +153,9 @@ export async function runRepositoryScript(
   });
 
   const clampedTimeout = Math.min(Math.max(1, timeoutMs), MAX_TIMEOUT_MS);
-  const shellCommand = [`${packageManager} run ${escapeShellArg(script)}`, ...validatedArgs.map(escapeShellArg)].join(" ");
+  const shellCommand = [`${packageManager} run ${escapeShellArg(script)}`, ...validatedArgs.map(escapeShellArg)].join(
+    " ",
+  );
 
   const startedAt = Date.now();
   let status: ScriptRunResult["status"] = "success";
@@ -174,8 +176,9 @@ export async function runRepositoryScript(
     const e = err as { code?: number | string; stdout?: string; stderr?: string; killed?: boolean; message?: string };
     exitCode = typeof e.code === "number" ? e.code : 1;
     stdout = e.stdout ?? "";
-    stderr = e.stderr ?? (e.killed ? `Script timed out after ${clampedTimeout}ms` : String(e.message ?? "Script failed"));
-    status = e.killed ? "timeout" : (exitCode === 0 ? "success" : "failed");
+    stderr =
+      e.stderr ?? (e.killed ? `Script timed out after ${clampedTimeout}ms` : String(e.message ?? "Script failed"));
+    status = e.killed ? "timeout" : exitCode === 0 ? "success" : "failed";
   }
 
   return {
@@ -199,7 +202,7 @@ export async function listScriptsHandler(request: Request, response: Response, n
     const repositoryId =
       typeof query.repositoryId === "string" && query.repositoryId.trim()
         ? query.repositoryId.trim()
-        : optionalString(body, "repositoryId") ?? "";
+        : (optionalString(body, "repositoryId") ?? "");
 
     if (!repositoryId) throw new AppError("repositoryId is required", "VALIDATION_ERROR", 400);
 

@@ -1,18 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import {
-  executeGitStatus,
-  executeGitLog,
-  executeGitDiff,
-  executeGitBranches,
-} from "../git/engine.js";
+import { executeGitStatus, executeGitLog, executeGitDiff, executeGitBranches } from "../git/engine.js";
 import { repositoryIndexer } from "../graph/repository-indexer.js";
 import { repositoryStore } from "../repositories/repository-store.js";
 import { logger } from "../logging/logger.js";
 
 /** Stringify only strings; fall back to a default for any other runtime value. */
-const safeStr = (value: unknown, fallback: string): string =>
-  typeof value === "string" ? value : fallback;
+const safeStr = (value: unknown, fallback: string): string => (typeof value === "string" ? value : fallback);
 
 export interface GitContext {
   readonly branch: string;
@@ -56,9 +50,21 @@ interface ContextBuildRequest {
 }
 
 const IGNORED_DIRS = new Set([
-  "node_modules", ".git", "dist", "build", ".next", ".nuxt",
-  "coverage", ".nyc_output", "__pycache__", ".venv", "venv",
-  "target", ".gradle", ".idea", ".vscode",
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  ".next",
+  ".nuxt",
+  "coverage",
+  ".nyc_output",
+  "__pycache__",
+  ".venv",
+  "venv",
+  "target",
+  ".gradle",
+  ".idea",
+  ".vscode",
 ]);
 
 const MAX_DIR_DEPTH = 3;
@@ -250,7 +256,7 @@ export class ContextBuilder {
     try {
       const graph = await repositoryIndexer.getGraph(repositoryId, tenantId);
       return {
-        symbols: graph.symbols.slice(0, 20).map((s) => typeof s.name === "string" ? s.name : ""),
+        symbols: graph.symbols.slice(0, 20).map((s) => (typeof s.name === "string" ? s.name : "")),
         graphNodes: graph.nodes.length,
         graphEdges: graph.edges.length,
         relevantFiles: [...new Set(graph.nodes.slice(0, 10).map((n) => n.filePath || n.name))],
@@ -276,13 +282,13 @@ export class ContextBuilder {
 
       const pkgSummary = packageJson
         ? [
-          `name: ${safeStr(packageJson["name"], "unknown")}`,
-          `version: ${safeStr(packageJson["version"], "unknown")}`,
-          `description: ${safeStr(packageJson["description"], "none")}`,
-          `dependencies: ${Object.keys((packageJson["dependencies"] as Record<string, unknown>) ?? {}).join(", ") || "none"}`,
-          `devDependencies: ${Object.keys((packageJson["devDependencies"] as Record<string, unknown>) ?? {}).join(", ") || "none"}`,
-          `scripts: ${Object.keys((packageJson["scripts"] as Record<string, unknown>) ?? {}).join(", ") || "none"}`,
-        ].join("\n")
+            `name: ${safeStr(packageJson["name"], "unknown")}`,
+            `version: ${safeStr(packageJson["version"], "unknown")}`,
+            `description: ${safeStr(packageJson["description"], "none")}`,
+            `dependencies: ${Object.keys((packageJson["dependencies"] as Record<string, unknown>) ?? {}).join(", ") || "none"}`,
+            `devDependencies: ${Object.keys((packageJson["devDependencies"] as Record<string, unknown>) ?? {}).join(", ") || "none"}`,
+            `scripts: ${Object.keys((packageJson["scripts"] as Record<string, unknown>) ?? {}).join(", ") || "none"}`,
+          ].join("\n")
         : "No package.json found.";
 
       const searchResults = [
@@ -360,7 +366,7 @@ export const contextBuilder = new ContextBuilder();
 export async function buildDebugContext(
   repositoryId: string,
   query: string,
-  options: { tenantId?: string; stackTrace?: string; issueText?: string; prText?: string } = {}
+  options: { tenantId?: string; stackTrace?: string; issueText?: string; prText?: string } = {},
 ): Promise<DebugContext> {
   return contextBuilder.build({
     repositoryId,
