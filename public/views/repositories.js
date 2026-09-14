@@ -754,6 +754,27 @@ async function connectEnteredPath() {
   await connectSpecificFolder(folderName, target);
 }
 
+async function connectWorkspaceFolder() {
+  closeModal("modal-folder-browser");
+  showToast("Connecting current workspace (Git-Agent)...", "info");
+  try {
+    const res = await api.connectRepository({
+      name: "Git-Agent",
+      localPath: ".",
+    });
+    showToast("Connected Git-Agent successfully!", "success");
+    await loadRepositories();
+    if (res.repository) {
+      await setActiveRepository(res.repository);
+      if (typeof window.navigate === "function") {
+        window.navigate("git-desktop");
+      }
+    }
+  } catch (err) {
+    showToast(`Failed to connect workspace: ${err.message}`, "error");
+  }
+}
+
 function openGitHubModalFromBrowser() {
   closeModal("modal-folder-browser");
   showGitHubModalFlow();
@@ -982,7 +1003,7 @@ async function connectSelectedGitHubRepo(name, cloneUrl) {
     showToast(`Failed to connect repository: ${err.message}`, "error");
   }
 }
-
+// ends
 // Event delegation for data-action attributes
 document.addEventListener("click", (e) => {
   const target = e.target.closest("[data-action]");
@@ -1000,6 +1021,7 @@ document.addEventListener("click", (e) => {
     openGitHubModalFromBrowser: () => openGitHubModalFromBrowser(),
     connectGitHubUrl: () => connectGitHubUrl(),
     connectEnteredPath: () => connectEnteredPath(),
+    connectWorkspaceFolder: () => connectWorkspaceFolder(),
     triggerNativeFolderPicker: () => triggerNativeFolderPicker(),
   };
 
@@ -1022,6 +1044,7 @@ window.openFolderBrowser = openFolderBrowser;
 window.browseToDirectory = browseToDirectory;
 window.connectCurrentBrowsedFolder = connectCurrentBrowsedFolder;
 window.connectSpecificFolder = connectSpecificFolder;
+window.connectWorkspaceFolder = connectWorkspaceFolder;
 window.browseToEnteredPath = browseToEnteredPath;
 window.connectEnteredPath = connectEnteredPath;
 window.triggerNativeFolderPicker = triggerNativeFolderPicker;

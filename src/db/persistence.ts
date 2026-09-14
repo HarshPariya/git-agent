@@ -46,7 +46,8 @@ export async function persistRepository(repo: Repository): Promise<void> {
 }
 
 export async function markRepositoryDisconnected(repositoryId: string): Promise<void> {
-  if (!isDatabaseConnected()) return;
+  const isConnected = await ensureDatabaseConnected();
+  if (!isConnected) return;
   try {
     const col: Collection<Document> = getCollection("repositories");
     await col.updateOne(
@@ -104,7 +105,13 @@ export async function loadRepositoriesFromDb(): Promise<Repository[]> {
   if (!isConnected) return [];
   try {
     const col: Collection<Document> = getCollection("repositories");
-    const docs = await col.find({ status: { $ne: "disconnected" } }).toArray();
+    const docs = await col
+      .find({
+        status: { $ne: "disconnected" },
+        name: { $ne: "tmp" },
+        local_path: { $nin: ["/tmp/repositories/tmp", "/tmp", "/tmp/"] },
+      })
+      .toArray();
     return docs.map((d): Repository => ({
       id: d.id as string,
       tenantId: d.tenant_id as string,
@@ -131,7 +138,8 @@ export async function loadRepositoriesFromDb(): Promise<Repository[]> {
 // --- Debug Sessions ---
 
 export async function persistDebugSession(session: DebugSession): Promise<void> {
-  if (!isDatabaseConnected()) return;
+  const isConnected = await ensureDatabaseConnected();
+  if (!isConnected) return;
   try {
     const col: Collection<Document> = getCollection("debug_sessions");
     await col.updateOne(
@@ -165,7 +173,8 @@ export async function persistDebugSession(session: DebugSession): Promise<void> 
 }
 
 export async function loadDebugSessionsFromDb(tenantId: string, userId?: string): Promise<DebugSession[]> {
-  if (!isDatabaseConnected()) return [];
+  const isConnected = await ensureDatabaseConnected();
+  if (!isConnected) return [];
   try {
     const col: Collection<Document> = getCollection("debug_sessions");
     const query: Document = { tenant_id: tenantId };

@@ -67,9 +67,15 @@ export class RepositoryStore {
     const repos = await loadRepositoriesFromDb();
     let count = 0;
     for (const repo of repos) {
+      if (repo.name === "tmp" || repo.localPath === "/tmp/repositories/tmp") continue;
+      const effectivePath =
+        !fs.existsSync(repo.localPath) && fs.existsSync(path.join(process.cwd(), ".git"))
+          ? process.cwd()
+          : repo.localPath;
+      const effectiveRepo = { ...repo, localPath: effectivePath };
       if (!repositories.has(repo.id)) {
-        repositories.set(repo.id, repo);
-        registerRepositoryPath(repo.id, repo.localPath);
+        repositories.set(repo.id, effectiveRepo);
+        registerRepositoryPath(repo.id, effectivePath);
         count++;
       }
     }
@@ -88,7 +94,9 @@ export class RepositoryStore {
     return [...repositories.values()].filter(
       (r) =>
         (!tenantId || r.tenantId === tenantId || r.tenantId === "tenant-default" || (userId && r.userId === userId)) &&
-        r.status !== "disconnected",
+        r.status !== "disconnected" &&
+        r.name !== "tmp" &&
+        r.localPath !== "/tmp/repositories/tmp",
     );
   }
 
@@ -197,12 +205,12 @@ export class RepositoryStore {
     return result;
   }
 
-  disconnectRepository(repositoryId: string, tenantId: string): Repository {
+  async disconnectRepository(repositoryId: string, tenantId: string): Promise<Repository> {
     const repo = this.getRepository(repositoryId, tenantId);
     if (!repo) throw new Error("Repository not found");
 
     repositories.delete(repositoryId);
-    void markRepositoryDisconnected(repositoryId);
+    await markRepositoryDisconnected(repositoryId);
     logger.info("Repository disconnected", { operation: "repo-disconnect", metadata: { repositoryId } });
     return { ...repo, status: "disconnected" };
   }

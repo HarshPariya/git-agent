@@ -261,10 +261,34 @@ class ApiClient {
       body: JSON.stringify({ repositoryId }),
     });
   }
-  async gitCommit(repositoryId, message, stageAll = true) {
+  async gitCommit(repositoryId, message, stageAll = true, files = null) {
     return this.request("/api/git/commit", {
       method: "POST",
-      body: JSON.stringify({ repositoryId, message, stageAll }),
+      body: JSON.stringify({ repositoryId, message, stageAll, ...(files ? { files } : {}) }),
+    });
+  }
+  async stageFile(repositoryId, filePath) {
+    return this.request("/api/git/stage", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, filePath }),
+    });
+  }
+  async unstageFile(repositoryId, filePath) {
+    return this.request("/api/git/unstage", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, filePath }),
+    });
+  }
+  async stageAll(repositoryId) {
+    return this.request("/api/git/stage-all", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId }),
+    });
+  }
+  async unstageAll(repositoryId) {
+    return this.request("/api/git/unstage-all", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId }),
     });
   }
   // Alias used by the debug view's "Commit & Push Fix" (returns {success, commitHash, message})

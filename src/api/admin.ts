@@ -254,8 +254,18 @@ export async function userDataHandler(request: Request, response: Response, next
       const [userDoc, identity, repos, debugSessions, activityStats] = await Promise.all([
         usersCol.findOne({ id: userId }),
         identitiesCol.findOne({ user_id: userId, provider: "google" }),
-        reposCol.find({ userId }).toArray(),
-        debugCol.find({ userId }).sort({ createdAt: -1 }).limit(20).toArray(),
+        reposCol
+          .find({
+            $or: [{ user_id: userId }, { userId }],
+            name: { $ne: "tmp" },
+            local_path: { $nin: ["/tmp/repositories/tmp", "/tmp", "/tmp/"] },
+          })
+          .toArray(),
+        debugCol
+          .find({ $or: [{ user_id: userId }, { userId }] })
+          .sort({ started_at: -1, createdAt: -1 })
+          .limit(20)
+          .toArray(),
         getActivityStats(userId),
       ]);
 
@@ -273,15 +283,28 @@ export async function userDataHandler(request: Request, response: Response, next
           repositories: repos.map((r) => ({
             id: r.id as string,
             name: r.name as string,
-            path: r.path as string,
-            connected: r.connected as boolean,
+            path: (r.local_path || r.path || "") as string,
+            connected: r.status !== "disconnected",
+            branch: (r.current_branch || r.default_branch || "main") as string,
+            lastSyncAt: (r.last_sync_at || "") as string,
           })),
-          debugSessions: debugSessions.map((s) => ({
-            id: s.id as string,
-            title: s.title as string,
-            status: s.status as string,
-            createdAt: s.createdAt as string,
-          })),
+          debugSessions: debugSessions.map((s) => {
+            const issueObj =
+              typeof s.issue === "object" && s.issue !== null ? (s.issue as Record<string, unknown>) : undefined;
+            const issueTitle =
+              typeof issueObj?.title === "string"
+                ? issueObj.title
+                : typeof issueObj?.description === "string"
+                  ? issueObj.description
+                  : undefined;
+            const title = typeof s.title === "string" ? s.title : (issueTitle ?? `Session ${String(s.id).slice(0, 8)}`);
+            return {
+              id: s.id as string,
+              title,
+              status: (s.status as string) || "active",
+              createdAt: (s.started_at || s.created_at || s.createdAt || new Date().toISOString()) as string,
+            };
+          }),
           activityStats,
         });
         return;

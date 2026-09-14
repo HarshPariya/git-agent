@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { AppError } from "../errors/app-error.js";
 import type {
   GitOperation,
@@ -25,6 +26,8 @@ export function getExecutionPath(repositoryOrPath: string): string {
   const mapped = repositoryPaths.get(repositoryOrPath);
   if (mapped && fs.existsSync(mapped)) return mapped;
   if (fs.existsSync(repositoryOrPath)) return repositoryOrPath;
+  const cwdGit = path.join(process.cwd(), ".git");
+  if (fs.existsSync(cwdGit)) return process.cwd();
   return process.cwd();
 }
 
@@ -187,7 +190,7 @@ const STATUS_CHAR_MAP: Record<string, GitStatusEntry["status"]> = {
   C: "copied",
 };
 
-const parseStatusChar = (code: string): GitStatusEntry["status"] => STATUS_CHAR_MAP[code] ?? "modified";
+export const parseStatusChar = (code: string): GitStatusEntry["status"] => STATUS_CHAR_MAP[code] ?? "modified";
 
 const RISK_LABELS: Record<GitOperationRisk, string> = {
   safe: "read-only",
@@ -217,7 +220,7 @@ export async function executeGitStatus(repoPath: string): Promise<GitStatusOutpu
   const output = await runGit(getExecutionPath(repoPath), "status --porcelain -b");
   const lines = output.trim().split("\n").filter(Boolean);
   const branchLine = lines[0] ?? "";
-  const branchMatch = branchLine.match(/^## (?:(.+?)(?:\.\.\.(.+))?(?:\s*\[(.)\])?)$/);
+  const branchMatch = branchLine.match(/^## (?:(.+?)(?:\.\.\.(.+?))?(?:\s*\[(.+?)\])?)$/);
 
   let branch = "unknown";
   let ahead = 0;
@@ -226,8 +229,8 @@ export async function executeGitStatus(repoPath: string): Promise<GitStatusOutpu
 
   if (branchMatch) {
     let branchName = branchMatch[1] ?? "unknown";
-    branchName = branchName.replace("No commits yet on ", "").trim();
-    detached = branchName.includes("no branch");
+    branchName = branchName.replace("No commits yet on ", "").replace("Initial commit on ", "").trim();
+    detached = branchName.includes("no branch") || branchName.includes("HEAD (no branch)");
     branch = detached ? "detached" : branchName;
 
     const trackingInfo = branchMatch[3];
@@ -242,14 +245,38 @@ export async function executeGitStatus(repoPath: string): Promise<GitStatusOutpu
     const line = lines[i];
     if (!line || line.startsWith("##")) continue;
 
-    const indexStatus = line.substring(0, 2);
-    const workTreeStatus = line.substring(2, 4);
+    const x = line.charAt(0);
+    const y = line.charAt(1);
+    const rawPath = line.substring(3).trim();
+    if (!rawPath) continue;
+
+    const filePath = rawPath.includes(" -> ") ? (rawPath.split(" -> ")[1] ?? rawPath).trim() : rawPath;
+    if (x === "!" && y === "!") continue;
+
+    const isUntracked = x === "?" && y === "?";
+    let status: GitStatusEntry["status"];
+    if (isUntracked) {
+      status = "untracked";
+    } else if (x === "D" || y === "D") {
+      status = "deleted";
+    } else if (x === "A" || y === "A") {
+      status = "added";
+    } else if (x === "R" || y === "R") {
+      status = "renamed";
+    } else if (x === "C" || y === "C") {
+      status = "copied";
+    } else {
+      status = "modified";
+    }
+
+    const staged = !isUntracked && x !== " " && x !== "?";
+
     entries.push({
-      filePath: line.substring(3).trim(),
-      status: workTreeStatus !== "  " ? parseStatusChar(workTreeStatus) : parseStatusChar(indexStatus),
-      staged: indexStatus !== " " && indexStatus !== "? ",
-      workingTreeStatus: workTreeStatus,
-      indexStatus,
+      filePath,
+      status,
+      staged,
+      workingTreeStatus: y === " " ? "  " : ` ${y}`,
+      indexStatus: x === " " ? "  " : `${x} `,
     });
   }
 
@@ -379,7 +406,10 @@ async function runGit(repoPath: string, args: string | readonly string[]): Promi
     });
     return stdout ?? "";
   } catch (err: unknown) {
-    const e = err as { message?: string; stderr?: string; stdout?: string };
+    const e = err as { code?: string; message?: string; stderr?: string; stdout?: string };
+    if (e.code === "ENOENT") {
+      return "";
+    }
     throw new AppError(
       `Git command failed: ${e.message ?? "unknown error"}\n${e.stderr ?? e.stdout ?? ""}`,
       "TOOL_ERROR",

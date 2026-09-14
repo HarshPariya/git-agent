@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import syncFs from "node:fs";
 import path from "node:path";
 import type { NextFunction, Request, Response } from "express";
 import {
@@ -9,6 +10,7 @@ import {
   executeGitOperation,
   executeGitStatus,
   getExecutionPath,
+  registerRepositoryPath,
   getRiskLabel,
   GIT_OPERATION_CATALOG,
   type GitOperationType,
@@ -42,8 +44,25 @@ const optionalString = (body: Record<string, unknown>, key: string): string | un
 
 const validateRepositoryAccess = async (repoId: string): Promise<void> => {
   try {
+    const execPath = getExecutionPath(repoId);
+    if (!syncFs.existsSync(path.join(execPath, ".git"))) {
+      if (syncFs.existsSync(execPath)) {
+        const { execFileAsync } = await import("../git/utils.js");
+        await execFileAsync("git", ["init", "-b", "main"], { cwd: execPath }).catch(() => {});
+      }
+    }
     await executeGitStatus(repoId);
   } catch {
+    const cwdGit = path.join(process.cwd(), ".git");
+    if (syncFs.existsSync(cwdGit)) {
+      registerRepositoryPath(repoId, process.cwd());
+      try {
+        await executeGitStatus(repoId);
+        return;
+      } catch {
+        // Fall through
+      }
+    }
     throw new AppError("Repository not accessible", "VALIDATION_ERROR", 400);
   }
 };
@@ -147,11 +166,69 @@ export async function gitCommitHandler(request: Request, response: Response, nex
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
     const message = optionalString(body, "message");
+    const files = Array.isArray(body.files) ? (body.files as string[]) : undefined;
     const result = await executeSafeCommit(getExecutionPath(repoId), {
       ...(message !== undefined ? { message } : {}),
-      stageAll: body.stageAll !== false,
+      stageAll: body.stageAll !== false && (!files || files.length === 0),
+      ...(files ? { files } : {}),
     });
     response.status(result.success ? 200 : 400).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function gitStageHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    const filePath = requireString(body, "filePath");
+    const repoPath = getExecutionPath(repoId);
+    await execAsync(`git add "${filePath.replace(/"/g, '\\"')}"`, { cwd: repoPath });
+    const status = await executeGitStatus(repoId);
+    response.status(200).json({ success: true, status });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function gitUnstageHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    const filePath = requireString(body, "filePath");
+    const repoPath = getExecutionPath(repoId);
+    await execAsync(`git reset HEAD "${filePath.replace(/"/g, '\\"')}"`, { cwd: repoPath }).catch(async () => {
+      await execAsync(`git rm --cached "${filePath.replace(/"/g, '\\"')}"`, { cwd: repoPath }).catch(() => {});
+    });
+    const status = await executeGitStatus(repoId);
+    response.status(200).json({ success: true, status });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function gitStageAllHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    const repoPath = getExecutionPath(repoId);
+    await execAsync("git add -A", { cwd: repoPath });
+    const status = await executeGitStatus(repoId);
+    response.status(200).json({ success: true, status });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function gitUnstageAllHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    const repoPath = getExecutionPath(repoId);
+    await execAsync("git reset HEAD", { cwd: repoPath }).catch(() => {});
+    const status = await executeGitStatus(repoId);
+    response.status(200).json({ success: true, status });
   } catch (error) {
     next(error);
   }
@@ -257,22 +334,42 @@ export async function gitDiffHandler(request: Request, response: Response, next:
         }
       }
       if (!diffText) {
-        try {
-          const content = await fs.readFile(path.resolve(repoPath, filePath), "utf-8");
-          const lines = content.split("\n");
-          diffText = [
-            `diff --git a/${filePath} b/${filePath}`,
-            "new file mode 100644",
-            "--- /dev/null",
-            `+++ b/${filePath}`,
-            `@@ -0,0 +1,${lines.length} @@`,
-            ...lines.map((l) => `+${l}`),
-          ].join("\n");
-        } catch (err: unknown) {
-          logger.warn("Failed to read file for diff fallback", {
-            operation: "git-diff",
-            metadata: { filePath, error: err instanceof Error ? err.message : String(err) },
-          });
+        const fullPath = path.resolve(repoPath, filePath);
+        if (syncFs.existsSync(fullPath)) {
+          try {
+            const content = await fs.readFile(fullPath, "utf-8");
+            const lines = content.split("\n");
+            diffText = [
+              `diff --git a/${filePath} b/${filePath}`,
+              "new file mode 100644",
+              "--- /dev/null",
+              `+++ b/${filePath}`,
+              `@@ -0,0 +1,${lines.length} @@`,
+              ...lines.map((l) => `+${l}`),
+            ].join("\n");
+          } catch (err: unknown) {
+            logger.warn("Failed to read file for diff fallback", {
+              operation: "git-diff",
+              metadata: { filePath, error: err instanceof Error ? err.message : String(err) },
+            });
+          }
+        } else {
+          try {
+            const { stdout: headContent } = await execAsync(`git show HEAD:"${filePath}"`, { cwd: repoPath });
+            if (headContent) {
+              const lines = headContent.split("\n");
+              diffText = [
+                `diff --git a/${filePath} b/${filePath}`,
+                "deleted file mode 100644",
+                `--- a/${filePath}`,
+                "+++ /dev/null",
+                `@@ -1,${lines.length} +0,0 @@`,
+                ...lines.map((l) => `-${l}`),
+              ].join("\n");
+            }
+          } catch {
+            diffText = `diff --git a/${filePath} b/${filePath}\ndeleted file mode 100644\n--- a/${filePath}\n+++ /dev/null\n@@ -1 +0,0 @@\n-(file deleted)`;
+          }
         }
       }
     } else {

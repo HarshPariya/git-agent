@@ -76,11 +76,17 @@ export async function generateCommitMessage(
 
 export async function executeSafeCommit(
   repoPath: string,
-  options: { message?: string; stageAll?: boolean } = {},
+  options: { message?: string; stageAll?: boolean; files?: string[] } = {},
 ): Promise<CommitResult> {
   const commitMsg = options.message ?? "fix: apply automated patch";
 
-  if (options.stageAll !== false) await safeExec("git add -A", repoPath);
+  if (options.files && options.files.length > 0) {
+    for (const f of options.files) {
+      await safeExec(`git add "${validateFilePath(f)}"`, repoPath);
+    }
+  } else if (options.stageAll !== false) {
+    await safeExec("git add -A", repoPath);
+  }
 
   const { stdout: statusOut } = await safeExec("git status --porcelain", repoPath);
   if (!statusOut.trim()) return { success: false, message: "Nothing to commit — working tree clean." };

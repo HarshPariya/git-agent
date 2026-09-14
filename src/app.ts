@@ -25,6 +25,10 @@ import {
   gitSyncHandler,
   gitShipHandler,
   generateCommitMessageHandler,
+  gitStageHandler,
+  gitUnstageHandler,
+  gitStageAllHandler,
+  gitUnstageAllHandler,
 } from "./api/git.js";
 import {
   startDebugSessionHandler,
@@ -235,6 +239,10 @@ app.get("/api/git/conflicts", ...protectedRoute, gitConflictsHandler);
 app.post("/api/git/conflicts", ...protectedRoute, gitConflictsHandler);
 app.post("/api/git/conflicts/resolve", ...protectedRoute, gitConflictResolveHandler);
 app.post("/api/git/commit", ...protectedRoute, gitCommitHandler);
+app.post("/api/git/stage", ...protectedRoute, gitStageHandler);
+app.post("/api/git/unstage", ...protectedRoute, gitUnstageHandler);
+app.post("/api/git/stage-all", ...protectedRoute, gitStageAllHandler);
+app.post("/api/git/unstage-all", ...protectedRoute, gitUnstageAllHandler);
 app.post("/api/git/push", ...protectedRoute, gitPushHandler);
 app.post("/api/git/pull", ...protectedRoute, gitPullHandler);
 app.post("/api/git/fetch", ...protectedRoute, gitFetchHandler);
