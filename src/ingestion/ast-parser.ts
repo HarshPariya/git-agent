@@ -34,9 +34,9 @@ export const parseTypeScriptAST = (content: string, filePath: string): ASTParseR
     if (ts.isImportDeclaration(node)) {
       const names = node.importClause
         ? [
-          node.importClause.name?.getText(sourceFile),
-          ...(node.importClause.namedBindings ? extractNamedImports(node.importClause.namedBindings) : []),
-        ].filter((n): n is string => n !== undefined)
+            node.importClause.name?.getText(sourceFile),
+            ...(node.importClause.namedBindings ? extractNamedImports(node.importClause.namedBindings) : []),
+          ].filter((n): n is string => n !== undefined)
         : [];
 
       imports.push({
@@ -55,7 +55,8 @@ export const parseTypeScriptAST = (content: string, filePath: string): ASTParseR
     }
 
     if (ts.isVariableDeclaration(node) && node.name) {
-      const isFuncExpr = node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer));
+      const isFuncExpr =
+        node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer));
       if (isFuncExpr) pushFunction(node, node.name.getText(sourceFile), node.parent?.parent ?? node);
       ts.forEachChild(node, visit);
       return;

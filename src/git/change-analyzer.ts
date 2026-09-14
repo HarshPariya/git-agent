@@ -50,7 +50,10 @@ export interface CommitPlanExecutionResult {
 }
 
 const STATUS_MAP: Record<string, ChangedFileDetail["status"]> = {
-  "?": "untracked", A: "added", D: "deleted", R: "renamed",
+  "?": "untracked",
+  A: "added",
+  D: "deleted",
+  R: "renamed",
 };
 
 const RISK_PATTERNS: ReadonlyArray<{ pattern: RegExp; level: "high" | "medium" }> = [
@@ -66,20 +69,66 @@ const GROUP_RULES: ReadonlyArray<{
   scope: string;
   reason: string;
 }> = [
-    { match: (p) => p.startsWith("test") || p.includes(".test.") || p.includes(".spec."), key: "tests", name: "Automated Tests", type: "test", scope: "tests", reason: "Unit and integration test suites coverage" },
-    { match: (p) => p.startsWith("doc") || p.endsWith(".md") || p.endsWith(".txt"), key: "docs", name: "Documentation", type: "docs", scope: "docs", reason: "Documentation, guide, and specifications updates" },
-    { match: (p) => p.includes("auth") || p.includes("security") || p.includes("guardrail"), key: "security", name: "Authentication & Security", type: "fix", scope: "auth", reason: "Security, guardrail, or authentication controls" },
-    { match: (p) => p.includes("git") || p.includes("branch") || p.includes("commit") || p.includes("push"), key: "git", name: "Git Operations", type: "feat", scope: "git", reason: "Git engine, conflict resolution, or repository management" },
-    { match: (p) => p.includes("api") || p.includes("route") || p.includes("server") || p.includes("app.ts"), key: "api", name: "API & Routing", type: "feat", scope: "api", reason: "API endpoint routing and service interface updates" },
-    { match: (p) => p.includes("public") || p.endsWith(".html") || p.endsWith(".css") || p.includes("ui"), key: "ui", name: "User Interface", type: "feat", scope: "ui", reason: "Frontend UI components, styling, and client views" },
-  ];
+  {
+    match: (p) => p.startsWith("test") || p.includes(".test.") || p.includes(".spec."),
+    key: "tests",
+    name: "Automated Tests",
+    type: "test",
+    scope: "tests",
+    reason: "Unit and integration test suites coverage",
+  },
+  {
+    match: (p) => p.startsWith("doc") || p.endsWith(".md") || p.endsWith(".txt"),
+    key: "docs",
+    name: "Documentation",
+    type: "docs",
+    scope: "docs",
+    reason: "Documentation, guide, and specifications updates",
+  },
+  {
+    match: (p) => p.includes("auth") || p.includes("security") || p.includes("guardrail"),
+    key: "security",
+    name: "Authentication & Security",
+    type: "fix",
+    scope: "auth",
+    reason: "Security, guardrail, or authentication controls",
+  },
+  {
+    match: (p) => p.includes("git") || p.includes("branch") || p.includes("commit") || p.includes("push"),
+    key: "git",
+    name: "Git Operations",
+    type: "feat",
+    scope: "git",
+    reason: "Git engine, conflict resolution, or repository management",
+  },
+  {
+    match: (p) => p.includes("api") || p.includes("route") || p.includes("server") || p.includes("app.ts"),
+    key: "api",
+    name: "API & Routing",
+    type: "feat",
+    scope: "api",
+    reason: "API endpoint routing and service interface updates",
+  },
+  {
+    match: (p) => p.includes("public") || p.endsWith(".html") || p.endsWith(".css") || p.includes("ui"),
+    key: "ui",
+    name: "User Interface",
+    type: "feat",
+    scope: "ui",
+    reason: "Frontend UI components, styling, and client views",
+  },
+];
 
 function parseNumstat(output: string): Map<string, { additions: number; deletions: number }> {
   const map = new Map<string, { additions: number; deletions: number }>();
   for (const line of output.trim().split("\n")) {
     if (!line) continue;
     const [addStr, delStr, file] = line.split(/\s+/);
-    if (file) map.set(file.trim(), { additions: parseInt(addStr ?? "0", 10) || 0, deletions: parseInt(delStr ?? "0", 10) || 0 });
+    if (file)
+      map.set(file.trim(), {
+        additions: parseInt(addStr ?? "0", 10) || 0,
+        deletions: parseInt(delStr ?? "0", 10) || 0,
+      });
   }
   return map;
 }
@@ -89,7 +138,9 @@ async function fetchNumstat(targetPath: string): Promise<Map<string, { additions
     try {
       const { stdout } = await safeExec(cmd, targetPath);
       return parseNumstat(stdout);
-    } catch { /* try next command */ }
+    } catch {
+      /* try next command */
+    }
   }
   return new Map();
 }
@@ -102,8 +153,28 @@ function classifyFileStatus(indexCode: string, workCode: string): ChangedFileDet
   return STATUS_MAP[workCode] ?? STATUS_MAP[indexCode] ?? "modified";
 }
 
-function assignLogicalGroups(files: ChangedFileDetail[]): Map<string, { name: string; files: string[]; risk: "low" | "medium" | "high"; type: ConventionalCommit["type"]; scope: string; reason: string }> {
-  const groups = new Map<string, { name: string; files: string[]; risk: "low" | "medium" | "high"; type: ConventionalCommit["type"]; scope: string; reason: string }>();
+function assignLogicalGroups(files: ChangedFileDetail[]): Map<
+  string,
+  {
+    name: string;
+    files: string[];
+    risk: "low" | "medium" | "high";
+    type: ConventionalCommit["type"];
+    scope: string;
+    reason: string;
+  }
+> {
+  const groups = new Map<
+    string,
+    {
+      name: string;
+      files: string[];
+      risk: "low" | "medium" | "high";
+      type: ConventionalCommit["type"];
+      scope: string;
+      reason: string;
+    }
+  >();
 
   for (const file of files) {
     const rule = GROUP_RULES.find((r) => r.match(file.filePath.toLowerCase()));
@@ -135,16 +206,30 @@ export async function getDetailedChangedFiles(repoPath: string): Promise<Changed
 
   const numstatMap = await fetchNumstat(targetPath);
 
-  return statusOut.trim().split("\n").filter((line) => line && line.length >= 3).map((line) => {
-    const indexCode = line.charAt(0);
-    const workCode = line.charAt(1);
-    const rawPath = line.substring(3).trim().replace(/^"|"$/g, "");
-    const status = classifyFileStatus(indexCode, workCode);
-    const isStaged = indexCode !== " " && indexCode !== "?";
-    const stats = numstatMap.get(rawPath) ?? { additions: status === "added" || status === "untracked" ? 1 : 0, deletions: 0 };
+  return statusOut
+    .trim()
+    .split("\n")
+    .filter((line) => line && line.length >= 3)
+    .map((line) => {
+      const indexCode = line.charAt(0);
+      const workCode = line.charAt(1);
+      const rawPath = line.substring(3).trim().replace(/^"|"$/g, "");
+      const status = classifyFileStatus(indexCode, workCode);
+      const isStaged = indexCode !== " " && indexCode !== "?";
+      const stats = numstatMap.get(rawPath) ?? {
+        additions: status === "added" || status === "untracked" ? 1 : 0,
+        deletions: 0,
+      };
 
-    return { filePath: rawPath, status, staged: isStaged, additions: stats.additions, deletions: stats.deletions, risk: classifyFileRisk(rawPath) };
-  });
+      return {
+        filePath: rawPath,
+        status,
+        staged: isStaged,
+        additions: stats.additions,
+        deletions: stats.deletions,
+        risk: classifyFileRisk(rawPath),
+      };
+    });
 }
 
 function groupFilesHeuristically(files: ChangedFileDetail[]): LogicalChangeGroup[] {
@@ -187,14 +272,27 @@ function annotateFiles(files: ChangedFileDetail[], groups: LogicalChangeGroup[])
 export async function analyzeAndPlanCommits(repoPath: string): Promise<CommitPlan> {
   const targetPath = getExecutionPath(repoPath);
   const changedFiles = await getDetailedChangedFiles(targetPath);
-  if (!changedFiles.length) return { summary: "Working tree is clean. No changed files to analyze.", totalFiles: 0, totalCommits: 0, groups: [], changedFiles: [] };
+  if (!changedFiles.length)
+    return {
+      summary: "Working tree is clean. No changed files to analyze.",
+      totalFiles: 0,
+      totalCommits: 0,
+      groups: [],
+      changedFiles: [],
+    };
 
   if (isLlmAvailable()) {
     try {
       const result = await planWithLlm(changedFiles);
       if (result) {
         annotateFiles(changedFiles, result.groups);
-        return { summary: result.summary, totalFiles: changedFiles.length, totalCommits: result.groups.length, groups: result.groups, changedFiles };
+        return {
+          summary: result.summary,
+          totalFiles: changedFiles.length,
+          totalCommits: result.groups.length,
+          groups: result.groups,
+          changedFiles,
+        };
       }
     } catch {
       // Fall through to heuristic planning
@@ -230,8 +328,12 @@ interface LlmResponse {
   groups: LlmGroup[];
 }
 
-async function planWithLlm(changedFiles: ChangedFileDetail[]): Promise<{ summary: string; groups: LogicalChangeGroup[] } | null> {
-  const fileListSummary = changedFiles.map((f) => `- ${f.filePath} (${f.status}, +${f.additions}/-${f.deletions}, risk: ${f.risk})`).join("\n");
+async function planWithLlm(
+  changedFiles: ChangedFileDetail[],
+): Promise<{ summary: string; groups: LogicalChangeGroup[] } | null> {
+  const fileListSummary = changedFiles
+    .map((f) => `- ${f.filePath} (${f.status}, +${f.additions}/-${f.deletions}, risk: ${f.risk})`)
+    .join("\n");
   const response = await callLlm([
     { role: "system", content: "You are an expert Git automation engine. Output valid JSON only." },
     {
@@ -284,7 +386,11 @@ async function planWithLlm(changedFiles: ChangedFileDetail[]): Promise<{ summary
   const unassigned = changedFiles.filter((f) => !assignedFiles.has(f.filePath));
   if (unassigned.length) validGroups[0]?.files.push(...unassigned.map((f) => f.filePath));
 
-  return { summary: parsed.summary ?? `${changedFiles.length} changed files grouped into ${validGroups.length} logical commits.`, groups: validGroups };
+  return {
+    summary:
+      parsed.summary ?? `${changedFiles.length} changed files grouped into ${validGroups.length} logical commits.`,
+    groups: validGroups,
+  };
 }
 
 export async function executeCommitPlan(
@@ -293,10 +399,17 @@ export async function executeCommitPlan(
 ): Promise<CommitPlanExecutionResult> {
   const targetPath = getExecutionPath(repoPath);
   const { stdout: initialStatus } = await safeExec("git status --porcelain", targetPath);
-  if (!initialStatus.trim()) return { success: false, commits: [], totalCreated: 0, branch: "unknown", message: "Nothing to commit — working tree is clean." };
+  if (!initialStatus.trim())
+    return {
+      success: false,
+      commits: [],
+      totalCreated: 0,
+      branch: "unknown",
+      message: "Nothing to commit — working tree is clean.",
+    };
 
   const currentBranch = await resolveCurrentBranch(targetPath);
-  await safeExec("git reset HEAD", targetPath).catch(() => { });
+  await safeExec("git reset HEAD", targetPath).catch(() => {});
 
   const executedCommits: ExecutedCommitResult[] = [];
 
@@ -304,8 +417,14 @@ export async function executeCommitPlan(
     if (!group.files?.length) continue;
 
     for (const file of group.files) {
-      try { await safeExec(`git add "${file}"`, targetPath); }
-      catch (err: unknown) { console.warn(`[ChangeAnalyzer] Failed to stage file ${file}:`, err instanceof Error ? err.message : String(err)); }
+      try {
+        await safeExec(`git add "${file}"`, targetPath);
+      } catch (err: unknown) {
+        console.warn(
+          `[ChangeAnalyzer] Failed to stage file ${file}:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
     }
 
     const { stdout: stagedCheck } = await safeExec("git diff --cached --name-only", targetPath);
@@ -315,26 +434,49 @@ export async function executeCommitPlan(
     const escapedMsg = msg.replace(/"/g, '\\"').replace(/`/g, "\\`");
     try {
       const { stdout: commitOut } = await safeExec(`git commit -m "${escapedMsg}"`, targetPath);
-      const sha = /\[(?:.+?\s+)?([a-f0-9]{7,40})\]/.exec(commitOut)?.[1] ?? await resolveHeadSha(targetPath);
-      executedCommits.push({ groupId: group.id, groupName: group.name, commitHash: sha, commitMessage: group.suggestedCommit.subject, files: group.files });
+      const sha = /\[(?:.+?\s+)?([a-f0-9]{7,40})\]/.exec(commitOut)?.[1] ?? (await resolveHeadSha(targetPath));
+      executedCommits.push({
+        groupId: group.id,
+        groupName: group.name,
+        commitHash: sha,
+        commitMessage: group.suggestedCommit.subject,
+        files: group.files,
+      });
     } catch (err: unknown) {
-      return { success: false, commits: executedCommits, totalCreated: executedCommits.length, branch: currentBranch, message: `Commit for group '${group.name}' failed.`, error: err instanceof Error ? err.message : String(err) };
+      return {
+        success: false,
+        commits: executedCommits,
+        totalCreated: executedCommits.length,
+        branch: currentBranch,
+        message: `Commit for group '${group.name}' failed.`,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
   }
 
-  return { success: true, commits: executedCommits, totalCreated: executedCommits.length, branch: currentBranch, message: `Successfully executed ${executedCommits.length} logical commits on branch '${currentBranch}'.` };
+  return {
+    success: true,
+    commits: executedCommits,
+    totalCreated: executedCommits.length,
+    branch: currentBranch,
+    message: `Successfully executed ${executedCommits.length} logical commits on branch '${currentBranch}'.`,
+  };
 }
 
 async function resolveCurrentBranch(targetPath: string): Promise<string> {
   try {
     const { stdout } = await safeExec("git rev-parse --abbrev-ref HEAD", targetPath);
     return stdout.trim() || "main";
-  } catch { return "main"; }
+  } catch {
+    return "main";
+  }
 }
 
 async function resolveHeadSha(targetPath: string): Promise<string> {
   try {
     const { stdout } = await safeExec("git rev-parse --short HEAD", targetPath);
     return stdout.trim();
-  } catch { return ""; }
+  } catch {
+    return "";
+  }
 }

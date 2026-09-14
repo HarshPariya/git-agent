@@ -9,12 +9,21 @@ const pullRequests = new Map<string, PullRequest>();
 
 const DEFAULT_PR_ID = "pr-git-agent-01";
 pullRequests.set(DEFAULT_PR_ID, {
-  id: DEFAULT_PR_ID, repositoryId: "repo-ai-chatbot", number: 12,
+  id: DEFAULT_PR_ID,
+  repositoryId: "repo-ai-chatbot",
+  number: 12,
   title: "feat(git-agent): production git debugging agent, executive post-push summary & commit plan",
-  description: "### Production Git Debugging Agent Enhancements\n\n**Source Branch:** `feature/git-agent`\n**Target Branch:** `development`\n\n#### Commits Included:\n- `fb630e1`: feat(ui): show clean tree status and push summary after push\n- `8a5d423`: feat(git): add commit, branch, and push enhancements\n\n#### Key Improvements:\n1. Executive Post-Push Summary card & clean working tree status.\n2. Resolved Windows cmd.exe '%h' log pipe issue in Git Engine.\n3. Continuous 'All Changes' unified diff viewer across modified files.\n4. Relocated AI Semantic Commit Plan into left panel tab.\n5. Production-ready Conventional Commit generation via Groq LLM.\n6. Direct OS file dialog and drag-and-drop workspace integration.",
-  status: "open", sourceBranch: "feature/git-agent", targetBranch: "development", author: "HarshPariya",
+  description:
+    "### Production Git Debugging Agent Enhancements\n\n**Source Branch:** `feature/git-agent`\n**Target Branch:** `development`\n\n#### Commits Included:\n- `fb630e1`: feat(ui): show clean tree status and push summary after push\n- `8a5d423`: feat(git): add commit, branch, and push enhancements\n\n#### Key Improvements:\n1. Executive Post-Push Summary card & clean working tree status.\n2. Resolved Windows cmd.exe '%h' log pipe issue in Git Engine.\n3. Continuous 'All Changes' unified diff viewer across modified files.\n4. Relocated AI Semantic Commit Plan into left panel tab.\n5. Production-ready Conventional Commit generation via Groq LLM.\n6. Direct OS file dialog and drag-and-drop workspace integration.",
+  status: "open",
+  sourceBranch: "feature/git-agent",
+  targetBranch: "development",
+  author: "HarshPariya",
   reviewers: [{ user: "ai-debugging-agent", status: "approved" }],
-  baseSha: "e552d8c", headSha: "fb630e1", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  baseSha: "e552d8c",
+  headSha: "fb630e1",
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
   labels: ["enhancement", "verified", "git-agent"],
 });
 
@@ -25,7 +34,7 @@ const getTenantContext = (request: Request) => {
 };
 
 const getRequestBody = (request: Request): Record<string, unknown> =>
-  typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {};
+  typeof request.body === "object" && request.body !== null ? (request.body as Record<string, unknown>) : {};
 
 const requireString = (body: Record<string, unknown>, key: string): string => {
   const value = body[key];
@@ -39,12 +48,20 @@ const optionalString = (body: Record<string, unknown>, key: string, fallback?: s
 };
 
 const matchesRepo = (pr: PullRequest, repoId?: string): boolean =>
-  !repoId || pr.repositoryId === repoId || (pr.id === DEFAULT_PR_ID && (repoId.includes("ai-chatbot") || repoId.startsWith("repo-")));
+  !repoId ||
+  pr.repositoryId === repoId ||
+  (pr.id === DEFAULT_PR_ID && (repoId.includes("ai-chatbot") || repoId.startsWith("repo-")));
 
 const getPrId = (request: Request): string => (request.params.id as string) || "";
 
 const validateRepositoryAccess = async (repoId: string | undefined): Promise<void> => {
-  if (repoId) { try { await executeGitStatus(repoId); } catch { /* synthetic id fallback */ } }
+  if (repoId) {
+    try {
+      await executeGitStatus(repoId);
+    } catch {
+      /* synthetic id fallback */
+    }
+  }
 };
 
 export async function listPullRequestsHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
@@ -78,7 +95,11 @@ export async function getPullRequestHandler(request: Request, response: Response
   }
 }
 
-export async function createPullRequestHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export async function createPullRequestHandler(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const context = getTenantContext(request);
     const body = getRequestBody(request);
@@ -106,7 +127,7 @@ export async function createPullRequestHandler(request: Request, response: Respo
       headSha: "",
       createdAt: now,
       updatedAt: now,
-      labels: Array.isArray(body.labels) ? body.labels as string[] : [],
+      labels: Array.isArray(body.labels) ? (body.labels as string[]) : [],
     };
 
     pullRequests.set(prId, pr);
@@ -125,7 +146,12 @@ export async function mergePullRequestHandler(request: Request, response: Respon
 
     await validateRepositoryAccess(pr.repositoryId);
 
-    const merged: PullRequest = { ...pr, status: "merged", updatedAt: new Date().toISOString(), mergedAt: new Date().toISOString() };
+    const merged: PullRequest = {
+      ...pr,
+      status: "merged",
+      updatedAt: new Date().toISOString(),
+      mergedAt: new Date().toISOString(),
+    };
     pullRequests.set(prId, merged);
     response.status(200).json(merged);
   } catch (error) {

@@ -36,7 +36,7 @@ const ensureConnected = async (repositoryId: string, tenantId: string): Promise<
     throw new AppError(
       `Cannot index repository: ${err instanceof Error ? err.message : "Unknown error"}`,
       "VALIDATION_ERROR",
-      400
+      400,
     );
   }
 };
@@ -79,7 +79,14 @@ export class RepositoryIndexer {
         totalChunks,
       });
 
-      return { repositoryId, status: "indexed", totalFiles, totalSymbols, totalChunks, durationMs: Date.now() - startTime };
+      return {
+        repositoryId,
+        status: "indexed",
+        totalFiles,
+        totalSymbols,
+        totalChunks,
+        durationMs: Date.now() - startTime,
+      };
     } catch (err) {
       updateIndexStatus(repositoryId, { status: "failed" });
       return {
@@ -94,7 +101,10 @@ export class RepositoryIndexer {
     }
   }
 
-  async getGraph(repositoryId: string, tenantId: string): Promise<{
+  async getGraph(
+    repositoryId: string,
+    tenantId: string,
+  ): Promise<{
     readonly nodes: readonly CodeGraphNode[];
     readonly edges: readonly CodeGraphEdge[];
     readonly symbols: readonly CodeSymbol[];

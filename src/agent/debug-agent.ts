@@ -80,13 +80,7 @@ const extendedDataMap = new Map<string, ExtendedSessionData>();
 const sseListeners = new Map<string, Set<(event: SessionStreamEvent) => void>>();
 
 export class DebugAgentPipeline {
-  startSession(
-    repositoryId: string,
-    tenantId: string,
-    userId: string,
-    mode: DebugMode,
-    query: string
-  ): DebugSession {
+  startSession(repositoryId: string, tenantId: string, userId: string, mode: DebugMode, query: string): DebugSession {
     const sessionId = `debug-${crypto.randomUUID().slice(0, 8)}`;
     const now = new Date().toISOString();
 
@@ -192,7 +186,7 @@ export class DebugAgentPipeline {
     context: DebugContext,
     stepType: DebugStepType,
     description: string,
-    handler: (ctx: DebugContext) => Promise<string>
+    handler: (ctx: DebugContext) => Promise<string>,
   ): Promise<DebugStepResult> {
     const startTime = Date.now();
     const startedAt = new Date().toISOString();
@@ -224,7 +218,9 @@ export class DebugAgentPipeline {
   private executeWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
     return Promise.race([
       promise,
-      new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Step timed out after ${timeoutMs}ms`)), timeoutMs)),
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error(`Step timed out after ${timeoutMs}ms`)), timeoutMs),
+      ),
     ]);
   }
 
@@ -236,11 +232,18 @@ export class DebugAgentPipeline {
     status: "completed" | "failed",
     result: string | undefined,
     startTime: number,
-    error?: unknown
+    error?: unknown,
   ): DebugStepResult {
     const completedAt = new Date().toISOString();
     const durationMs = Date.now() - startTime;
-    const errorMessage = error instanceof Error ? error.message : typeof error === "string" ? error : error !== undefined ? JSON.stringify(error) : undefined;
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : typeof error === "string"
+          ? error
+          : error !== undefined
+            ? JSON.stringify(error)
+            : undefined;
 
     const completedStep: DebugStep = {
       ...step,
@@ -260,7 +263,10 @@ export class DebugAgentPipeline {
     this.emitEvent(sessionId, { type: "step", sessionId, data: completedStep, timestamp: completedAt });
 
     if (status === "failed") {
-      logger.error("Debug step failed", { operation: "debug-step", metadata: { sessionId, stepType: step.type, error: errorMessage } });
+      logger.error("Debug step failed", {
+        operation: "debug-step",
+        metadata: { sessionId, stepType: step.type, error: errorMessage },
+      });
     }
 
     return { step: completedStep, findings: [] };
@@ -270,9 +276,16 @@ export class DebugAgentPipeline {
     context: DebugContext,
     rootCause: string,
     affectedFiles: readonly string[],
-    codeContext: string
+    codeContext: string,
   ): Promise<PatchCandidate[]> {
-    logger.info("Generating LLM patch candidates", { operation: "debug-patch-gen", metadata: { sessionId: context.sessionId, repositoryId: context.repositoryId, affectedFiles: affectedFiles.length } });
+    logger.info("Generating LLM patch candidates", {
+      operation: "debug-patch-gen",
+      metadata: {
+        sessionId: context.sessionId,
+        repositoryId: context.repositoryId,
+        affectedFiles: affectedFiles.length,
+      },
+    });
 
     if (!isLlmAvailable()) {
       return this._generateFallbackPatches(rootCause, affectedFiles, codeContext);
@@ -281,7 +294,10 @@ export class DebugAgentPipeline {
     try {
       return await this.generatePatchWithLlm(context, rootCause, affectedFiles, codeContext);
     } catch (err: unknown) {
-      logger.error("Failed to generate LLM patch", { operation: "debug-patch-gen", metadata: { sessionId: context.sessionId, error: err instanceof Error ? err.message : String(err) } });
+      logger.error("Failed to generate LLM patch", {
+        operation: "debug-patch-gen",
+        metadata: { sessionId: context.sessionId, error: err instanceof Error ? err.message : String(err) },
+      });
       return this._generateFallbackPatches(rootCause, affectedFiles, codeContext);
     }
   }
@@ -290,12 +306,13 @@ export class DebugAgentPipeline {
     context: DebugContext,
     rootCause: string,
     affectedFiles: readonly string[],
-    codeContext: string
+    codeContext: string,
   ): Promise<PatchCandidate[]> {
     const messages: LlmMessage[] = [
       {
         role: "system",
-        content: 'You are an expert debugging agent. Based on the root cause analysis and code context, generate a precise patch to fix the issue. Return ONLY a JSON object with a single field "patches" containing an array of patch candidates. Each patch candidate has: title, description, patch, confidence (0-1). Do not include any explanation outside the JSON. The patch should be in unified diff format.',
+        content:
+          'You are an expert debugging agent. Based on the root cause analysis and code context, generate a precise patch to fix the issue. Return ONLY a JSON object with a single field "patches" containing an array of patch candidates. Each patch candidate has: title, description, patch, confidence (0-1). Do not include any explanation outside the JSON. The patch should be in unified diff format.',
       },
       {
         role: "user",
@@ -335,26 +352,47 @@ export class DebugAgentPipeline {
     void codeContext;
     const primaryFile = affectedFiles[0] ?? "unknown";
     const patch = `--- a/${primaryFile}\n+++ b/${primaryFile}\n@@\n-${rootCause.slice(0, 80)}\n+${rootCause.slice(0, 80)} // fixed\n`;
-    return [{ title: "Fallback fix", description: `Generated from root cause: ${rootCause.slice(0, 100)}`, patch, confidence: 0.3 }];
+    return [
+      {
+        title: "Fallback fix",
+        description: `Generated from root cause: ${rootCause.slice(0, 100)}`,
+        patch,
+        confidence: 0.3,
+      },
+    ];
   }
 
   async runCritic(
     context: DebugContext,
     patch: PatchCandidate,
     testResults: readonly string[],
-    codeContext: string
+    codeContext: string,
   ): Promise<CriticResult> {
-    logger.info("Running critic evaluation", { operation: "debug-critic", metadata: { sessionId: context.sessionId, patchTitle: patch.title } });
+    logger.info("Running critic evaluation", {
+      operation: "debug-critic",
+      metadata: { sessionId: context.sessionId, patchTitle: patch.title },
+    });
 
     if (!isLlmAvailable()) {
-      return { approved: true, feedback: "LLM critic not available — patch auto-approved with low confidence", score: 0.5 };
+      return {
+        approved: true,
+        feedback: "LLM critic not available — patch auto-approved with low confidence",
+        score: 0.5,
+      };
     }
 
     try {
       return await this.runCriticWithLlm(context, patch, testResults, codeContext);
     } catch (err: unknown) {
-      logger.error("Critic evaluation failed", { operation: "debug-critic", metadata: { sessionId: context.sessionId, error: err instanceof Error ? err.message : String(err) } });
-      return { approved: false, feedback: `Critic evaluation error: ${err instanceof Error ? err.message : String(err)}`, score: 0 };
+      logger.error("Critic evaluation failed", {
+        operation: "debug-critic",
+        metadata: { sessionId: context.sessionId, error: err instanceof Error ? err.message : String(err) },
+      });
+      return {
+        approved: false,
+        feedback: `Critic evaluation error: ${err instanceof Error ? err.message : String(err)}`,
+        score: 0,
+      };
     }
   }
 
@@ -362,12 +400,13 @@ export class DebugAgentPipeline {
     _context: DebugContext,
     patch: PatchCandidate,
     testResults: readonly string[],
-    codeContext: string
+    codeContext: string,
   ): Promise<CriticResult> {
     const messages: LlmMessage[] = [
       {
         role: "system",
-        content: 'You are a critical code reviewer. Evaluate the provided patch for correctness, completeness, and potential issues. Consider test results. Output a JSON object with: approved (boolean), feedback (string), score (0-1). Do not include any explanation outside the JSON.',
+        content:
+          "You are a critical code reviewer. Evaluate the provided patch for correctness, completeness, and potential issues. Consider test results. Output a JSON object with: approved (boolean), feedback (string), score (0-1). Do not include any explanation outside the JSON.",
       },
       {
         role: "user",

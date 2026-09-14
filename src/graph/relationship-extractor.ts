@@ -13,7 +13,10 @@ export interface GraphRelationship {
 }
 
 const normalizeId = (value: string): string =>
-  value.replace(/\\/g, "/").replace(/[^a-zA-Z0-9/_-]/g, "-").toLowerCase();
+  value
+    .replace(/\\/g, "/")
+    .replace(/[^a-zA-Z0-9/_-]/g, "-")
+    .toLowerCase();
 
 const createRelationshipId = (sourceId: string, type: RelationshipType, targetId: string): string =>
   `${sourceId}:${type}:${targetId}`;
@@ -46,7 +49,9 @@ const createImportRelationships = (file: ParsedFile, parsedFiles: ParsedFile[]):
   const fileEntityId = `file:${normalizeId(file.filePath)}`;
   return file.imports.map((imp) => {
     const resolvedFile = resolveImportedFile(file, imp.source, parsedFiles);
-    const moduleEntityId = resolvedFile ? `file:${normalizeId(resolvedFile.filePath)}` : `module:${normalizeId(imp.source)}`;
+    const moduleEntityId = resolvedFile
+      ? `file:${normalizeId(resolvedFile.filePath)}`
+      : `module:${normalizeId(imp.source)}`;
     return {
       id: createRelationshipId(fileEntityId, "imports", moduleEntityId),
       type: "imports" as const,
@@ -65,7 +70,19 @@ const createImportRelationships = (file: ParsedFile, parsedFiles: ParsedFile[]):
 
 const extractFunctionCalls = (functionContent: string): string[] => {
   const calls = new Set<string>();
-  const ignored = new Set(["if", "for", "while", "switch", "catch", "function", "constructor", "console", "require", "super", "import"]);
+  const ignored = new Set([
+    "if",
+    "for",
+    "while",
+    "switch",
+    "catch",
+    "function",
+    "constructor",
+    "console",
+    "require",
+    "super",
+    "import",
+  ]);
 
   const addIfNotIgnored = (name: string): void => {
     if (!ignored.has(name)) calls.add(name);
@@ -102,7 +119,9 @@ const createCallRelationships = (file: ParsedFile, entities: GraphEntity[]): Gra
     const importedNames = file.imports.flatMap((imp) => imp.names);
     const simpleName = calledName.includes(".") ? calledName.split(".")[1] : calledName;
     const targets = functionEntities.filter((e) => e.name === calledName || e.name === simpleName);
-    return (importedNames.includes(calledName) || calledName.includes(".")) && targets.length === 1 ? targets[0] : undefined;
+    return (importedNames.includes(calledName) || calledName.includes(".")) && targets.length === 1
+      ? targets[0]
+      : undefined;
   };
 
   for (const fn of file.functions) {
@@ -134,7 +153,7 @@ const createCallRelationships = (file: ParsedFile, entities: GraphEntity[]): Gra
 export const extractRelationshipsFromFile = (
   file: ParsedFile,
   entities: GraphEntity[],
-  parsedFiles: ParsedFile[] = [file]
+  parsedFiles: ParsedFile[] = [file],
 ): GraphRelationship[] => [
   ...createContainsRelationships(file, entities),
   ...createImportRelationships(file, parsedFiles),
@@ -146,5 +165,5 @@ export const extractRelationships = (parsedFiles: ParsedFile[], entities: GraphE
     parsedFiles
       .flatMap((file) => extractRelationshipsFromFile(file, entities, parsedFiles))
       .reduce((map, r) => map.set(r.id, r), new Map<string, GraphRelationship>())
-      .values()
+      .values(),
   );

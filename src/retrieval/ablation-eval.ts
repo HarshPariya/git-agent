@@ -100,16 +100,16 @@ const evaluateMode = async (mode: ModeConfig): Promise<ModeMetrics> => {
 const printResults = (metrics: ModeMetrics[]): void => {
   console.warn(
     "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-    "ABLATION COMPARISON MATRIX\n" +
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+      "ABLATION COMPARISON MATRIX\n" +
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
   );
   console.warn(
     "Mode".padEnd(20) +
-    "Recall@1".padEnd(12) +
-    "Recall@5".padEnd(12) +
-    "MRR".padEnd(10) +
-    "Mean Latency".padEnd(15) +
-    "P95 Latency",
+      "Recall@1".padEnd(12) +
+      "Recall@5".padEnd(12) +
+      "MRR".padEnd(10) +
+      "Mean Latency".padEnd(15) +
+      "P95 Latency",
   );
   console.warn("-".repeat(80));
 
@@ -118,7 +118,9 @@ const printResults = (metrics: ModeMetrics[]): void => {
     const r5 = `${(m.recallAt5 * 100).toFixed(1)}%`;
     const ml = `${m.meanLatencyMs.toFixed(1)} ms`;
     const p95 = `${m.p95LatencyMs.toFixed(1)} ms`;
-    console.warn(`${m.modeName.padEnd(20)}${r1.padEnd(32)}${r5.padEnd(12)}${m.mrr.toFixed(3).padEnd(10)}${ml.padEnd(15)}${p95}`);
+    console.warn(
+      `${m.modeName.padEnd(20)}${r1.padEnd(32)}${r5.padEnd(12)}${m.mrr.toFixed(3).padEnd(10)}${ml.padEnd(15)}${p95}`,
+    );
   }
   console.warn();
 };
@@ -126,8 +128,8 @@ const printResults = (metrics: ModeMetrics[]): void => {
 const main = async (): Promise<void> => {
   console.warn(
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nRETRIEVAL ABLATION BENCHMARK\n" +
-    "Comparing: Vector Only | Graph Only | Hybrid | Hybrid + Reranker\n" +
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+      "Comparing: Vector Only | Graph Only | Hybrid | Hybrid + Reranker\n" +
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
   );
 
   const retriever = new CodeRetriever(process.cwd());

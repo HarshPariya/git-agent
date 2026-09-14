@@ -14,7 +14,7 @@ const getTenantContext = (request: Request) => {
 };
 
 const getRequestBody = (request: Request): Record<string, unknown> =>
-  typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {};
+  typeof request.body === "object" && request.body !== null ? (request.body as Record<string, unknown>) : {};
 
 const optionalString = (body: Record<string, unknown>, key: string): string | undefined => {
   const value = body[key];
@@ -29,12 +29,18 @@ const requireString = (body: Record<string, unknown>, key: string): string => {
 
 const tryAccessRepository = async (repoId: string | undefined): Promise<void> => {
   if (repoId) {
-    try { await executeGitStatus(repoId); } catch { /* not accessible */ }
+    try {
+      await executeGitStatus(repoId);
+    } catch {
+      /* not accessible */
+    }
   }
 };
 
 const validateRepositoryAccess = async (repoId: string): Promise<void> => {
-  try { await executeGitStatus(repoId); } catch {
+  try {
+    await executeGitStatus(repoId);
+  } catch {
     throw new AppError("Repository not accessible", "VALIDATION_ERROR", 400);
   }
 };
@@ -46,7 +52,10 @@ export async function listCiBuildsHandler(request: Request, response: Response, 
   try {
     getTenantContext(request);
     const query = request.query as Record<string, unknown>;
-    const repoId = typeof query.repositoryId === "string" && query.repositoryId.trim() ? query.repositoryId.trim() : optionalString(getRequestBody(request), "repositoryId");
+    const repoId =
+      typeof query.repositoryId === "string" && query.repositoryId.trim()
+        ? query.repositoryId.trim()
+        : optionalString(getRequestBody(request), "repositoryId");
 
     await tryAccessRepository(repoId);
 
@@ -94,7 +103,12 @@ export async function triggerCiBuildHandler(request: Request, response: Response
       steps: [],
     };
 
-    ciBuilds.set(buildId, { ...build, status: "running", startedAt: now, steps: [{ name: "checkout", status: "running" }] });
+    ciBuilds.set(buildId, {
+      ...build,
+      status: "running",
+      startedAt: now,
+      steps: [{ name: "checkout", status: "running" }],
+    });
     response.status(201).json({ id: buildId, status: "queued", message: "Build triggered successfully" });
   } catch (error) {
     next(error);

@@ -39,8 +39,7 @@ export class RepositoryIndexer {
     if (!isPathWithinRoot(absolutePath, this.rootDirectory) && absolutePath !== this.rootDirectory)
       return skipResult(filePath, "Out of root boundary");
 
-    if (isIgnoredFile(path.basename(absolutePath)))
-      return skipResult(filePath, "Secret or ignored file");
+    if (isIgnoredFile(path.basename(absolutePath))) return skipResult(filePath, "Secret or ignored file");
 
     let stat: Stats;
     try {
@@ -49,8 +48,7 @@ export class RepositoryIndexer {
       return this.deleteFileFromIndex(absolutePath);
     }
 
-    if (stat.size > MAX_FILE_SIZE_BYTES)
-      return skipResult(filePath, "File exceeds 1 MB limit");
+    if (stat.size > MAX_FILE_SIZE_BYTES) return skipResult(filePath, "File exceeds 1 MB limit");
 
     const parsedFile = {
       ...(await parseFile(absolutePath)),
@@ -58,8 +56,7 @@ export class RepositoryIndexer {
     };
 
     const chunks: CodeChunk[] = chunkFile(parsedFile);
-    if (chunks.length === 0)
-      return skipResult(filePath, "No indexable content");
+    if (chunks.length === 0) return skipResult(filePath, "No indexable content");
 
     await upsertChunks(this.repositoryName, chunks);
     console.warn(`⚡ Auto-Indexed changed file: ${path.basename(filePath)} (${chunks.length} chunks)`);
@@ -71,7 +68,10 @@ export class RepositoryIndexer {
     const col = getCollection("code_chunks");
     const result = await col.deleteMany({ repository: this.repositoryName, file_path: normalizedPath });
     const deletedChunks = result.deletedCount;
-    if (deletedChunks > 0) console.warn(`Auto-Cleaned deleted file from MongoDB: ${path.basename(filePath)} (${deletedChunks} chunks deleted)`);
+    if (deletedChunks > 0)
+      console.warn(
+        `Auto-Cleaned deleted file from MongoDB: ${path.basename(filePath)} (${deletedChunks} chunks deleted)`,
+      );
     return { file: filePath, action: "deleted", chunksCount: deletedChunks };
   }
 

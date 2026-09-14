@@ -79,7 +79,12 @@ export const listGitHubPRs = async (
   }
 };
 
-export const getGitHubPR = async (userId: string, owner: string, repo: string, prNumber: number): Promise<PRSummary> => {
+export const getGitHubPR = async (
+  userId: string,
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<PRSummary> => {
   try {
     const pr = await makeGitHubRequest<GitHubPR>(userId, `/repos/${owner}/${repo}/pulls/${prNumber}`);
     return mapPR(pr);

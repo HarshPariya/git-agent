@@ -1,16 +1,17 @@
-import type {
-  AuthorizeRequest,
-  Permission,
-  Role,
-  TenantContext,
-} from "../types/security.js";
+import type { AuthorizeRequest, Permission, Role, TenantContext } from "../types/security.js";
 
 export type { AuthorizeRequest, Permission, Role, TenantContext };
 export type AuthorizationRequest = AuthorizeRequest;
 
 const ALL_PERMISSIONS: readonly Permission[] = [
-  "repository:read", "repository:write", "repository:ci", "repository:pr",
-  "repository:debug", "repository:audit", "graphrag:read", "graphrag:write",
+  "repository:read",
+  "repository:write",
+  "repository:ci",
+  "repository:pr",
+  "repository:debug",
+  "repository:audit",
+  "graphrag:read",
+  "graphrag:write",
 ];
 
 const rolePermissions: Readonly<Record<string, readonly Permission[]>> = {

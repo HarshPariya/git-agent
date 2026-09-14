@@ -37,12 +37,7 @@ const fixPlanStore = new Map<string, FixPlan>();
 const fixPlanStatus = new Map<string, FixPlanStatus>();
 
 export class FixPlanner {
-  async generate(
-    ctx: DebugContext,
-    rootCause: string,
-    evidence: string[],
-    hypotheses?: string[]
-  ): Promise<FixPlan> {
+  async generate(ctx: DebugContext, rootCause: string, evidence: string[], hypotheses?: string[]): Promise<FixPlan> {
     const id = `fix-${crypto.randomUUID().slice(0, 8)}`;
     const useLlm = isLlmAvailable();
     const plan = useLlm
@@ -63,7 +58,7 @@ export class FixPlanner {
     ctx: DebugContext,
     rootCause: string,
     evidence: string[],
-    hypotheses: string[]
+    hypotheses: string[],
   ): Promise<FixPlan> {
     try {
       const prompt = this.buildLlmPrompt(ctx, rootCause, evidence, hypotheses);
@@ -81,12 +76,7 @@ export class FixPlanner {
     }
   }
 
-  private buildLlmPrompt(
-    ctx: DebugContext,
-    rootCause: string,
-    evidence: string[],
-    hypotheses: string[]
-  ): string {
+  private buildLlmPrompt(ctx: DebugContext, rootCause: string, evidence: string[], hypotheses: string[]): string {
     const evidenceList = evidence.map((e, i) => `${i + 1}. ${e}`).join("\n");
     const hypothesisList = hypotheses.map((h, i) => `${i + 1}. ${h}`).join("\n") || "None";
 
@@ -123,7 +113,7 @@ RULES:
     id: string,
     ctx: DebugContext,
     rootCause: string,
-    evidence: string[]
+    evidence: string[],
   ): FixPlan {
     const jsonMatch = /\{[\s\S]*\}/.exec(content);
     if (!jsonMatch) {
@@ -159,12 +149,7 @@ RULES:
     };
   }
 
-  private generateFallback(
-    id: string,
-    ctx: DebugContext,
-    rootCause: string,
-    evidence: string[]
-  ): FixPlan {
+  private generateFallback(id: string, ctx: DebugContext, rootCause: string, evidence: string[]): FixPlan {
     const defaultChanges: FileChange[] = ctx.git.changedFiles.slice(0, 3).map((f) => ({
       filePath: f,
       description: `Review and fix issue in ${f}`,

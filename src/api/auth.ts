@@ -1,22 +1,34 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../errors/app-error.js";
 import { getCollection } from "../db/mongodb.js";
-import { createSessionToken, findOrCreateGoogleUser, findUserByIdFromDb, findUserByEmailFromDb, findGoogleUserByIdInMemory, userStore, ADMIN_EMAILS, verifySessionToken } from "../security/auth.js";
+import {
+  createSessionToken,
+  findOrCreateGoogleUser,
+  findUserByIdFromDb,
+  findUserByEmailFromDb,
+  findGoogleUserByIdInMemory,
+  userStore,
+  ADMIN_EMAILS,
+  verifySessionToken,
+} from "../security/auth.js";
 import { verifyGoogleToken } from "../security/google-auth.js";
 
 type UserRole = "admin" | "developer" | "viewer";
 
-const isValidEmail = (email: unknown): email is string =>
-  typeof email === "string" && email.includes("@");
+const isValidEmail = (email: unknown): email is string => typeof email === "string" && email.includes("@");
 
-const isValidPassword = (password: unknown): password is string =>
-  typeof password === "string" && password.length >= 6;
+const isValidPassword = (password: unknown): password is string => typeof password === "string" && password.length >= 6;
 
-const isValidRole = (role: unknown): role is UserRole =>
-  role === "admin" || role === "developer" || role === "viewer";
+const isValidRole = (role: unknown): role is UserRole => role === "admin" || role === "developer" || role === "viewer";
 
-const pickUser = (u: { id: string; email: string; name: string; tenantId: string; role: string; createdAt: string }) =>
-  ({ id: u.id, email: u.email, name: u.name, tenantId: u.tenantId, role: u.role, createdAt: u.createdAt });
+const pickUser = (u: {
+  id: string;
+  email: string;
+  name: string;
+  tenantId: string;
+  role: string;
+  createdAt: string;
+}) => ({ id: u.id, email: u.email, name: u.name, tenantId: u.tenantId, role: u.role, createdAt: u.createdAt });
 
 /** Attach an optional picture field without violating exactOptionalPropertyTypes. */
 const withPicture = <T extends { id: string }>(base: T, picture: string | undefined): T & { picture?: string } =>
@@ -50,7 +62,8 @@ export function registerHandler(request: Request, response: Response, next: Next
     const { email, password, name, tenantId, role } = (request.body ?? {}) as Record<string, unknown>;
 
     if (!isValidEmail(email)) throw new AppError("A valid email address is required", "VALIDATION_ERROR", 400);
-    if (!isValidPassword(password)) throw new AppError("Password must be at least 6 characters", "VALIDATION_ERROR", 400);
+    if (!isValidPassword(password))
+      throw new AppError("Password must be at least 6 characters", "VALIDATION_ERROR", 400);
 
     // Assign admin role for privileged emails (even on email/password registration)
     const normalizedEmail = String(email).trim().toLowerCase();
@@ -67,18 +80,23 @@ export function registerHandler(request: Request, response: Response, next: Next
 
     // Persist to MongoDB so the user appears in admin panel and survives restarts
     const usersCol = getCollection("users");
-    usersCol.insertOne({
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      tenant_id: user.tenantId,
-      role: user.role,
-      password_hash: user.passwordHash,
-      salt: user.salt,
-      created_at: user.createdAt,
-    }).catch((dbErr: unknown) => {
-      console.warn("[AUTH] Failed to persist registered user to MongoDB:", dbErr instanceof Error ? dbErr.message : dbErr);
-    });
+    usersCol
+      .insertOne({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        tenant_id: user.tenantId,
+        role: user.role,
+        password_hash: user.passwordHash,
+        salt: user.salt,
+        created_at: user.createdAt,
+      })
+      .catch((dbErr: unknown) => {
+        console.warn(
+          "[AUTH] Failed to persist registered user to MongoDB:",
+          dbErr instanceof Error ? dbErr.message : dbErr,
+        );
+      });
 
     response.status(201).json({ token: createSessionToken(user), user: pickUser(user) });
   } catch (error) {
@@ -114,9 +132,7 @@ export async function loginHandler(request: Request, response: Response, next: N
 
     // Upgrade to admin if email is privileged
     const normalizedEmail = user.email.trim().toLowerCase();
-    const upgraded = ADMIN_EMAILS.has(normalizedEmail)
-      ? { ...user, role: "admin" as const }
-      : user;
+    const upgraded = ADMIN_EMAILS.has(normalizedEmail) ? { ...user, role: "admin" as const } : user;
 
     response.status(200).json({ token: createSessionToken(upgraded), user: pickUser(upgraded) });
   } catch (error) {
@@ -163,7 +179,10 @@ export async function googleLoginHandler(request: Request, response: Response, n
     try {
       googlePayload = await verifyGoogleToken(credential);
     } catch (tokenError) {
-      console.error("[AUTH] Google token verification failed:", tokenError instanceof Error ? tokenError.message : tokenError);
+      console.error(
+        "[AUTH] Google token verification failed:",
+        tokenError instanceof Error ? tokenError.message : tokenError,
+      );
       throw new AppError("Invalid Google credential", "AUTHENTICATION_ERROR", 401);
     }
 
@@ -172,7 +191,14 @@ export async function googleLoginHandler(request: Request, response: Response, n
 
     response.status(200).json({
       token,
-      user: { id: user.id, email: user.email, name: user.name, tenantId: user.tenantId, role: user.role, picture: user.picture },
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        tenantId: user.tenantId,
+        role: user.role,
+        picture: user.picture,
+      },
     });
   } catch (error) {
     if (error instanceof AppError) {
@@ -205,7 +231,10 @@ export async function meHandlerDb(request: Request, response: Response, next: Ne
         return;
       }
     } catch (dbErr) {
-      console.warn(`[AUTH] me: DB lookup failed for ${context.userId}:`, dbErr instanceof Error ? dbErr.message : dbErr);
+      console.warn(
+        `[AUTH] me: DB lookup failed for ${context.userId}:`,
+        dbErr instanceof Error ? dbErr.message : dbErr,
+      );
     }
 
     // Tier 3: In-memory Google user fallback (when DB was unavailable during login)
@@ -226,7 +255,9 @@ export async function meHandlerDb(request: Request, response: Response, next: Ne
         const session = verifySessionToken(rawToken);
         fallbackRole = session.role;
       }
-    } catch { /* keep default */ }
+    } catch {
+      /* keep default */
+    }
 
     console.warn(`[AUTH] me: no user found for ${context.userId}, returning dev-mode fallback (role=${fallbackRole})`);
     response.status(200).json({

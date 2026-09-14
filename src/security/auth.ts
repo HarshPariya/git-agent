@@ -50,9 +50,30 @@ interface DefaultAccount {
 }
 
 const DEFAULT_ACCOUNTS: readonly DefaultAccount[] = [
-  { id: "user-admin-1", email: "admin@codegpt.io", name: "Enterprise Admin", tenantId: "tenant-enterprise", role: "admin", password: "password123" },
-  { id: "user-alice-1", email: "alice@company-a.com", name: "Alice Developer", tenantId: "tenant-alpha", role: "developer", password: "password123" },
-  { id: "user-bob-1", email: "bob@company-b.com", name: "Bob Engineer", tenantId: "tenant-beta", role: "developer", password: "password123" },
+  {
+    id: "user-admin-1",
+    email: "admin@codegpt.io",
+    name: "Enterprise Admin",
+    tenantId: "tenant-enterprise",
+    role: "admin",
+    password: "password123",
+  },
+  {
+    id: "user-alice-1",
+    email: "alice@company-a.com",
+    name: "Alice Developer",
+    tenantId: "tenant-alpha",
+    role: "developer",
+    password: "password123",
+  },
+  {
+    id: "user-bob-1",
+    email: "bob@company-b.com",
+    name: "Bob Engineer",
+    tenantId: "tenant-beta",
+    role: "developer",
+    password: "password123",
+  },
 ];
 
 export class UserStore {
@@ -77,13 +98,7 @@ export class UserStore {
     }
   }
 
-  register(params: {
-    email: string;
-    name: string;
-    password: string;
-    tenantId?: string;
-    role?: User["role"];
-  }): User {
+  register(params: { email: string; name: string; password: string; tenantId?: string; role?: User["role"] }): User {
     const normalizedEmail = params.email.trim().toLowerCase();
     if (this.usersByEmail.has(normalizedEmail)) {
       throw new AppError("An account with this email already exists", "AUTHENTICATION_ERROR", 409);
@@ -109,8 +124,7 @@ export class UserStore {
     return user;
   }
 
-  findByEmail = (email: string): User | undefined =>
-    this.usersByEmail.get(email.trim().toLowerCase());
+  findByEmail = (email: string): User | undefined => this.usersByEmail.get(email.trim().toLowerCase());
 
   findById = (id: string): User | undefined => this.usersById.get(id);
 
@@ -136,8 +150,7 @@ export const createSessionToken = (user: User): string => {
   return `${encodedPayload}.${signature}`;
 };
 
-const INVALID_TOKEN_ERROR = (message: string) =>
-  new AppError(message, "AUTHENTICATION_ERROR", 401);
+const INVALID_TOKEN_ERROR = (message: string) => new AppError(message, "AUTHENTICATION_ERROR", 401);
 
 export const verifySessionToken = (token: string): AuthSession => {
   const parts = token.split(".");
@@ -174,28 +187,38 @@ export interface GoogleUserResult {
 }
 
 // In-memory Google user store (fallback when database is unavailable)
-const googleUsersBySub = new Map<string, { id: string; email: string; name: string; tenantId: string; role: User["role"]; picture: string | undefined }>();
+const googleUsersBySub = new Map<
+  string,
+  { id: string; email: string; name: string; tenantId: string; role: User["role"]; picture: string | undefined }
+>();
 
 /** Find a Google user by their application user ID (searches the in-memory fallback store). */
-export function findGoogleUserByIdInMemory(userId: string): { id: string; email: string; name: string; tenantId: string; role: User["role"]; picture: string | undefined } | undefined {
+export function findGoogleUserByIdInMemory(
+  userId: string,
+):
+  | { id: string; email: string; name: string; tenantId: string; role: User["role"]; picture: string | undefined }
+  | undefined {
   for (const user of googleUsersBySub.values()) {
     if (user.id === userId) return user;
   }
   return undefined;
 }
 
-function findOrCreateGoogleUserInMemory(
-  googlePayload: GoogleTokenPayload,
-): GoogleUserResult {
+function findOrCreateGoogleUserInMemory(googlePayload: GoogleTokenPayload): GoogleUserResult {
   const { sub, email, name, picture } = googlePayload;
 
   const existing = googleUsersBySub.get(sub);
   if (existing) {
     console.warn(`[AUTH] Google login (memory): existing user ${existing.id} (${existing.email})`);
     const token = createSessionToken({
-      id: existing.id, email: existing.email, name: existing.name,
-      tenantId: existing.tenantId, role: existing.role,
-      passwordHash: "", salt: "", createdAt: "",
+      id: existing.id,
+      email: existing.email,
+      name: existing.name,
+      tenantId: existing.tenantId,
+      role: existing.role,
+      passwordHash: "",
+      salt: "",
+      createdAt: "",
     });
     return { user: existing, token };
   }
@@ -204,22 +227,32 @@ function findOrCreateGoogleUserInMemory(
   const tenantId = `t-g-${crypto.randomUUID().substring(0, 8)}`;
   const displayName = name || email.split("@")[0] || "User";
   const role: User["role"] = ADMIN_EMAILS.has(email) ? "admin" : "developer";
-  const user: GoogleUserResult["user"] = { id: userId, email, name: displayName, tenantId, role, picture: picture ?? undefined };
+  const user: GoogleUserResult["user"] = {
+    id: userId,
+    email,
+    name: displayName,
+    tenantId,
+    role,
+    picture: picture ?? undefined,
+  };
 
   googleUsersBySub.set(sub, user);
   console.warn(`[AUTH] Google login (memory): created user ${userId} (${email})`);
 
   const token = createSessionToken({
-    id: user.id, email: user.email, name: user.name,
-    tenantId: user.tenantId, role,
-    passwordHash: "", salt: "", createdAt: new Date().toISOString(),
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    tenantId: user.tenantId,
+    role,
+    passwordHash: "",
+    salt: "",
+    createdAt: new Date().toISOString(),
   });
   return { user, token };
 }
 
-export async function findOrCreateGoogleUser(
-  googlePayload: GoogleTokenPayload,
-): Promise<GoogleUserResult> {
+export async function findOrCreateGoogleUser(googlePayload: GoogleTokenPayload): Promise<GoogleUserResult> {
   const { sub, email, name, picture } = googlePayload;
 
   try {
@@ -238,8 +271,24 @@ export async function findOrCreateGoogleUser(
           await usersCol.updateOne({ id: userDoc.id }, { $set: { role: resolvedRole } });
         }
         console.warn(`[AUTH] Google login: existing user ${userDoc.id} (${userDoc.email}) role=${resolvedRole}`);
-        const user: GoogleUserResult["user"] = { id: userDoc.id as string, email: userDoc.email as string, name: userDoc.name as string, tenantId: userDoc.tenant_id as string, role: resolvedRole, picture: (existingIdentity.avatar_url as string) ?? picture ?? undefined };
-        const token = createSessionToken({ id: userDoc.id as string, email: userDoc.email as string, name: userDoc.name as string, tenantId: userDoc.tenant_id as string, role: resolvedRole, passwordHash: "", salt: "", createdAt: "" });
+        const user: GoogleUserResult["user"] = {
+          id: userDoc.id as string,
+          email: userDoc.email as string,
+          name: userDoc.name as string,
+          tenantId: userDoc.tenant_id as string,
+          role: resolvedRole,
+          picture: (existingIdentity.avatar_url as string) ?? picture ?? undefined,
+        };
+        const token = createSessionToken({
+          id: userDoc.id as string,
+          email: userDoc.email as string,
+          name: userDoc.name as string,
+          tenantId: userDoc.tenant_id as string,
+          role: resolvedRole,
+          passwordHash: "",
+          salt: "",
+          createdAt: "",
+        });
         return { user, token };
       }
     }
@@ -249,10 +298,25 @@ export async function findOrCreateGoogleUser(
     if (existingUser) {
       console.warn(`[AUTH] Google login: linking to existing account ${existingUser.id} (${email})`);
       const identityId = `id-${crypto.randomUUID().substring(0, 8)}`;
-      await identitiesCol.insertOne({ id: identityId, user_id: existingUser.id, provider: "google", provider_user_id: sub, email, name, avatar_url: picture ?? null });
+      await identitiesCol.insertOne({
+        id: identityId,
+        user_id: existingUser.id,
+        provider: "google",
+        provider_user_id: sub,
+        email,
+        name,
+        avatar_url: picture ?? null,
+      });
       const token = createSessionToken(existingUser);
       return {
-        user: { id: existingUser.id, email: existingUser.email, name: existingUser.name, tenantId: existingUser.tenantId, role: existingUser.role, picture: picture ?? undefined },
+        user: {
+          id: existingUser.id,
+          email: existingUser.email,
+          name: existingUser.name,
+          tenantId: existingUser.tenantId,
+          role: existingUser.role,
+          picture: picture ?? undefined,
+        },
         token,
       };
     }
@@ -265,33 +329,73 @@ export async function findOrCreateGoogleUser(
     const role: User["role"] = ADMIN_EMAILS.has(email) ? "admin" : "developer";
 
     await withTransaction(async (session) => {
-      await usersCol.insertOne({ id: userId, email, name: displayName, tenant_id: tenantId, role, created_at: new Date().toISOString() }, { session });
-      await identitiesCol.insertOne({ id: identityId, user_id: userId, provider: "google", provider_user_id: sub, email, name: displayName, avatar_url: picture ?? null }, { session });
+      await usersCol.insertOne(
+        { id: userId, email, name: displayName, tenant_id: tenantId, role, created_at: new Date().toISOString() },
+        { session },
+      );
+      await identitiesCol.insertOne(
+        {
+          id: identityId,
+          user_id: userId,
+          provider: "google",
+          provider_user_id: sub,
+          email,
+          name: displayName,
+          avatar_url: picture ?? null,
+        },
+        { session },
+      );
     });
 
     console.warn(`[AUTH] Google login: created new user ${userId} (${email})`);
 
-    const user: GoogleUserResult["user"] = { id: userId, email, name: displayName, tenantId, role, picture: picture ?? undefined };
+    const user: GoogleUserResult["user"] = {
+      id: userId,
+      email,
+      name: displayName,
+      tenantId,
+      role,
+      picture: picture ?? undefined,
+    };
     const token = createSessionToken({
-      id: user.id, email: user.email, name: user.name,
-      tenantId: user.tenantId, role: user.role,
-      passwordHash: "", salt: "", createdAt: new Date().toISOString(),
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      tenantId: user.tenantId,
+      role: user.role,
+      passwordHash: "",
+      salt: "",
+      createdAt: new Date().toISOString(),
     });
     return { user, token };
   } catch (dbError) {
     // Database unavailable — fall back to in-memory store
-    console.warn(`[AUTH] Google login: database unavailable, using in-memory fallback: ${dbError instanceof Error ? dbError.message : "unknown"}`);
+    console.warn(
+      `[AUTH] Google login: database unavailable, using in-memory fallback: ${dbError instanceof Error ? dbError.message : "unknown"}`,
+    );
     return findOrCreateGoogleUserInMemory(googlePayload);
   }
 }
 
 export async function findUserByIdFromDb(userId: string): Promise<{
-  id: string; email: string; name: string; tenantId: string; role: string; createdAt: string;
+  id: string;
+  email: string;
+  name: string;
+  tenantId: string;
+  role: string;
+  createdAt: string;
 } | null> {
   const usersCol = getCollection("users");
   const row = await usersCol.findOne({ id: userId });
   if (!row) return null;
-  return { id: row.id as string, email: row.email as string, name: row.name as string, tenantId: row.tenant_id as string, role: row.role as string, createdAt: (row.created_at as string) ?? new Date().toISOString() };
+  return {
+    id: row.id as string,
+    email: row.email as string,
+    name: row.name as string,
+    tenantId: row.tenant_id as string,
+    role: row.role as string,
+    createdAt: (row.created_at as string) ?? new Date().toISOString(),
+  };
 }
 
 export async function findUserByEmailFromDb(email: string): Promise<User | null> {

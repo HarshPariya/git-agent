@@ -23,7 +23,10 @@ const findFirstRelevantRank = (returned: string[], expected: string[]): number |
 const calculateRecallAtK = (returned: string[], expected: string[], k: number): number =>
   expected.filter((n) => returned.slice(0, k).includes(n)).length / expected.length;
 
-const evaluateCase = async (retriever: CodeRetriever, tc: (typeof retrievalEvalDataset)[number]): Promise<EvalCaseResult> => {
+const evaluateCase = async (
+  retriever: CodeRetriever,
+  tc: (typeof retrievalEvalDataset)[number],
+): Promise<EvalCaseResult> => {
   const start = performance.now();
   const retrieved = await retriever.retrieve(tc.query, { limit: 10 });
   const latencyMs = performance.now() - start;
@@ -49,11 +52,11 @@ const printCaseResult = ({ id, query, expected, returned, rank, latencyMs }: Eva
   const firstRelevant = rank ?? "not found";
   console.warn(
     `${indicator} ${id}\n` +
-    `  Query: ${query}\n` +
-    `  Expected: ${expected.join(", ")}\n` +
-    `  Top result: ${topResult}\n` +
-    `  First relevant rank: ${firstRelevant}\n` +
-    `  Latency: ${latencyMs.toFixed(1)} ms\n`,
+      `  Query: ${query}\n` +
+      `  Expected: ${expected.join(", ")}\n` +
+      `  Top result: ${topResult}\n` +
+      `  First relevant rank: ${firstRelevant}\n` +
+      `  Latency: ${latencyMs.toFixed(1)} ms\n`,
   );
 };
 
@@ -64,12 +67,12 @@ const printSummary = (results: EvalCaseResult[]): void => {
 
   console.warn(
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nEVALUATION SUMMARY\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-    `Queries: ${results.length}\n` +
-    `Recall@1: ${(avg((r) => r.recallAt1) * 100).toFixed(1)}%\n` +
-    `Recall@5: ${(avg((r) => r.recallAt5) * 100).toFixed(1)}%\n` +
-    `MRR: ${avg((r) => r.reciprocalRank).toFixed(3)}\n` +
-    `Mean latency: ${avg((r) => r.latencyMs).toFixed(1)} ms\n` +
-    `P95 latency: ${(sortedLatency[p95Idx] ?? 0).toFixed(1)} ms`,
+      `Queries: ${results.length}\n` +
+      `Recall@1: ${(avg((r) => r.recallAt1) * 100).toFixed(1)}%\n` +
+      `Recall@5: ${(avg((r) => r.recallAt5) * 100).toFixed(1)}%\n` +
+      `MRR: ${avg((r) => r.reciprocalRank).toFixed(3)}\n` +
+      `Mean latency: ${avg((r) => r.latencyMs).toFixed(1)} ms\n` +
+      `P95 latency: ${(sortedLatency[p95Idx] ?? 0).toFixed(1)} ms`,
   );
 };
 

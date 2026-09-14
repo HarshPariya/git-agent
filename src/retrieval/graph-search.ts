@@ -35,12 +35,32 @@ const QUERY_EXPANSIONS: Record<string, string[]> = {
 };
 
 const STOP_WORDS = new Set([
-  "the", "a", "an", "is", "are", "where", "what", "which", "how",
-  "does", "do", "in", "of", "to", "for", "and", "or", "used", "use",
+  "the",
+  "a",
+  "an",
+  "is",
+  "are",
+  "where",
+  "what",
+  "which",
+  "how",
+  "does",
+  "do",
+  "in",
+  "of",
+  "to",
+  "for",
+  "and",
+  "or",
+  "used",
+  "use",
 ]);
 
 const normalizeText = (v: string): string =>
-  v.toLowerCase().replace(/[^a-z0-9_$]+/g, " ").trim();
+  v
+    .toLowerCase()
+    .replace(/[^a-z0-9_$]+/g, " ")
+    .trim();
 
 const tokenizeQuery = (query: string): string[] => {
   const baseTokens = normalizeText(query)
@@ -50,13 +70,12 @@ const tokenizeQuery = (query: string): string[] => {
   return [...new Set(baseTokens.flatMap((token) => [token, ...(QUERY_EXPANSIONS[token] ?? [])]))];
 };
 
-const getEntitySearchText = (e: GraphEntity): string =>
-  normalizeText([e.name, e.filePath ?? "", e.type].join(" "));
+const getEntitySearchText = (e: GraphEntity): string => normalizeText([e.name, e.filePath ?? "", e.type].join(" "));
 
 const scoreEntity = (
   entity: GraphEntity,
   query: string,
-  terms: string[]
+  terms: string[],
 ): { score: number; matchType?: GraphSearchResult["matchType"]; matchedTerm?: string } => {
   const normalizedQuery = normalizeText(query);
   const normalizedName = normalizeText(entity.name);
@@ -78,11 +97,7 @@ const scoreEntity = (
   };
 };
 
-const findSeedEntities = (
-  graph: CodeGraph,
-  query: string,
-  options: GraphSearchOptions
-): GraphSearchResult[] => {
+const findSeedEntities = (graph: CodeGraph, query: string, options: GraphSearchOptions): GraphSearchResult[] => {
   const terms = tokenizeQuery(query);
 
   const results: GraphSearchResult[] = [];
@@ -109,11 +124,7 @@ const findSeedEntities = (
 const scoreGraphExpansion = (t: TraversalResult, seedScore: number): number =>
   seedScore * Math.max(0.25, 1 - t.depth * 0.25);
 
-export const graphSearch = (
-  graph: CodeGraph,
-  query: string,
-  options: GraphSearchOptions = {}
-): GraphSearchResult[] => {
+export const graphSearch = (graph: CodeGraph, query: string, options: GraphSearchOptions = {}): GraphSearchResult[] => {
   const limit = options.limit ?? 10;
   const maxDepth = validateGraphDepth(options.maxDepth);
   const seeds = findSeedEntities(graph, query, options);

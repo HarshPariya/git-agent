@@ -23,7 +23,7 @@ const cosineSimilarity = (a: number[], b: number[]): number => {
         magB: acc.magB + valB * valB,
       };
     },
-    { dot: 0, magA: 0, magB: 0 }
+    { dot: 0, magA: 0, magB: 0 },
   );
 
   return magA === 0 || magB === 0 ? 0 : dot / (Math.sqrt(magA) * Math.sqrt(magB));
@@ -36,13 +36,9 @@ export const buildVectorIndex = (chunks: CodeChunk[]): VectorDocument[] => {
     if (!chunk.content.trim()) continue;
 
     try {
-      const embedding = embedText([
-        `Type: ${chunk.type}`,
-        `Name: ${chunk.name ?? ""}`,
-        `File: ${chunk.filePath}`,
-        "",
-        chunk.content,
-      ].join("\n"));
+      const embedding = embedText(
+        [`Type: ${chunk.type}`, `Name: ${chunk.name ?? ""}`, `File: ${chunk.filePath}`, "", chunk.content].join("\n"),
+      );
       documents.push({ chunk, embedding });
     } catch (err: unknown) {
       console.warn(`Failed to embed chunk ${chunk.name ?? chunk.filePath}:`, err);
@@ -52,11 +48,7 @@ export const buildVectorIndex = (chunks: CodeChunk[]): VectorDocument[] => {
   return documents;
 };
 
-export const vectorSearch = (
-  query: string,
-  index: VectorDocument[],
-  limit = 10
-): VectorSearchResult[] => {
+export const vectorSearch = (query: string, index: VectorDocument[], limit = 10): VectorSearchResult[] => {
   const queryEmbedding = embedText(query);
 
   return index

@@ -30,15 +30,16 @@ export interface UpsertResultStats {
 const CODE_CHUNKS = "code_chunks";
 const REPO_STATUS = "repository_status";
 
-const computeContentHash = (content: string): string =>
-  crypto.createHash("sha256").update(content).digest("hex");
+const computeContentHash = (content: string): string => crypto.createHash("sha256").update(content).digest("hex");
 
 const buildEmbeddingText = (chunk: CodeChunk): string =>
   [`Type: ${chunk.type}`, `Name: ${chunk.name ?? ""}`, `File: ${chunk.filePath}`, "", chunk.content].join("\n");
 
 /** Cosine similarity between two vectors */
 const cosineSimilarity = (a: number[], b: number[]): number => {
-  let dot = 0, normA = 0, normB = 0;
+  let dot = 0,
+    normA = 0,
+    normB = 0;
   for (let i = 0; i < a.length; i++) {
     const ai = a[i]!;
     const bi = b[i]!;
@@ -65,10 +66,7 @@ const mapDocToResult = (doc: Record<string, unknown>, score: number): VectorSear
   score,
 });
 
-export const deleteStaleChunks = async (
-  repository: string,
-  activeChunkIds: string[],
-): Promise<number> => {
+export const deleteStaleChunks = async (repository: string, activeChunkIds: string[]): Promise<number> => {
   const col = getCollection(CODE_CHUNKS);
   const filter: Record<string, unknown> = { repository };
   if (activeChunkIds.length > 0) {
@@ -114,10 +112,7 @@ export const upsertChunks = async (
   const deletedStale = await deleteStaleChunks(repository, activeChunkIds);
 
   const col = getCollection(CODE_CHUNKS);
-  const existingRows = await col.find(
-    { repository },
-    { projection: { chunk_id: 1, content_hash: 1 } },
-  ).toArray();
+  const existingRows = await col.find({ repository }, { projection: { chunk_id: 1, content_hash: 1 } }).toArray();
 
   const existingHashMap = new Map<string, string>();
   for (const r of existingRows) {
@@ -138,7 +133,10 @@ export const upsertChunks = async (
     const currentHash = computeContentHash(chunk.content);
     const storedHash = existingHashMap.get(chunk.id);
 
-    if (storedHash === currentHash) { skipped++; continue; }
+    if (storedHash === currentHash) {
+      skipped++;
+      continue;
+    }
 
     const embedding = embedText(buildEmbeddingText(chunk));
 
@@ -158,13 +156,13 @@ export const upsertChunks = async (
       updated_at: new Date().toISOString(),
     };
 
-    if (storedHash !== undefined) { updated++; } else { inserted++; }
+    if (storedHash !== undefined) {
+      updated++;
+    } else {
+      inserted++;
+    }
 
-    await col.updateOne(
-      { chunk_id: chunk.id },
-      { $set: doc },
-      { upsert: true },
-    );
+    await col.updateOne({ chunk_id: chunk.id }, { $set: doc }, { upsert: true });
   }
 
   await updateRepositoryStatus(repository, repositoryHash, totalFiles, chunks.length);
@@ -189,7 +187,7 @@ export const pgVectorSearch = async (
   const options: VectorSearchFilterOptions =
     typeof filterOrRepo === "string"
       ? { repository: filterOrRepo, limit: limitParam }
-      : filterOrRepo ?? { limit: limitParam };
+      : (filterOrRepo ?? { limit: limitParam });
 
   if (!options.repository) {
     throw new Error("Security Error: Repository scope is required for vector search.");
@@ -202,7 +200,8 @@ export const pgVectorSearch = async (
   const filter: Record<string, unknown> = { repository: options.repository };
   if (options.language) filter.language = options.language;
   if (options.chunkType) filter.chunk_type = options.chunkType;
-  if (options.filePathPrefix) filter.file_path = { $regex: `^${options.filePathPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}` };
+  if (options.filePathPrefix)
+    filter.file_path = { $regex: `^${options.filePathPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}` };
   if (options.metadata && Object.keys(options.metadata).length > 0) {
     for (const [key, value] of Object.entries(options.metadata)) {
       filter[`metadata.${key}`] = value;
@@ -231,9 +230,7 @@ export const pgVectorSearch = async (
     ];
 
     const results = await col.aggregate(pipeline).toArray();
-    return results.map((doc: Record<string, unknown>) =>
-      mapDocToResult(doc, (doc.similarity as number) ?? 0),
-    );
+    return results.map((doc: Record<string, unknown>) => mapDocToResult(doc, (doc.similarity as number) ?? 0));
   } catch {
     // Atlas Vector Search not available — fall back to application-level cosine similarity
   }

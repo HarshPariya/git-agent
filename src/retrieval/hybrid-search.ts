@@ -23,7 +23,8 @@ export interface HybridSearchResult {
   graphMatchType?: string;
 }
 
-const GRAPH_PATTERN = /\b(?:relationship|related|trace|flow|caller|calls?|uses?|depends?|imported?|where is .* defined)\b/i;
+const GRAPH_PATTERN =
+  /\b(?:relationship|related|trace|flow|caller|calls?|uses?|depends?|imported?|where is .* defined)\b/i;
 const EXPLAIN_PATTERN = /\b(?:explain|how does|what does|architecture|pipeline)\b/i;
 
 export const inferHybridWeights = (query: string): { vectorWeight: number; graphWeight: number } => {
@@ -32,7 +33,7 @@ export const inferHybridWeights = (query: string): { vectorWeight: number; graph
   return { vectorWeight: 0.6, graphWeight: 0.4 };
 };
 
-const reciprocalRankScore = (rank: number): number => (1 / (60 + rank)) / (1 / 61);
+const reciprocalRankScore = (rank: number): number => 1 / (60 + rank) / (1 / 61);
 
 const normalizeVectorScores = (results: VectorSearchResult[]): Map<string, number> => {
   if (results.length === 0) return new Map();
@@ -42,24 +43,21 @@ const normalizeVectorScores = (results: VectorSearchResult[]): Map<string, numbe
   const min = Math.min(...scores);
   const range = max - min;
 
-  return new Map(
-    results.map((r) => [r.chunk.id, range > 0 ? (r.score - min) / range : 1])
-  );
+  return new Map(results.map((r) => [r.chunk.id, range > 0 ? (r.score - min) / range : 1]));
 };
 
 const findChunkForGraphEntity = (
   chunks: CodeChunk[],
   filePath: string | undefined,
-  name: string
-): CodeChunk | undefined =>
-  filePath ? chunks.find((c) => c.filePath === filePath && c.name === name) : undefined;
+  name: string,
+): CodeChunk | undefined => (filePath ? chunks.find((c) => c.filePath === filePath && c.name === name) : undefined);
 
 export const hybridSearch = (
   query: string,
   graph: CodeGraph,
   chunks: CodeChunk[],
   vectorResults: VectorSearchResult[],
-  options: HybridSearchOptions = {}
+  options: HybridSearchOptions = {},
 ): HybridSearchResult[] => {
   const limit = options.limit ?? 10;
   const graphLimit = options.graphLimit ?? 15;

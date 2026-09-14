@@ -18,7 +18,9 @@ const safeUnlink = async (filePath: string, retries = 5, delay = 100): Promise<v
 };
 
 const runIndexerLifecycleTest = async () => {
-  console.warn("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nAUTOMATIC INDEXING LIFECYCLE TEST\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+  console.warn(
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nAUTOMATIC INDEXING LIFECYCLE TEST\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+  );
 
   const repoDir = process.cwd();
   const indexer = new RepositoryIndexer(repoDir, "test-auto-repo");
@@ -28,7 +30,11 @@ const runIndexerLifecycleTest = async () => {
   let failed = 0;
   const assert = (ok: boolean, name: string) => {
     console.warn(ok ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`);
-    if (ok) { passed++; } else { failed++; }
+    if (ok) {
+      passed++;
+    } else {
+      failed++;
+    }
   };
 
   try {
@@ -42,7 +48,10 @@ const runIndexerLifecycleTest = async () => {
     assert(indexStats.action === "indexed", "Single file indexed successfully");
     assert(indexStats.chunksCount > 0, "Created chunks for newly added file");
 
-    const dbCheck1 = await getCollection("code_chunks").countDocuments({ repository: "test-auto-repo", file_path: path.normalize(tempFile) });
+    const dbCheck1 = await getCollection("code_chunks").countDocuments({
+      repository: "test-auto-repo",
+      file_path: path.normalize(tempFile),
+    });
     assert(dbCheck1 > 0, "DB contains indexed chunks for temp file");
 
     // 2. Delete temp file & test auto-cleanup
@@ -51,13 +60,18 @@ const runIndexerLifecycleTest = async () => {
     const deleteStats = await indexer.indexSingleFile(tempFile);
     assert(deleteStats.action === "deleted", "Detected file removal automatically");
 
-    const dbCheck2 = await getCollection("code_chunks").countDocuments({ repository: "test-auto-repo", file_path: path.normalize(tempFile) });
+    const dbCheck2 = await getCollection("code_chunks").countDocuments({
+      repository: "test-auto-repo",
+      file_path: path.normalize(tempFile),
+    });
     assert(dbCheck2 === 0, "DB automatically pruned all chunks for deleted file");
   } finally {
     await getCollection("code_chunks").deleteMany({ repository: "test-auto-repo" });
     await closeDatabase();
 
-    console.warn(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nINDEXER LIFECYCLE TEST RESULTS: ${passed} Passed, ${failed} Failed.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.warn(
+      `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nINDEXER LIFECYCLE TEST RESULTS: ${passed} Passed, ${failed} Failed.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    );
     if (failed > 0) process.exitCode = 1;
   }
 };

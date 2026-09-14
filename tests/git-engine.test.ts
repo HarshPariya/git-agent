@@ -78,4 +78,4 @@ async function runGitEngineTests() {
   if (failed > 0) process.exitCode = 1;
 }
 
-runGitEngineTests().catch((err) => { console.error("Git Engine test failed:", err); process.exitCode = 1; });
+runGitEngineTests().catch((err) => { console.error("Git Engine test failed:", err); process.exit(1); });

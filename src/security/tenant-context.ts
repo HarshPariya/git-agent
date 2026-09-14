@@ -2,10 +2,7 @@ import type { TenantContext } from "../types/security.js";
 
 export type { TenantContext };
 
-export const createTenantContext = (
-  tenantId: string,
-  userId: string,
-): TenantContext => {
+export const createTenantContext = (tenantId: string, userId: string): TenantContext => {
   const normalizedTenantId = tenantId.trim();
   const normalizedUserId = userId.trim();
 

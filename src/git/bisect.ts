@@ -23,7 +23,13 @@ export interface RegressionResult {
 }
 
 const NO_REGRESSION: BisectResult = {
-  commit: "", shortHash: "", message: "No regression found", author: "", date: "", isBad: false, isGood: true,
+  commit: "",
+  shortHash: "",
+  message: "No regression found",
+  author: "",
+  date: "",
+  isBad: false,
+  isGood: true,
 };
 
 async function runGit(repoPath: string, args: string[]): Promise<string> {
@@ -36,14 +42,26 @@ async function runGit(repoPath: string, args: string[]): Promise<string> {
     return stdout ?? "";
   } catch (err: unknown) {
     const e = err as { message?: string; stderr?: string; stdout?: string };
-    throw new AppError(`Git command failed: ${e.message ?? e.stderr ?? e.stdout ?? "unknown error"}`, "TOOL_ERROR", 500);
+    throw new AppError(
+      `Git command failed: ${e.message ?? e.stderr ?? e.stdout ?? "unknown error"}`,
+      "TOOL_ERROR",
+      500,
+    );
   }
 }
 
 const parseLogLine = (logOutput: string): BisectResult => {
   const [commit, author, date, ...rest] = logOutput.trim().split("|");
   const shortHash = commit?.substring(0, 7) ?? "";
-  return { commit: commit ?? shortHash, shortHash, author: author ?? "", date: date ?? "", message: rest.join("|"), isBad: true, isGood: false };
+  return {
+    commit: commit ?? shortHash,
+    shortHash,
+    author: author ?? "",
+    date: date ?? "",
+    message: rest.join("|"),
+    isBad: true,
+    isGood: false,
+  };
 };
 
 export async function runBisect(
@@ -79,11 +97,7 @@ export async function runBisect(
   }
 }
 
-export async function detectRegression(
-  repo: Repository,
-  startRef: string,
-  endRef: string,
-): Promise<RegressionResult> {
+export async function detectRegression(repo: Repository, startRef: string, endRef: string): Promise<RegressionResult> {
   const [startLog, endLog] = await Promise.all([
     runGit(repo.localPath, ["log", "--oneline", "--format=%H|%an|%ai|%s", "-1", startRef]),
     runGit(repo.localPath, ["log", "--oneline", "--format=%H|%an|%ai|%s", "-1", endRef]),

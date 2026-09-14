@@ -1,6 +1,15 @@
 import fs from "node:fs";
 import { AppError } from "../errors/app-error.js";
-import type { GitOperation, GitOperationType, GitOperationRisk, GitStatusOutput, GitStatusEntry, GitLogEntry, GitDiffEntry, GitBranch } from "../types/git.js";
+import type {
+  GitOperation,
+  GitOperationType,
+  GitOperationRisk,
+  GitStatusOutput,
+  GitStatusEntry,
+  GitLogEntry,
+  GitDiffEntry,
+  GitBranch,
+} from "../types/git.js";
 import { execFileAsync } from "./utils.js";
 
 export type { GitOperationType };
@@ -20,38 +29,170 @@ export function getExecutionPath(repositoryOrPath: string): string {
 }
 
 const GIT_OPERATION_CATALOG: readonly GitOperation[] = [
-  { type: "status", risk: "safe", command: "git status --porcelain -b", description: "Show working tree status", requiresApproval: false, dryRunSupported: true },
-  { type: "log", risk: "safe", command: "git log", description: "Show commit history", requiresApproval: false, dryRunSupported: true },
-  { type: "diff", risk: "safe", command: "git diff", description: "Show changes between commits", requiresApproval: false, dryRunSupported: true },
-  { type: "branch", risk: "safe", command: "git branch -a", description: "List branches", requiresApproval: false, dryRunSupported: true },
-  { type: "checkout", risk: "controlled", command: "git checkout", description: "Switch branches", requiresApproval: true, dryRunSupported: true },
-  { type: "commit", risk: "controlled", command: "git commit", description: "Record changes", requiresApproval: true, dryRunSupported: true },
-  { type: "push", risk: "dangerous", command: "git push", description: "Upload refs", requiresApproval: true, dryRunSupported: true },
-  { type: "pull", risk: "dangerous", command: "git pull", description: "Fetch and merge", requiresApproval: true, dryRunSupported: true },
-  { type: "merge", risk: "dangerous", command: "git merge", description: "Join histories", requiresApproval: true, dryRunSupported: true },
-  { type: "reset", risk: "dangerous", command: "git reset", description: "Reset current HEAD", requiresApproval: true, dryRunSupported: true },
-  { type: "revert", risk: "controlled", command: "git revert", description: "Revert commits", requiresApproval: true, dryRunSupported: true },
-  { type: "tag", risk: "controlled", command: "git tag", description: "Create tags", requiresApproval: true, dryRunSupported: true },
-  { type: "stash", risk: "controlled", command: "git stash", description: "Stash changes", requiresApproval: false, dryRunSupported: true },
-  { type: "cherry-pick", risk: "dangerous", command: "git cherry-pick", description: "Apply commits", requiresApproval: true, dryRunSupported: true },
-  { type: "amend", risk: "dangerous", command: "git commit --amend", description: "Amend last commit", requiresApproval: true, dryRunSupported: true },
-  { type: "fetch", risk: "safe", command: "git fetch", description: "Download objects", requiresApproval: false, dryRunSupported: true },
-  { type: "clone", risk: "safe", command: "git clone", description: "Clone repository", requiresApproval: false, dryRunSupported: true },
-  { type: "init", risk: "safe", command: "git init", description: "Initialize repo", requiresApproval: false, dryRunSupported: true },
+  {
+    type: "status",
+    risk: "safe",
+    command: "git status --porcelain -b",
+    description: "Show working tree status",
+    requiresApproval: false,
+    dryRunSupported: true,
+  },
+  {
+    type: "log",
+    risk: "safe",
+    command: "git log",
+    description: "Show commit history",
+    requiresApproval: false,
+    dryRunSupported: true,
+  },
+  {
+    type: "diff",
+    risk: "safe",
+    command: "git diff",
+    description: "Show changes between commits",
+    requiresApproval: false,
+    dryRunSupported: true,
+  },
+  {
+    type: "branch",
+    risk: "safe",
+    command: "git branch -a",
+    description: "List branches",
+    requiresApproval: false,
+    dryRunSupported: true,
+  },
+  {
+    type: "checkout",
+    risk: "controlled",
+    command: "git checkout",
+    description: "Switch branches",
+    requiresApproval: true,
+    dryRunSupported: true,
+  },
+  {
+    type: "commit",
+    risk: "controlled",
+    command: "git commit",
+    description: "Record changes",
+    requiresApproval: true,
+    dryRunSupported: true,
+  },
+  {
+    type: "push",
+    risk: "dangerous",
+    command: "git push",
+    description: "Upload refs",
+    requiresApproval: true,
+    dryRunSupported: true,
+  },
+  {
+    type: "pull",
+    risk: "dangerous",
+    command: "git pull",
+    description: "Fetch and merge",
+    requiresApproval: true,
+    dryRunSupported: true,
+  },
+  {
+    type: "merge",
+    risk: "dangerous",
+    command: "git merge",
+    description: "Join histories",
+    requiresApproval: true,
+    dryRunSupported: true,
+  },
+  {
+    type: "reset",
+    risk: "dangerous",
+    command: "git reset",
+    description: "Reset current HEAD",
+    requiresApproval: true,
+    dryRunSupported: true,
+  },
+  {
+    type: "revert",
+    risk: "controlled",
+    command: "git revert",
+    description: "Revert commits",
+    requiresApproval: true,
+    dryRunSupported: true,
+  },
+  {
+    type: "tag",
+    risk: "controlled",
+    command: "git tag",
+    description: "Create tags",
+    requiresApproval: true,
+    dryRunSupported: true,
+  },
+  {
+    type: "stash",
+    risk: "controlled",
+    command: "git stash",
+    description: "Stash changes",
+    requiresApproval: false,
+    dryRunSupported: true,
+  },
+  {
+    type: "cherry-pick",
+    risk: "dangerous",
+    command: "git cherry-pick",
+    description: "Apply commits",
+    requiresApproval: true,
+    dryRunSupported: true,
+  },
+  {
+    type: "amend",
+    risk: "dangerous",
+    command: "git commit --amend",
+    description: "Amend last commit",
+    requiresApproval: true,
+    dryRunSupported: true,
+  },
+  {
+    type: "fetch",
+    risk: "safe",
+    command: "git fetch",
+    description: "Download objects",
+    requiresApproval: false,
+    dryRunSupported: true,
+  },
+  {
+    type: "clone",
+    risk: "safe",
+    command: "git clone",
+    description: "Clone repository",
+    requiresApproval: false,
+    dryRunSupported: true,
+  },
+  {
+    type: "init",
+    risk: "safe",
+    command: "git init",
+    description: "Initialize repo",
+    requiresApproval: false,
+    dryRunSupported: true,
+  },
 ];
 
 const PROTECTED_BRANCH_PATTERNS = ["main", "master", "production", "release", "develop", "staging"];
 
 const STATUS_CHAR_MAP: Record<string, GitStatusEntry["status"]> = {
-  "??": "untracked", "!!": "ignored", A: "added", M: "modified",
-  D: "deleted", R: "renamed", C: "copied",
+  "??": "untracked",
+  "!!": "ignored",
+  A: "added",
+  M: "modified",
+  D: "deleted",
+  R: "renamed",
+  C: "copied",
 };
 
-const parseStatusChar = (code: string): GitStatusEntry["status"] =>
-  STATUS_CHAR_MAP[code] ?? "modified";
+const parseStatusChar = (code: string): GitStatusEntry["status"] => STATUS_CHAR_MAP[code] ?? "modified";
 
 const RISK_LABELS: Record<GitOperationRisk, string> = {
-  safe: "read-only", controlled: "requires-approval", dangerous: "requires-review",
+  safe: "read-only",
+  controlled: "requires-approval",
+  dangerous: "requires-review",
 };
 
 export function classifyOperation(type: GitOperationType): GitOperation {
@@ -61,7 +202,10 @@ export function classifyOperation(type: GitOperationType): GitOperation {
 }
 
 export function isProtectedBranch(branch: string): boolean {
-  const normalized = branch.replace(/^origin\//, "").replace(/\*/g, "").trim();
+  const normalized = branch
+    .replace(/^origin\//, "")
+    .replace(/\*/g, "")
+    .trim();
   return PROTECTED_BRANCH_PATTERNS.some((p) => normalized === p);
 }
 
@@ -119,25 +263,30 @@ export async function executeGitLog(
   const count = options?.count ?? 20;
   const ref = options?.branch ?? "HEAD";
   const prettyFormat = "%H|%h|%an|%ae|%ai|%s";
-  const output = await runGit(
-    getExecutionPath(repoPath),
-    ["log", `--max-count=${count}`, `--pretty=format:${prettyFormat}`, ref],
-  );
+  const output = await runGit(getExecutionPath(repoPath), [
+    "log",
+    `--max-count=${count}`,
+    `--pretty=format:${prettyFormat}`,
+    ref,
+  ]);
 
   if (!output.trim()) return [];
 
-  return output.trim().split("\n").map((line) => {
-    const [hash, shortHash, author, email, date, ...rest] = line.split("|");
-    return {
-      hash: hash ?? "",
-      shortHash: shortHash || hash?.substring(0, 7) || "",
-      author: author ?? "unknown",
-      email: email ?? "",
-      date: date ?? "",
-      message: rest.join("|") || line,
-      branch: ref,
-    };
-  });
+  return output
+    .trim()
+    .split("\n")
+    .map((line) => {
+      const [hash, shortHash, author, email, date, ...rest] = line.split("|");
+      return {
+        hash: hash ?? "",
+        shortHash: shortHash || hash?.substring(0, 7) || "",
+        author: author ?? "unknown",
+        email: email ?? "",
+        date: date ?? "",
+        message: rest.join("|") || line,
+        branch: ref,
+      };
+    });
 }
 
 export async function executeGitDiff(
@@ -152,29 +301,36 @@ export async function executeGitDiff(
   const output = await runGit(getExecutionPath(repoPath), parts);
   if (!output.trim()) return [];
 
-  return output.trim().split("\n").filter(Boolean).map((line) => {
-    const diffMatch = line.match(/^(.+?)\s+\|\s*(\d+)\s+(\d+)?$/);
-    if (!diffMatch) return { filePath: line, status: "modified" as const, additions: 0, deletions: 0 };
-    return {
-      filePath: diffMatch[1] ?? "",
-      status: "modified" as const,
-      additions: parseInt(diffMatch[2] ?? "0", 10),
-      deletions: parseInt(diffMatch[3] ?? "0", 10),
-    };
-  });
+  return output
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const diffMatch = line.match(/^(.+?)\s+\|\s*(\d+)\s+(\d+)?$/);
+      if (!diffMatch) return { filePath: line, status: "modified" as const, additions: 0, deletions: 0 };
+      return {
+        filePath: diffMatch[1] ?? "",
+        status: "modified" as const,
+        additions: parseInt(diffMatch[2] ?? "0", 10),
+        deletions: parseInt(diffMatch[3] ?? "0", 10),
+      };
+    });
 }
 
 export async function executeGitBranches(repoPath: string): Promise<GitBranch[]> {
   const output = await runGit(getExecutionPath(repoPath), "branch -a --no-color");
   if (!output.trim()) return [];
 
-  return output.trim().split("\n").map((line) => {
-    const trimmed = line.trim();
-    const current = trimmed.startsWith("*");
-    const name = trimmed.replace("* ", "").replace(/^remotes\/[^/]+\//, "");
-    const remote = trimmed.startsWith("remotes/") ? trimmed : undefined;
-    return { name, current, ahead: 0, behind: 0, ...(remote !== undefined && { remote }) };
-  });
+  return output
+    .trim()
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      const current = trimmed.startsWith("*");
+      const name = trimmed.replace("* ", "").replace(/^remotes\/[^/]+\//, "");
+      const remote = trimmed.startsWith("remotes/") ? trimmed : undefined;
+      return { name, current, ahead: 0, behind: 0, ...(remote !== undefined && { remote }) };
+    });
 }
 
 export async function executeGitOperation(

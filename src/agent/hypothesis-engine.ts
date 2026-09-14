@@ -136,7 +136,8 @@ const HYPOTHESIS_PATTERNS: ReadonlyArray<HypothesisPattern> = [
     hypothesis: {
       id: "hyp-test-assertion",
       title: "Test Assertion Mismatch",
-      description: "A test is failing because the actual output doesn't match the expected assertion. The test or the code under test changed.",
+      description:
+        "A test is failing because the actual output doesn't match the expected assertion. The test or the code under test changed.",
       category: "TEST_FAILURE",
       confidence: 0.87,
       rationale: "Test failure or assertion error detected in query.",
@@ -153,7 +154,8 @@ const HYPOTHESIS_PATTERNS: ReadonlyArray<HypothesisPattern> = [
     hypothesis: {
       id: "hyp-performance",
       title: "Performance Bottleneck",
-      description: "An inefficient algorithm, N+1 query, or unoptimized loop is causing excessive resource consumption.",
+      description:
+        "An inefficient algorithm, N+1 query, or unoptimized loop is causing excessive resource consumption.",
       category: "PERFORMANCE",
       confidence: 0.78,
       rationale: "Performance-related keywords detected in query.",
@@ -169,9 +171,10 @@ const HYPOTHESIS_PATTERNS: ReadonlyArray<HypothesisPattern> = [
     hypothesis: {
       id: "hyp-security",
       title: "Security Vulnerability",
-      description: "An injection, XSS, authentication bypass, or other security vulnerability may be present in the code path.",
+      description:
+        "An injection, XSS, authentication bypass, or other security vulnerability may be present in the code path.",
       category: "SECURITY",
-      confidence: 0.80,
+      confidence: 0.8,
       rationale: "Security-related keywords detected in query.",
     },
   },
@@ -186,7 +189,8 @@ const HYPOTHESIS_PATTERNS: ReadonlyArray<HypothesisPattern> = [
     hypothesis: {
       id: "hyp-config",
       title: "Configuration / Environment Issue",
-      description: "A missing or incorrect environment variable, build config, or dependency resolution is causing failures.",
+      description:
+        "A missing or incorrect environment variable, build config, or dependency resolution is causing failures.",
       category: "CONFIGURATION",
       confidence: 0.83,
       rationale: "Configuration-related error detected in query.",
@@ -207,7 +211,8 @@ function generateQueryFallbacks(query: string): Array<Omit<Hypothesis, "status" 
       description: `Investigation of "${query.slice(0, 100)}" points to an unexpected code path or incorrect conditional logic${fileContext}. Tracing execution to identify where actual behavior diverges from expected.`,
       category: "LOGIC_ERROR",
       confidence: 0.65,
-      rationale: "General bug report pattern detected — no specific error signature matched, so a logic error is the most likely root cause.",
+      rationale:
+        "General bug report pattern detected — no specific error signature matched, so a logic error is the most likely root cause.",
     });
   }
 
@@ -215,7 +220,8 @@ function generateQueryFallbacks(query: string): Array<Omit<Hypothesis, "status" 
     fallbacks.push({
       id: "hyp-test-issue",
       title: "Test Logic or Fixture Issue",
-      description: "The test itself may have incorrect assertions, stale fixtures, or mock setup that doesn't reflect current code behavior.",
+      description:
+        "The test itself may have incorrect assertions, stale fixtures, or mock setup that doesn't reflect current code behavior.",
       category: "TEST_FAILURE",
       confidence: 0.68,
       rationale: "Test-related query — failure may stem from the test code rather than the code under test.",
@@ -226,7 +232,8 @@ function generateQueryFallbacks(query: string): Array<Omit<Hypothesis, "status" 
     fallbacks.push({
       id: "hyp-deploy-issue",
       title: "Deployment / Build Environment Issue",
-      description: "A difference between local and remote build environments, missing dependencies, or incorrect build configuration is causing the issue.",
+      description:
+        "A difference between local and remote build environments, missing dependencies, or incorrect build configuration is causing the issue.",
       category: "CONFIGURATION",
       confidence: 0.62,
       rationale: "Deployment/build context detected — environment differences are a common source of failures.",
@@ -237,7 +244,8 @@ function generateQueryFallbacks(query: string): Array<Omit<Hypothesis, "status" 
     fallbacks.push({
       id: "hyp-api-contract",
       title: "API Contract or Request/Response Mismatch",
-      description: "The API endpoint may be returning unexpected data, or the client may be sending incorrect parameters. Checking request/response formats and status codes.",
+      description:
+        "The API endpoint may be returning unexpected data, or the client may be sending incorrect parameters. Checking request/response formats and status codes.",
       category: "CONTRACT_VIOLATION",
       confidence: 0.64,
       rationale: "API-related query — contract violations between client and server are common failure modes.",
@@ -248,10 +256,12 @@ function generateQueryFallbacks(query: string): Array<Omit<Hypothesis, "status" 
     fallbacks.push({
       id: "hyp-database-issue",
       title: "Database Query or Connection Issue",
-      description: "A malformed query, missing index, connection pool exhaustion, or schema mismatch may be causing the database-related failure.",
+      description:
+        "A malformed query, missing index, connection pool exhaustion, or schema mismatch may be causing the database-related failure.",
       category: "RESOURCE_EXHAUSTION",
       confidence: 0.66,
-      rationale: "Database-related keywords detected — query or connection issues are the most common database failures.",
+      rationale:
+        "Database-related keywords detected — query or connection issues are the most common database failures.",
     });
   }
 
@@ -259,7 +269,8 @@ function generateQueryFallbacks(query: string): Array<Omit<Hypothesis, "status" 
     fallbacks.push({
       id: "hyp-auth-issue",
       title: "Authentication / Authorization Logic Error",
-      description: "Token validation, session management, or role-based permission checks may be failing or rejecting valid requests.",
+      description:
+        "Token validation, session management, or role-based permission checks may be failing or rejecting valid requests.",
       category: "LOGIC_ERROR",
       confidence: 0.67,
       rationale: "Auth-related query — permission or token validation logic is a frequent source of subtle bugs.",

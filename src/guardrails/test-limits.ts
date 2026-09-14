@@ -22,7 +22,11 @@ const runResourceLimitTests = async () => {
 
   const assert = (condition: boolean, testName: string) => {
     console.warn(condition ? `[PASS] ${testName}` : `[FAIL] ${testName}`);
-    if (condition) { passed++; } else { failed++; }
+    if (condition) {
+      passed++;
+    } else {
+      failed++;
+    }
   };
 
   const expectThrow = async (fn: () => unknown, testName: string) => {
@@ -42,7 +46,10 @@ const runResourceLimitTests = async () => {
   await expectThrow(() => validateTopK(-5), "Invalid negative topK rejected");
   await expectThrow(() => validateTopK(Number.NaN), "NaN / non-integer limits rejected");
 
-  assert(Buffer.byteLength(validateChunkContentSize("b".repeat(40000)), "utf8") <= 32768, "Oversized chunk content safely bounded to 32 KB");
+  assert(
+    Buffer.byteLength(validateChunkContentSize("b".repeat(40000)), "utf8") <= 32768,
+    "Oversized chunk content safely bounded to 32 KB",
+  );
 
   await expectThrow(() => validateRepositoryScan(10001, 100), "Repository file-count limit enforced");
   await expectThrow(() => validateRepositoryScan(500, 600 * 1024 * 1024), "Repository size limit enforced");
@@ -53,7 +60,10 @@ const runResourceLimitTests = async () => {
 
   const retriever = new CodeRetriever(process.cwd(), "ai-chatbot");
   await retriever.initialize();
-  await expectThrow(() => retriever.retrieve("Where is normalizeId used?", { limit: 100 }), "CodeRetriever rejected limit=100 bypassing API layer");
+  await expectThrow(
+    () => retriever.retrieve("Where is normalizeId used?", { limit: 100 }),
+    "CodeRetriever rejected limit=100 bypassing API layer",
+  );
 
   await closeDatabase();
   console.warn(`\n${SEPARATOR}`);
@@ -62,8 +72,7 @@ const runResourceLimitTests = async () => {
   if (failed > 0) process.exitCode = 1;
 };
 
-runResourceLimitTests()
-  .catch((err) => {
-    console.error("Resource limit test failed:", err);
-    process.exitCode = 1;
-  });
+runResourceLimitTests().catch((err) => {
+  console.error("Resource limit test failed:", err);
+  process.exitCode = 1;
+});

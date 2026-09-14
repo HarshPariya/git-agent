@@ -53,12 +53,7 @@ import {
 import { getAuditLogHandler, getAuditEntryHandler } from "./api/audit.js";
 import { listScriptsHandler, runScriptHandler } from "./api/scripts.js";
 import { runBisectHandler, detectRegressionHandler } from "./api/bisect.js";
-import {
-  listCiBuildsHandler,
-  getCiBuildHandler,
-  triggerCiBuildHandler,
-  getCiBuildLogsHandler,
-} from "./api/ci.js";
+import { listCiBuildsHandler, getCiBuildHandler, triggerCiBuildHandler, getCiBuildLogsHandler } from "./api/ci.js";
 import {
   listPullRequestsHandler,
   getPullRequestHandler,
@@ -98,12 +93,7 @@ import {
   addProtectedBranchHandler,
   removeProtectedBranchHandler,
 } from "./api/repositories/index.js";
-import {
-  browseFilesystemHandler,
-  resolveFolderHandler,
-  pickNativeDialogHandler,
-  openInOsHandler,
-} from "./api/fs.js";
+import { browseFilesystemHandler, resolveFolderHandler, pickNativeDialogHandler, openInOsHandler } from "./api/fs.js";
 import {
   listUsersHandler,
   allActivityHandler,
@@ -125,7 +115,9 @@ app.use(
   cors({
     origin:
       env.nodeEnv === "production"
-        ? (process.env.CORS_ORIGIN?.split(",").map((origin) => origin.trim()).filter(Boolean) ?? [])
+        ? (process.env.CORS_ORIGIN?.split(",")
+            .map((origin) => origin.trim())
+            .filter(Boolean) ?? [])
         : true,
   }),
 );
@@ -134,11 +126,7 @@ app.use(express.json({ limit: "1mb" }));
 app.use(
   express.raw({
     limit: "1mb",
-    type: [
-      "text/plain",
-      "text/markdown",
-      "application/octet-stream",
-    ],
+    type: ["text/plain", "text/markdown", "application/octet-stream"],
   }),
 );
 
@@ -201,7 +189,14 @@ app.get("/api/info", (_request, response) => {
 app.get("/health", healthHandler);
 app.get("/ready", readinessHandler);
 app.get("/readiness", readinessHandler);
-app.get("/info", (_req, res) => res.json({ service: "Git Debugging Agent", version: "2.0.0", environment: process.env.NODE_ENV || "development", status: "operational" }));
+app.get("/info", (_req, res) =>
+  res.json({
+    service: "Git Debugging Agent",
+    version: "2.0.0",
+    environment: process.env.NODE_ENV || "development",
+    status: "operational",
+  }),
+);
 
 // Authentication
 app.post("/api/auth/register", registerHandler);
@@ -362,9 +357,7 @@ app.get("/api/user/activity", ...protectedRoute, async (request, response, next)
 app.use(errorHandler);
 
 // Serve static frontend
-const publicDir = process.env.PUBLIC_DIR
-  ? path.resolve(process.env.PUBLIC_DIR)
-  : path.resolve(process.cwd(), "public");
+const publicDir = process.env.PUBLIC_DIR ? path.resolve(process.env.PUBLIC_DIR) : path.resolve(process.cwd(), "public");
 app.use(express.static(publicDir));
 app.use((_req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));
@@ -378,10 +371,12 @@ export const startServer = async (): Promise<void> => {
     // Create activity_history indexes for fast per-user queries
     await ensureActivityIndexes();
     // Rehydrate previously-connected repositories across restarts
-    const { repositoryStore }: { repositoryStore: { hydrateFromDb(): Promise<void> } } = await import("./repositories/repository-store.js");
+    const { repositoryStore }: { repositoryStore: { hydrateFromDb(): Promise<void> } } =
+      await import("./repositories/repository-store.js");
     await repositoryStore.hydrateFromDb();
     // Backfill created_at for users who signed up before the field existed
-    const { backfillUserCreatedAt }: { backfillUserCreatedAt: () => Promise<void> } = await import("./db/persistence.js");
+    const { backfillUserCreatedAt }: { backfillUserCreatedAt: () => Promise<void> } =
+      await import("./db/persistence.js");
     await backfillUserCreatedAt();
   } catch (error) {
     logger.warn("MongoDB connection failed — continuing without database", {
@@ -408,23 +403,26 @@ export const startServer = async (): Promise<void> => {
       process.exit(1);
     }, 10000);
 
-    server.close(() => void (async () => {
-      logger.info("HTTP server closed.");
-      try {
-        const { closeDatabase } = await import("./db/mongodb.js");
-        await closeDatabase();
-        logger.info("Database connection closed.");
-        clearTimeout(shutdownTimeout);
-        process.exit(0);
-      } catch (error: unknown) {
-        logger.error("Error closing database", {
-          operation: "graceful-shutdown",
-          metadata: { error: error instanceof Error ? error.message : String(error) },
-        });
-        clearTimeout(shutdownTimeout);
-        process.exit(1);
-      }
-    })())
+    server.close(
+      () =>
+        void (async () => {
+          logger.info("HTTP server closed.");
+          try {
+            const { closeDatabase } = await import("./db/mongodb.js");
+            await closeDatabase();
+            logger.info("Database connection closed.");
+            clearTimeout(shutdownTimeout);
+            process.exit(0);
+          } catch (error: unknown) {
+            logger.error("Error closing database", {
+              operation: "graceful-shutdown",
+              metadata: { error: error instanceof Error ? error.message : String(error) },
+            });
+            clearTimeout(shutdownTimeout);
+            process.exit(1);
+          }
+        })(),
+    );
   };
 
   process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
@@ -435,10 +433,12 @@ const currentFilePath = fileURLToPath(import.meta.url);
 const executedFilePath = process.argv[1] ? path.resolve(process.argv[1]) : "";
 const isDirectExecution =
   currentFilePath === executedFilePath ||
-  Boolean(
-    executedFilePath &&
-    currentFilePath.endsWith(path.basename(executedFilePath)),
-  ) ||
+  Boolean(executedFilePath && currentFilePath.endsWith(path.basename(executedFilePath))) ||
   process.argv.some((arg) => arg.includes("app.ts") || arg.includes("app.js"));
 
-if (isDirectExecution) { startServer().catch((err) => { console.error("Failed to start server:", err); process.exit(1); }); }
+if (isDirectExecution) {
+  startServer().catch((err) => {
+    console.error("Failed to start server:", err);
+    process.exit(1);
+  });
+}

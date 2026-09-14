@@ -25,12 +25,19 @@ const hashFeature = (feature: string): number => {
 
 const createEmbedding = (text: string): number[] => {
   const vector = new Array<number>(DIMENSIONS).fill(0);
-  const words = text.toLowerCase().replace(/[^a-z0-9_$.-]+/g, " ").trim().split(/\s+/).filter(Boolean);
+  const words = text
+    .toLowerCase()
+    .replace(/[^a-z0-9_$.-]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
 
   const features = [
     ...words.map((w) => `word:${w}`),
     ...words.slice(0, -1).map((w, i) => `pair:${w}_${words[i + 1]}`),
-    ...words.filter((w) => w.length >= 3).flatMap((w) => Array.from({ length: w.length - 2 }, (_, i) => `tri:${w.slice(i, i + 3)}`)),
+    ...words
+      .filter((w) => w.length >= 3)
+      .flatMap((w) => Array.from({ length: w.length - 2 }, (_, i) => `tri:${w.slice(i, i + 3)}`)),
   ];
 
   for (const feature of features) {
@@ -43,7 +50,7 @@ const createEmbedding = (text: string): number[] => {
   return magnitude === 0 ? vector : vector.map((v) => v / magnitude);
 };
 
-export const getExtractor = (): (text: string) => number[] => createEmbedding;
+export const getExtractor = (): ((text: string) => number[]) => createEmbedding;
 
 export interface EmbedOptions {
   maxRetries?: number;
@@ -79,5 +86,6 @@ export const getEmbeddingMetrics = () => ({
   modelLoadTimeMs: metrics.modelLoadTimeMs,
   totalEmbeddings: metrics.totalEmbeddings,
   failedEmbeddings: metrics.failedEmbeddings,
-  averageLatencyMs: metrics.totalEmbeddings > 0 ? Math.round(metrics.totalEmbeddingTimeMs / metrics.totalEmbeddings) : 0,
+  averageLatencyMs:
+    metrics.totalEmbeddings > 0 ? Math.round(metrics.totalEmbeddingTimeMs / metrics.totalEmbeddings) : 0,
 });

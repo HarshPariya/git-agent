@@ -49,9 +49,11 @@ export interface RetrieverStats {
 }
 
 const WRITE_VERBS_PATTERN = /^(?:create|write|generate|make|add|build|edit|modify|update|delete|remove)\b/i;
-const WRITE_ACTION_PATTERN = /\b(?:create|write|generate|make|add|build|edit|modify|update|delete|remove)\s+(?:a\s+|new\s+)?(?:file\s+)?/i;
+const WRITE_ACTION_PATTERN =
+  /\b(?:create|write|generate|make|add|build|edit|modify|update|delete|remove)\s+(?:a\s+|new\s+)?(?:file\s+)?/i;
 const LOCATION_PATTERN = /\b(?:where|find|locate|location|path)\b/i;
-const CONTENT_PATTERN = /\b(?:show|read|display|contents?|lines?|functions?|classes?|interfaces?|symbols?|relationship|related|explain|works?|what does)\b/i;
+const CONTENT_PATTERN =
+  /\b(?:show|read|display|contents?|lines?|functions?|classes?|interfaces?|symbols?|relationship|related|explain|works?|what does)\b/i;
 const FILENAME_PATTERN = /(?:^|[\s"'`])([a-z0-9_$.-]+\.[a-z0-9]+)(?=$|[\s?.,!"'`])/i;
 const SYMBOL_PATTERN = /\bwhere\s+is\s+([a-z_$][a-z0-9_$]*)\s+(?:implemented|defined|declared|located)\b/i;
 
@@ -59,14 +61,12 @@ export const parseRequestedFilename = (query: string): string | undefined => {
   const normalized = query.trim().toLowerCase();
 
   if (WRITE_VERBS_PATTERN.test(normalized) || WRITE_ACTION_PATTERN.test(normalized)) return undefined;
-  if (LOCATION_PATTERN.test(normalized) && !CONTENT_PATTERN.test(normalized))
-    return query.match(FILENAME_PATTERN)?.[1];
+  if (LOCATION_PATTERN.test(normalized) && !CONTENT_PATTERN.test(normalized)) return query.match(FILENAME_PATTERN)?.[1];
 
   return undefined;
 };
 
-export const parseRequestedSymbol = (query: string): string | undefined =>
-  query.match(SYMBOL_PATTERN)?.[1];
+export const parseRequestedSymbol = (query: string): string | undefined => query.match(SYMBOL_PATTERN)?.[1];
 
 export class CodeRetriever {
   private static readonly snapshots = new Map<
@@ -118,19 +118,20 @@ export class CodeRetriever {
     const currentHash = computeRepositoryHash(parsedFiles);
     const cached = await loadGraphCache();
 
-    const { entities, relationships } = cached?.repositoryHash === currentHash
-      ? (() => {
-        console.warn("Loaded graph from disk cache (.cache/graphrag/graph.json)");
-        metricsCollector.recordCacheHit(true);
-        return cached;
-      })()
-      : (() => {
-        console.warn("Graph cache miss / changed - extracting entities & relationships...");
-        metricsCollector.recordCacheHit(false);
-        const entities = extractEntities(parsedFiles);
-        const relationships = extractRelationships(parsedFiles, entities);
-        return { entities, relationships };
-      })();
+    const { entities, relationships } =
+      cached?.repositoryHash === currentHash
+        ? (() => {
+            console.warn("Loaded graph from disk cache (.cache/graphrag/graph.json)");
+            metricsCollector.recordCacheHit(true);
+            return cached;
+          })()
+        : (() => {
+            console.warn("Graph cache miss / changed - extracting entities & relationships...");
+            metricsCollector.recordCacheHit(false);
+            const entities = extractEntities(parsedFiles);
+            const relationships = extractRelationships(parsedFiles, entities);
+            return { entities, relationships };
+          })();
 
     if (cached?.repositoryHash !== currentHash) {
       await saveGraphCache({ repositoryHash: currentHash, entities, relationships });
@@ -148,9 +149,9 @@ export class CodeRetriever {
 
     console.warn(
       `Parsed files: ${parsedFiles.length}\n` +
-      `Code chunks: ${this.chunks.length}\n` +
-      `Graph nodes: ${this.graph.nodes.size}\n` +
-      `Graph edges: ${this.graph.edges.length}`
+        `Code chunks: ${this.chunks.length}\n` +
+        `Graph nodes: ${this.graph.nodes.size}\n` +
+        `Graph edges: ${this.graph.edges.length}`,
     );
 
     try {
@@ -235,9 +236,10 @@ export class CodeRetriever {
       ? this.chunks.filter((c) => path.basename(c.filePath).toLowerCase() === requestedFilename)
       : [];
 
-    const partialFileChunks = requestedFilename && exactFileChunks.length === 0
-      ? this.chunks.filter((c) => path.basename(c.filePath).toLowerCase().includes(requestedFilename))
-      : [];
+    const partialFileChunks =
+      requestedFilename && exactFileChunks.length === 0
+        ? this.chunks.filter((c) => path.basename(c.filePath).toLowerCase().includes(requestedFilename))
+        : [];
 
     const fileLookupChunks = exactFileChunks.length > 0 ? exactFileChunks : partialFileChunks;
 
@@ -246,20 +248,22 @@ export class CodeRetriever {
     }
 
     if (requestedFilename) {
-      return [{
-        rank: 1,
-        name: requestedFilename,
-        type: "file",
-        filePath: "repository-index",
-        startLine: 0,
-        endLine: 0,
-        content: `No ${requestedFilename} file exists in the indexed repository.`,
-        score: 1,
-        vectorScore: 0,
-        graphScore: 0,
-        rerankScore: 1,
-        sources: ["vector"],
-      }];
+      return [
+        {
+          rank: 1,
+          name: requestedFilename,
+          type: "file",
+          filePath: "repository-index",
+          startLine: 0,
+          endLine: 0,
+          content: `No ${requestedFilename} file exists in the indexed repository.`,
+          score: 1,
+          vectorScore: 0,
+          graphScore: 0,
+          rerankScore: 1,
+          sources: ["vector"],
+        },
+      ];
     }
 
     return this.executeHybridSearch(sanitizedQuery, requestedLimit, options, startTotal);
@@ -296,7 +300,7 @@ export class CodeRetriever {
     sanitizedQuery: string,
     requestedLimit: number,
     options: RetrieverOptions,
-    startTotal: number
+    startTotal: number,
   ): Promise<RetrievedContext[]> {
     let vectorResults: VectorSearchResult[] = [];
     let vectorMs = 0;
@@ -354,7 +358,12 @@ export class CodeRetriever {
   }
 
   async search(request: { readonly query: string; readonly limit?: number }): Promise<
-    readonly { readonly content: string; readonly source: string; readonly score: number; readonly metadata?: Readonly<Record<string, string>> }[]
+    readonly {
+      readonly content: string;
+      readonly source: string;
+      readonly score: number;
+      readonly metadata?: Readonly<Record<string, string>>;
+    }[]
   > {
     if (!this.initialized) return [];
 
@@ -385,24 +394,30 @@ export class CodeRetriever {
 
       return {
         content: r.content || r.name,
-        source: r.filePath && r.filePath !== "repository-index"
-          ? path.resolve(this.rootDirectory, r.filePath)
-          : r.filePath || r.name,
+        source:
+          r.filePath && r.filePath !== "repository-index"
+            ? path.resolve(this.rootDirectory, r.filePath)
+            : r.filePath || r.name,
         score: r.score,
         metadata,
       };
     });
   }
 
-  private findSymbolChunks(symbol: string, limit: number): Array<{
+  private findSymbolChunks(
+    symbol: string,
+    limit: number,
+  ): Array<{
     content: string;
     source: string;
     score: number;
     metadata: Record<string, string>;
   }> {
     return this.chunks
-      .filter((c) => c.name?.toLowerCase() === symbol.toLowerCase() &&
-        existsSync(path.resolve(this.rootDirectory, c.filePath)))
+      .filter(
+        (c) =>
+          c.name?.toLowerCase() === symbol.toLowerCase() && existsSync(path.resolve(this.rootDirectory, c.filePath)),
+      )
       .slice(0, limit)
       .map((chunk) => {
         const relativePath = chunk.filePath.replace(/\\/g, "/");

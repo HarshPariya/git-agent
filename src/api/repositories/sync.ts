@@ -14,7 +14,11 @@ const requireString = (body: unknown, key: string): string => {
   return value.trim();
 };
 
-export const syncRepositoryHandler = async (request: Request, response: Response, next: NextFunction): Promise<void> => {
+export const syncRepositoryHandler = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): Promise<void> => {
   try {
     const context = getTenantContext(request);
     const repositoryId = requireString(request.body, "repositoryId");

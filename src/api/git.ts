@@ -1,7 +1,18 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { NextFunction, Request, Response } from "express";
-import { classifyOperation, executeGitBranches, executeGitDiff, executeGitLog, executeGitOperation, executeGitStatus, getExecutionPath, getRiskLabel, GIT_OPERATION_CATALOG, type GitOperationType } from "../git/engine.js";
+import {
+  classifyOperation,
+  executeGitBranches,
+  executeGitDiff,
+  executeGitLog,
+  executeGitOperation,
+  executeGitStatus,
+  getExecutionPath,
+  getRiskLabel,
+  GIT_OPERATION_CATALOG,
+  type GitOperationType,
+} from "../git/engine.js";
 import { AppError } from "../errors/app-error.js";
 import { conflictAnalyzer } from "../git/conflicts.js";
 import { executeSafeCommit } from "../git/commit.js";
@@ -14,8 +25,8 @@ import { execAsync, validateBranchName, validateRemoteName, escapeShellArg } fro
 import { logger } from "../logging/logger.js";
 
 const getGitRequestData = (request: Request): Record<string, unknown> => ({
-  ...request.query as Record<string, unknown>,
-  ...(typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {}),
+  ...(request.query as Record<string, unknown>),
+  ...(typeof request.body === "object" && request.body !== null ? (request.body as Record<string, unknown>) : {}),
 });
 
 const requireString = (body: Record<string, unknown>, key: string): string => {
@@ -30,10 +41,18 @@ const optionalString = (body: Record<string, unknown>, key: string): string | un
 };
 
 const validateRepositoryAccess = async (repoId: string): Promise<void> => {
-  try { await executeGitStatus(repoId); } catch { throw new AppError("Repository not accessible", "VALIDATION_ERROR", 400); }
+  try {
+    await executeGitStatus(repoId);
+  } catch {
+    throw new AppError("Repository not accessible", "VALIDATION_ERROR", 400);
+  }
 };
 
-const executeGitCommand = async (cmd: string, cwd: string, timeout = 60000): Promise<{ success: boolean; output: string; error?: string | undefined }> => {
+const executeGitCommand = async (
+  cmd: string,
+  cwd: string,
+  timeout = 60000,
+): Promise<{ success: boolean; output: string; error?: string | undefined }> => {
   try {
     const { stdout, stderr } = await execAsync(cmd, { cwd, timeout });
     return { success: true, output: stdout.trim() || stderr.trim() || "Operation completed." };
@@ -50,7 +69,9 @@ export async function gitStatusHandler(request: Request, response: Response, nex
     await validateRepositoryAccess(repoId);
     const status = await executeGitStatus(repoId);
     response.status(200).json(status);
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 }
 
 export async function gitLogHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
@@ -62,7 +83,9 @@ export async function gitLogHandler(request: Request, response: Response, next: 
     const branch = optionalString(body, "branch");
     const entries = await executeGitLog(repoId, { count, ...(branch !== undefined && { branch }) });
     response.status(200).json({ commits: entries, entries });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 }
 
 export async function gitConflictsHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
@@ -71,10 +94,16 @@ export async function gitConflictsHandler(request: Request, response: Response, 
     const repoId = requireString(body, "repositoryId");
     const result = await conflictAnalyzer.analyzeRepository(getExecutionPath(repoId));
     response.status(200).json(result);
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 }
 
-export async function gitConflictResolveHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export async function gitConflictResolveHandler(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
@@ -85,22 +114,32 @@ export async function gitConflictResolveHandler(request: Request, response: Resp
       const resolution = await conflictAnalyzer.resolveFile({
         filePath,
         hasConflicts: true,
-        markers: [{
-          filePath,
-          startLine: 1,
-          endLine: 1,
-          baseLines: typeof body.base === "string" ? (body.base).split("\n") : [],
-          ourLines: (body.ours).split("\n"),
-          theirLines: (body.theirs).split("\n"),
-        }],
+        markers: [
+          {
+            filePath,
+            startLine: 1,
+            endLine: 1,
+            baseLines: typeof body.base === "string" ? body.base.split("\n") : [],
+            ourLines: body.ours.split("\n"),
+            theirLines: body.theirs.split("\n"),
+          },
+        ],
       });
-      response.status(200).json({ filePath, resolution: resolution.resolvedContent, strategy: resolution.strategy, confidence: resolution.confidence, explanation: resolution.explanation });
+      response.status(200).json({
+        filePath,
+        resolution: resolution.resolvedContent,
+        strategy: resolution.strategy,
+        confidence: resolution.confidence,
+        explanation: resolution.explanation,
+      });
       return;
     }
 
     const result = await conflictAnalyzer.resolveAllConflicts(repoPath);
     response.status(200).json(result);
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 }
 
 export async function gitCommitHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
@@ -108,9 +147,14 @@ export async function gitCommitHandler(request: Request, response: Response, nex
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
     const message = optionalString(body, "message");
-    const result = await executeSafeCommit(getExecutionPath(repoId), { ...(message !== undefined ? { message } : {}), stageAll: body.stageAll !== false });
+    const result = await executeSafeCommit(getExecutionPath(repoId), {
+      ...(message !== undefined ? { message } : {}),
+      stageAll: body.stageAll !== false,
+    });
     response.status(result.success ? 200 : 400).json(result);
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 }
 
 export async function gitPushHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
@@ -127,7 +171,9 @@ export async function gitPushHandler(request: Request, response: Response, next:
       allowForce: body.allowForce === true,
     });
     response.status(result.success ? 200 : 400).json(result);
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 }
 
 export async function gitPullHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
@@ -144,7 +190,9 @@ export async function gitPullHandler(request: Request, response: Response, next:
 
     const result = await executeGitCommand(cmd, getExecutionPath(repoId));
     response.status(200).json({ ...result, remote });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 }
 
 export async function gitFetchHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
@@ -157,7 +205,9 @@ export async function gitFetchHandler(request: Request, response: Response, next
 
     const result = await executeGitCommand(cmd, getExecutionPath(repoId));
     response.status(200).json({ ...result, remote });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 }
 
 export async function gitCheckoutHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
@@ -167,11 +217,14 @@ export async function gitCheckoutHandler(request: Request, response: Response, n
     const rawBranch = optionalString(body, "branch");
     if (!rawBranch) throw new AppError("branch is required", "VALIDATION_ERROR", 400);
     const branch = validateBranchName(rawBranch);
-    const cmd = body.create === true ? `git checkout -b ${escapeShellArg(branch)}` : `git checkout ${escapeShellArg(branch)}`;
+    const cmd =
+      body.create === true ? `git checkout -b ${escapeShellArg(branch)}` : `git checkout ${escapeShellArg(branch)}`;
 
     const result = await executeGitCommand(cmd, getExecutionPath(repoId), 30000);
     response.status(200).json({ ...result, branch });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 }
 
 export async function gitDiffHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
@@ -185,20 +238,41 @@ export async function gitDiffHandler(request: Request, response: Response, next:
     let diffText = "";
 
     if (filePath) {
-      const tryCmds = [`git diff -- "${filePath}"`, `git diff --cached -- "${filePath}"`, `git diff HEAD -- "${filePath}"`, `git diff HEAD^..HEAD -- "${filePath}"`];
+      const tryCmds = [
+        `git diff -- "${filePath}"`,
+        `git diff --cached -- "${filePath}"`,
+        `git diff HEAD -- "${filePath}"`,
+        `git diff HEAD^..HEAD -- "${filePath}"`,
+      ];
       for (const cmd of tryCmds) {
         if (diffText) break;
-        try { const { stdout } = await execAsync(cmd, { cwd: repoPath }); if (stdout.trim()) diffText = stdout.trim(); } catch (err: unknown) {
-          logger.warn("git diff command failed", { operation: "git-diff", metadata: { cmd, error: err instanceof Error ? err.message : String(err) } });
+        try {
+          const { stdout } = await execAsync(cmd, { cwd: repoPath });
+          if (stdout.trim()) diffText = stdout.trim();
+        } catch (err: unknown) {
+          logger.warn("git diff command failed", {
+            operation: "git-diff",
+            metadata: { cmd, error: err instanceof Error ? err.message : String(err) },
+          });
         }
       }
       if (!diffText) {
         try {
           const content = await fs.readFile(path.resolve(repoPath, filePath), "utf-8");
           const lines = content.split("\n");
-          diffText = [`diff --git a/${filePath} b/${filePath}`, "new file mode 100644", "--- /dev/null", `+++ b/${filePath}`, `@@ -0,0 +1,${lines.length} @@`, ...lines.map((l) => `+${l}`)].join("\n");
+          diffText = [
+            `diff --git a/${filePath} b/${filePath}`,
+            "new file mode 100644",
+            "--- /dev/null",
+            `+++ b/${filePath}`,
+            `@@ -0,0 +1,${lines.length} @@`,
+            ...lines.map((l) => `+${l}`),
+          ].join("\n");
         } catch (err: unknown) {
-          logger.warn("Failed to read file for diff fallback", { operation: "git-diff", metadata: { filePath, error: err instanceof Error ? err.message : String(err) } });
+          logger.warn("Failed to read file for diff fallback", {
+            operation: "git-diff",
+            metadata: { filePath, error: err instanceof Error ? err.message : String(err) },
+          });
         }
       }
     } else {
@@ -207,22 +281,42 @@ export async function gitDiffHandler(request: Request, response: Response, next:
         const { stdout: stagedOut } = await execAsync("git diff --cached", { cwd: repoPath });
         diffText = [unstagedOut.trim(), stagedOut.trim()].filter(Boolean).join("\n");
         const { stdout: untrackedOut } = await execAsync("git ls-files --others --exclude-standard", { cwd: repoPath });
-        for (const uFile of untrackedOut.split("\n").map((f) => f.trim()).filter(Boolean).slice(0, 15)) {
+        for (const uFile of untrackedOut
+          .split("\n")
+          .map((f) => f.trim())
+          .filter(Boolean)
+          .slice(0, 15)) {
           try {
             const content = await fs.readFile(path.resolve(repoPath, uFile), "utf-8");
             const lines = content.split("\n");
-            const uDiff = [`diff --git a/${uFile} b/${uFile}`, "new file mode 100644", "--- /dev/null", `+++ b/${uFile}`, `@@ -0,0 +1,${lines.length} @@`, ...lines.map((l) => `+${l}`)].join("\n");
+            const uDiff = [
+              `diff --git a/${uFile} b/${uFile}`,
+              "new file mode 100644",
+              "--- /dev/null",
+              `+++ b/${uFile}`,
+              `@@ -0,0 +1,${lines.length} @@`,
+              ...lines.map((l) => `+${l}`),
+            ].join("\n");
             diffText = diffText ? `${diffText}\n\n${uDiff}` : uDiff;
           } catch (err: unknown) {
-            logger.warn("Failed to read untracked file for diff", { operation: "git-diff", metadata: { file: uFile, error: err instanceof Error ? err.message : String(err) } });
+            logger.warn("Failed to read untracked file for diff", {
+              operation: "git-diff",
+              metadata: { file: uFile, error: err instanceof Error ? err.message : String(err) },
+            });
           }
         }
       } catch (err: unknown) {
-        logger.warn("git diff commands failed", { operation: "git-diff", metadata: { error: err instanceof Error ? err.message : String(err) } });
+        logger.warn("git diff commands failed", {
+          operation: "git-diff",
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
       }
     }
 
-    const entries = await executeGitDiff(repoId, { ...(staged && { staged }), ...(filePath !== undefined && { filePath }) });
+    const entries = await executeGitDiff(repoId, {
+      ...(staged && { staged }),
+      ...(filePath !== undefined && { filePath }),
+    });
     response.status(200).json({
       success: true,
       diff: diffText,
@@ -230,7 +324,9 @@ export async function gitDiffHandler(request: Request, response: Response, next:
       entries,
       files: entries.map((e) => ({ ...e, diff: e.filePath === filePath ? diffText : "" })),
     });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 }
 
 export async function gitBranchesHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
@@ -240,7 +336,9 @@ export async function gitBranchesHandler(request: Request, response: Response, n
     await validateRepositoryAccess(repoId);
     const branches = await executeGitBranches(repoId);
     response.status(200).json(branches);
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 }
 
 export async function gitExecuteHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
@@ -249,16 +347,26 @@ export async function gitExecuteHandler(request: Request, response: Response, ne
     const catalogEntry = GIT_OPERATION_CATALOG.find((op) => op.type === operation);
     if (!catalogEntry) throw new AppError(`Unknown git operation: ${operation}`, "VALIDATION_ERROR", 400);
 
-    const body = typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {};
+    const body =
+      typeof request.body === "object" && request.body !== null ? (request.body as Record<string, unknown>) : {};
     const repoId = requireString(body, "repositoryId");
     await validateRepositoryAccess(repoId);
 
-    const args = Array.isArray(body.args) ? body.args as string[] : [];
+    const args = Array.isArray(body.args) ? (body.args as string[]) : [];
     const approvalTokenStr = optionalString(body, "approvalToken");
-    const result = await executeGitOperation(repoId, operation, args, approvalTokenStr !== undefined ? { dryRun: body.dryRun === true, approvalToken: approvalTokenStr } : { dryRun: body.dryRun === true });
+    const result = await executeGitOperation(
+      repoId,
+      operation,
+      args,
+      approvalTokenStr !== undefined
+        ? { dryRun: body.dryRun === true, approvalToken: approvalTokenStr }
+        : { dryRun: body.dryRun === true },
+    );
 
     response.status(200).json(result);
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 }
 
 export function gitOperationCatalogHandler(_request: Request, response: Response, next: NextFunction): void {
@@ -273,7 +381,9 @@ export function gitOperationCatalogHandler(_request: Request, response: Response
       dryRunSupported: op.dryRunSupported,
     }));
     response.status(200).json(catalog);
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 }
 
 export function gitClassifyHandler(request: Request, response: Response, next: NextFunction): void {
@@ -287,24 +397,46 @@ export function gitClassifyHandler(request: Request, response: Response, next: N
       dryRunSupported: op.dryRunSupported,
       description: op.description,
     });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 }
 
-export async function gitAnalyzeChangesHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export async function gitAnalyzeChangesHandler(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
     const plan = await analyzeAndPlanCommits(getExecutionPath(repoId));
-    response.status(200).json({ success: true, plan, summary: plan.summary, totalFiles: plan.totalFiles, totalCommits: plan.totalCommits, groups: plan.groups, changedFiles: plan.changedFiles });
-  } catch (error) { next(error); }
+    response.status(200).json({
+      success: true,
+      plan,
+      summary: plan.summary,
+      totalFiles: plan.totalFiles,
+      totalCommits: plan.totalCommits,
+      groups: plan.groups,
+      changedFiles: plan.changedFiles,
+    });
+  } catch (error) {
+    next(error);
+  }
 }
 
-export async function gitExecuteCommitPlanHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export async function gitExecuteCommitPlanHandler(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
     const repoPath = getExecutionPath(repoId);
-    let groups: LogicalChangeGroup[] | undefined = Array.isArray(body.groups) ? body.groups as LogicalChangeGroup[] : undefined;
+    let groups: LogicalChangeGroup[] | undefined = Array.isArray(body.groups)
+      ? (body.groups as LogicalChangeGroup[])
+      : undefined;
 
     if (!groups || groups.length === 0) {
       const plan = await analyzeAndPlanCommits(repoPath);
@@ -312,13 +444,17 @@ export async function gitExecuteCommitPlanHandler(request: Request, response: Re
     }
 
     if (!groups || groups.length === 0) {
-      response.status(200).json({ success: false, message: "No change groups to commit.", commits: [], totalCreated: 0 });
+      response
+        .status(200)
+        .json({ success: false, message: "No change groups to commit.", commits: [], totalCreated: 0 });
       return;
     }
 
     const result = await executeCommitPlan(repoPath, groups);
     response.status(result.success ? 200 : 400).json(result);
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 }
 
 export async function gitSyncHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
@@ -328,7 +464,9 @@ export async function gitSyncHandler(request: Request, response: Response, next:
     const repoPath = getExecutionPath(repoId);
     const remote = optionalString(body, "remote") ? validateRemoteName(body.remote as string) : "origin";
 
-    try { await execAsync(`git fetch ${escapeShellArg(remote)} --prune`, { cwd: repoPath, timeout: 45_000 }); } catch (err: unknown) {
+    try {
+      await execAsync(`git fetch ${escapeShellArg(remote)} --prune`, { cwd: repoPath, timeout: 45_000 });
+    } catch (err: unknown) {
       const error = err as { message?: string };
       logger.warn("git sync fetch warning", { operation: "git-sync", metadata: { error: error.message, remote } });
     }
@@ -368,7 +506,9 @@ export async function gitSyncHandler(request: Request, response: Response, next:
       actionRequired,
       message,
     });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 }
 
 export async function gitShipHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
@@ -388,11 +528,17 @@ export async function gitShipHandler(request: Request, response: Response, next:
       }
     }
 
-    let commitResult = { success: true, commits: [] as Array<{ commitHash: string; commitMessage: string; files: string[] }>, totalCreated: 0 };
+    let commitResult = {
+      success: true,
+      commits: [] as Array<{ commitHash: string; commitMessage: string; files: string[] }>,
+      totalCreated: 0,
+    };
     if (plan.groups.length > 0) {
       const execRes = await executeCommitPlan(repoPath, plan.groups);
       if (!execRes.success) {
-        response.status(400).json({ success: false, message: `Commit step failed: ${execRes.message}`, error: execRes.error });
+        response
+          .status(400)
+          .json({ success: false, message: `Commit step failed: ${execRes.message}`, error: execRes.error });
         return;
       }
       commitResult = execRes;
@@ -419,9 +565,15 @@ export async function gitShipHandler(request: Request, response: Response, next:
       try {
         const { stdout: remoteUrl } = await execAsync("git remote get-url origin", { cwd: repoPath, timeout: 10000 });
         const match = /github\.com[/:]([^/]+)\/([^/.]+)/.exec(remoteUrl.trim());
-        if (match?.[1] && match[2]) { owner = match[1]; repoName = match[2]; }
+        if (match?.[1] && match[2]) {
+          owner = match[1];
+          repoName = match[2];
+        }
       } catch (err: unknown) {
-        logger.warn("Failed to get remote URL", { operation: "git-ship", metadata: { error: err instanceof Error ? err.message : String(err) } });
+        logger.warn("Failed to get remote URL", {
+          operation: "git-ship",
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
       }
     }
 
@@ -432,10 +584,18 @@ export async function gitShipHandler(request: Request, response: Response, next:
       try {
         const title = prTitle || commitResult.commits[0]?.commitMessage || `feat: ship updates on ${sourceBranch}`;
         const prBody = `### AI Ship Automated Pull Request\n\n**Source Branch:** \`${sourceBranch}\`\n**Target Branch:** \`${targetBranch}\`\n\n#### Commits Included (${commitResult.commits.length}):\n${commitResult.commits.map((c) => `- \`${c.commitHash}\`: ${c.commitMessage} (${c.files.length} files)`).join("\n")}\n\n*Verified and shipped automatically by AI Git Debugging Agent.*`;
-        const pr = await createGitHubPR(userId, owner, repoName, { title, body: prBody, head: sourceBranch, base: targetBranch });
+        const pr = await createGitHubPR(userId, owner, repoName, {
+          title,
+          body: prBody,
+          head: sourceBranch,
+          base: targetBranch,
+        });
         prData = { id: pr.id, number: pr.number, url: pr.htmlUrl, title: pr.title };
       } catch (prErr: unknown) {
-        logger.warn("PR creation failed", { operation: "git-ship", metadata: { error: prErr instanceof Error ? prErr.message : String(prErr) } });
+        logger.warn("PR creation failed", {
+          operation: "git-ship",
+          metadata: { error: prErr instanceof Error ? prErr.message : String(prErr) },
+        });
       }
     }
 
@@ -447,19 +607,35 @@ export async function gitShipHandler(request: Request, response: Response, next:
       pushed: true,
       pr: prData,
     });
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 }
 
-export async function generateCommitMessageHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+export async function generateCommitMessageHandler(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
     const status = await executeGitStatus(repoId);
     const statusAny = status as unknown as Record<string, unknown[]>;
-    const changedFiles: unknown[] = [...((status.entries ?? []) as readonly unknown[]), ...(statusAny.staged ?? []), ...(statusAny.unstaged ?? []), ...(statusAny.untracked ?? [])];
+    const changedFiles: unknown[] = [
+      ...((status.entries ?? []) as readonly unknown[]),
+      ...(statusAny.staged ?? []),
+      ...(statusAny.unstaged ?? []),
+      ...(statusAny.untracked ?? []),
+    ];
 
     if (changedFiles.length === 0) {
-      response.status(200).json({ summary: "chore: no changes detected", description: "", files: [], branch: (status as { branch?: string }).branch ?? "main" });
+      response.status(200).json({
+        summary: "chore: no changes detected",
+        description: "",
+        files: [],
+        branch: (status as { branch?: string }).branch ?? "main",
+      });
       return;
     }
 
@@ -470,11 +646,24 @@ export async function generateCommitMessageHandler(request: Request, response: R
       const { stdout: stagedOut } = await execAsync("git diff --cached", { cwd: repoPath });
       diffContext = [unstagedOut.trim(), stagedOut.trim()].filter(Boolean).join("\n").slice(0, 4000);
     } catch (err: unknown) {
-      logger.warn("Failed to get diff context", { operation: "generate-commit", metadata: { error: err instanceof Error ? err.message : String(err) } });
-      diffContext = changedFiles.map((f) => `- ${String((f as Record<string, unknown>).path ?? (f as Record<string, unknown>).filePath ?? f)} (${String((f as Record<string, unknown>).status as string ?? "modified")})`).join("\n");
+      logger.warn("Failed to get diff context", {
+        operation: "generate-commit",
+        metadata: { error: err instanceof Error ? err.message : String(err) },
+      });
+      diffContext = changedFiles
+        .map(
+          (f) =>
+            `- ${String((f as Record<string, unknown>).path ?? (f as Record<string, unknown>).filePath ?? f)} (${String(((f as Record<string, unknown>).status as string) ?? "modified")})`,
+        )
+        .join("\n");
     }
 
-    const fileList = changedFiles.map((f) => { const fo = f as Record<string, unknown>; return `${String(fo.status as string ?? "modified")}: ${String(fo.path ?? fo.filePath ?? f)}`; }).join("\n");
+    const fileList = changedFiles
+      .map((f) => {
+        const fo = f as Record<string, unknown>;
+        return `${String((fo.status as string) ?? "modified")}: ${String(fo.path ?? fo.filePath ?? f)}`;
+      })
+      .join("\n");
     const instructions = `You are a Principal Software Engineer. Write a production-ready, professional Conventional Commit message for these git changes.\n\nStrict Rules:\n1. Format: <type>(<scope>): <clear, concise, imperative summary of what was actually changed/added/fixed>\n2. Types: feat, fix, chore, refactor, style, docs, test, ci, perf, build\n3. The summary line must be <= 72 characters, describing the concrete capability or bug fix (NEVER generic phrases like "update files" or "work in progress").\n4. The description must have 2 to 6 detailed bullet points starting with "- ", explaining:\n   - What architectural changes or capabilities were introduced\n   - Which specific files and components were modified and why\n   - Any UX, API, or bug fix enhancements\n5. Output ONLY valid JSON matching this exact structure:\n{"summary": "feat(scope): concise summary", "description": "- bullet 1\\n- bullet 2\\n- bullet 3"}`;
     const input = `Changed files:\n${fileList}\n\nGit diff (truncated):\n${diffContext}`;
     let summary = "";
@@ -482,54 +671,110 @@ export async function generateCommitMessageHandler(request: Request, response: R
 
     try {
       const llmRes = await generateText({ instructions, input });
-      const clean = llmRes.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+      const clean = llmRes.text
+        .trim()
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```$/, "")
+        .trim();
       try {
         const jsonMatch = /\{[\s\S]*\}/.exec(clean);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]) as { summary?: string; description?: string | string[] };
-          if (parsed.summary && !parsed.summary.toLowerCase().includes("update files")) summary = String(parsed.summary).trim();
-          if (parsed.description) description = Array.isArray(parsed.description) ? parsed.description.join("\n") : String(parsed.description).trim();
+          if (parsed.summary && !parsed.summary.toLowerCase().includes("update files"))
+            summary = String(parsed.summary).trim();
+          if (parsed.description)
+            description = Array.isArray(parsed.description)
+              ? parsed.description.join("\n")
+              : String(parsed.description).trim();
         }
       } catch (err: unknown) {
-        logger.warn("Failed to parse LLM JSON response", { operation: "generate-commit", metadata: { error: err instanceof Error ? err.message : String(err) } });
+        logger.warn("Failed to parse LLM JSON response", {
+          operation: "generate-commit",
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
         const summaryMatch = /"summary"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/.exec(clean);
-        if (summaryMatch?.[1] && !summaryMatch[1].toLowerCase().includes("update files")) summary = summaryMatch[1].replace(/\\"/g, '"').trim();
+        if (summaryMatch?.[1] && !summaryMatch[1].toLowerCase().includes("update files"))
+          summary = summaryMatch[1].replace(/\\"/g, '"').trim();
         const descMatch = /"description"\s*:\s*"([\s\S]*?)"\s*\}/.exec(clean);
-        if (descMatch?.[1]) description = descMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"').split("\n").map((l) => l.trim()).filter(Boolean).join("\n");
+        if (descMatch?.[1])
+          description = descMatch[1]
+            .replace(/\\n/g, "\n")
+            .replace(/\\"/g, '"')
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean)
+            .join("\n");
       }
       if (!summary) {
-        const lines = clean.split("\n").map((l) => l.trim()).filter((l) => !l.startsWith("```") && l);
+        const lines = clean
+          .split("\n")
+          .map((l) => l.trim())
+          .filter((l) => !l.startsWith("```") && l);
         for (const line of lines) {
-          if (/^(feat|fix|chore|refactor|style|docs|test|ci|perf|build)(\([^)]+\))?:/.test(line)) { summary = line; break; }
+          if (/^(feat|fix|chore|refactor|style|docs|test|ci|perf|build)(\([^)]+\))?:/.test(line)) {
+            summary = line;
+            break;
+          }
         }
         if (!summary && lines.length > 0) summary = lines[0] ?? "";
         if (!description) description = lines.filter((l) => l.startsWith("-") || l.startsWith("*")).join("\n");
       }
     } catch (err: unknown) {
-      logger.warn("LLM call failed for commit message generation", { operation: "generate-commit", metadata: { error: err instanceof Error ? err.message : String(err) } });
+      logger.warn("LLM call failed for commit message generation", {
+        operation: "generate-commit",
+        metadata: { error: err instanceof Error ? err.message : String(err) },
+      });
     }
 
-    if (!summary || summary.toLowerCase().includes("update ") && summary.toLowerCase().includes("files")) {
-      const allPaths = changedFiles.map((f) => String((f as Record<string, unknown>).path ?? (f as Record<string, unknown>).filePath ?? f));
+    if (!summary || (summary.toLowerCase().includes("update ") && summary.toLowerCase().includes("files"))) {
+      const allPaths = changedFiles.map((f) =>
+        String((f as Record<string, unknown>).path ?? (f as Record<string, unknown>).filePath ?? f),
+      );
       const hasApi = allPaths.some((p) => p.includes("api/") || p.includes("api."));
       const hasFrontend = allPaths.some((p) => p.startsWith("public/") || p.includes("html") || p.includes("css"));
       const hasGit = allPaths.some((p) => p.includes("git"));
       const hasTests = allPaths.some((p) => p.includes("test"));
-      const scope = hasFrontend && hasApi ? "fullstack" : hasFrontend ? "ui" : hasGit ? "git" : hasApi ? "api" : hasTests ? "tests" : "core";
+      const scope =
+        hasFrontend && hasApi
+          ? "fullstack"
+          : hasFrontend
+            ? "ui"
+            : hasGit
+              ? "git"
+              : hasApi
+                ? "api"
+                : hasTests
+                  ? "tests"
+                  : "core";
       const type = hasTests ? "test" : hasFrontend || hasApi ? "feat" : "chore";
-      const topComponents = allPaths.slice(0, 3).map((p) => path.basename(p, path.extname(p))).join(", ");
+      const topComponents = allPaths
+        .slice(0, 3)
+        .map((p) => path.basename(p, path.extname(p)))
+        .join(", ");
       summary = `${type}(${scope}): update ${topComponents}${allPaths.length > 3 ? ` and ${allPaths.length - 3} related files` : ""}`;
-      description = allPaths.map((p) => {
-        if (p.includes("api.js") || p.includes("api.ts")) return `- ${p}: add client API methods and backend endpoint handlers`;
-        if (p.includes("app.js") || p.includes("app.ts")) return `- ${p}: update application state management, event listeners, and UI views`;
-        if (p.includes("index.html")) return `- ${p}: refine layout structure, modal dialogs, and interactive action controls`;
-        if (p.includes("styles.css")) return `- ${p}: update design tokens, diff viewer syntax styling, and responsive layout rules`;
-        if (p.includes("git")) return `- ${p}: enhance git operation engine, branch refspec resolution, and commit planning`;
-        if (p.includes("fs")) return `- ${p}: expand filesystem navigation and OS file explorer dialog integration`;
-        return `- ${p}: apply component modifications and sync verified changes`;
-      }).slice(0, 8).join("\n");
+      description = allPaths
+        .map((p) => {
+          if (p.includes("api.js") || p.includes("api.ts"))
+            return `- ${p}: add client API methods and backend endpoint handlers`;
+          if (p.includes("app.js") || p.includes("app.ts"))
+            return `- ${p}: update application state management, event listeners, and UI views`;
+          if (p.includes("index.html"))
+            return `- ${p}: refine layout structure, modal dialogs, and interactive action controls`;
+          if (p.includes("styles.css"))
+            return `- ${p}: update design tokens, diff viewer syntax styling, and responsive layout rules`;
+          if (p.includes("git"))
+            return `- ${p}: enhance git operation engine, branch refspec resolution, and commit planning`;
+          if (p.includes("fs")) return `- ${p}: expand filesystem navigation and OS file explorer dialog integration`;
+          return `- ${p}: apply component modifications and sync verified changes`;
+        })
+        .slice(0, 8)
+        .join("\n");
     }
 
-    response.status(200).json({ summary, description, files: changedFiles, branch: (status as { branch?: string }).branch ?? "main" });
-  } catch (error) { next(error); }
+    response
+      .status(200)
+      .json({ summary, description, files: changedFiles, branch: (status as { branch?: string }).branch ?? "main" });
+  } catch (error) {
+    next(error);
+  }
 }

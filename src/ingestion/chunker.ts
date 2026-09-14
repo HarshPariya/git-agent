@@ -26,7 +26,14 @@ const createMetadata = (file: ParsedFile) => ({
   imports: file.imports.map((item) => item.source),
 });
 
-const buildChunk = (file: ParsedFile, type: ChunkType, name: string, startLine: number, endLine: number, content: string): CodeChunk => ({
+const buildChunk = (
+  file: ParsedFile,
+  type: ChunkType,
+  name: string,
+  startLine: number,
+  endLine: number,
+  content: string,
+): CodeChunk => ({
   id: createChunkId(file.filePath, type, name, startLine),
   type,
   filePath: file.filePath,

@@ -2,14 +2,7 @@ import crypto from "node:crypto";
 import Groq from "groq-sdk";
 import { env } from "../config/env.js";
 import { mockProvider } from "./mock-client.js";
-import type {
-  LlmProvider,
-  LlmRequest,
-  LlmResponse,
-  LlmTool,
-  ToolCall,
-  ToolLlmResponse,
-} from "../types/llm.js";
+import type { LlmProvider, LlmRequest, LlmResponse, LlmTool, ToolCall, ToolLlmResponse } from "../types/llm.js";
 
 type Response = Groq.Chat.Completions.ChatCompletion;
 type Message = Groq.Chat.Completions.ChatCompletionMessage;
@@ -47,9 +40,7 @@ const isTransientLlmError = (err: unknown): boolean => {
   const name = String(typeof e.name === "string" ? e.name : "");
 
   return (
-    TRANSIENT_STATUSES.has(status) ||
-    TRANSIENT_NAMES.has(name) ||
-    TRANSIENT_SUBSTRINGS.some((s) => msg.includes(s))
+    TRANSIENT_STATUSES.has(status) || TRANSIENT_NAMES.has(name) || TRANSIENT_SUBSTRINGS.some((s) => msg.includes(s))
   );
 };
 
@@ -70,11 +61,7 @@ const callGroqWithFallback = async <T>(apiFn: (model: string) => Promise<T>): Pr
       lastErr = err;
       if (i < modelsToTry.length - 1) {
         const parsedMs = extractRetryDelayMs(err);
-        const waitMs = parsedMs > 0
-          ? parsedMs
-          : isTransientLlmError(err)
-            ? Math.min(1000 * 2 ** i, 4000)
-            : 300;
+        const waitMs = parsedMs > 0 ? parsedMs : isTransientLlmError(err) ? Math.min(1000 * 2 ** i, 4000) : 300;
         await delay(waitMs);
       }
     }
@@ -124,12 +111,13 @@ const parseXmlToolCalls = (content: string): { toolCalls: ToolCall[]; cleanConte
         toolCalls.push({
           callId: `call_${crypto.randomUUID().slice(0, 8)}`,
           name: parsed.name,
-          arguments: typeof parsed.arguments === "object"
-            ? JSON.stringify(parsed.arguments)
-            : String(parsed.arguments ?? "{}"),
+          arguments:
+            typeof parsed.arguments === "object" ? JSON.stringify(parsed.arguments) : String(parsed.arguments ?? "{}"),
         });
       }
-    } catch { /* Ignored malformed XML chunk */ }
+    } catch {
+      /* Ignored malformed XML chunk */
+    }
   }
 
   return {
@@ -147,12 +135,14 @@ const extractFailedGeneration = (err: unknown): string | null => {
   const match = /"failed_generation":\s*"([\s\S]*?)"\s*[,}]/.exec(String(err));
   if (!match?.[1]) return null;
 
-  try { return JSON.parse(`"${match[1]}"`) as string; } catch { return match[1]; }
+  try {
+    return JSON.parse(`"${match[1]}"`) as string;
+  } catch {
+    return match[1];
+  }
 };
 
-const recoverToolCallsFromFailedGeneration = (
-  failedGen: string,
-): { toolCalls: ToolCall[]; cleanContent: string } => {
+const recoverToolCallsFromFailedGeneration = (failedGen: string): { toolCalls: ToolCall[]; cleanContent: string } => {
   if (failedGen.includes("<tool_call>")) return parseXmlToolCalls(failedGen);
 
   try {
@@ -160,13 +150,14 @@ const recoverToolCallsFromFailedGeneration = (
     if (typeof parsed?.name !== "string") return { toolCalls: [], cleanContent: "" };
 
     return {
-      toolCalls: [{
-        callId: `call_${crypto.randomUUID().slice(0, 8)}`,
-        name: parsed.name,
-        arguments: typeof parsed.arguments === "object"
-          ? JSON.stringify(parsed.arguments)
-          : String(parsed.arguments ?? "{}"),
-      }],
+      toolCalls: [
+        {
+          callId: `call_${crypto.randomUUID().slice(0, 8)}`,
+          name: parsed.name,
+          arguments:
+            typeof parsed.arguments === "object" ? JSON.stringify(parsed.arguments) : String(parsed.arguments ?? "{}"),
+        },
+      ],
       cleanContent: "",
     };
   } catch {
@@ -175,11 +166,13 @@ const recoverToolCallsFromFailedGeneration = (
 
     const argsMatch = /"arguments":\s*({[\s\S]*})/.exec(failedGen);
     return {
-      toolCalls: [{
-        callId: `call_${crypto.randomUUID().slice(0, 8)}`,
-        name: nameMatch[1],
-        arguments: argsMatch?.[1] ?? "{}",
-      }],
+      toolCalls: [
+        {
+          callId: `call_${crypto.randomUUID().slice(0, 8)}`,
+          name: nameMatch[1],
+          arguments: argsMatch?.[1] ?? "{}",
+        },
+      ],
       cleanContent: "",
     };
   }
@@ -214,7 +207,10 @@ const buildToolResponse = (
   },
 });
 
-const buildRecoveredResponse = (_model: string, parsed: { toolCalls: ToolCall[]; cleanContent: string }): ToolLlmResponse => ({
+const buildRecoveredResponse = (
+  _model: string,
+  parsed: { toolCalls: ToolCall[]; cleanContent: string },
+): ToolLlmResponse => ({
   id: `recovered-${crypto.randomUUID()}`,
   model: _model,
   text: parsed.cleanContent,
@@ -337,8 +333,4 @@ export const continueWithTools = async ({
   readonly instructions: string;
   readonly messages: readonly Groq.Chat.Completions.ChatCompletionMessageParam[];
   readonly tools: readonly LlmTool[];
-}): Promise<ToolLlmResponse> =>
-  handleToolCallResponse(
-    [{ role: "system", content: instructions }, ...messages],
-    tools,
-  );
+}): Promise<ToolLlmResponse> => handleToolCallResponse([{ role: "system", content: instructions }, ...messages], tools);

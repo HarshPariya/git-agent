@@ -14,7 +14,11 @@ const runIntegrationTests = async (): Promise<void> => {
 
   const assert = (condition: boolean, name: string): void => {
     console.warn(condition ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`);
-    if (condition) { ++passed; } else { ++failed; }
+    if (condition) {
+      ++passed;
+    } else {
+      ++failed;
+    }
   };
 
   try {

@@ -37,10 +37,10 @@ const main = async (): Promise<void> => {
   await retriever.initialize();
 
   const stats = retriever.getStats();
+  console.warn(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nRETRIEVER STATS\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
   console.warn(
-    `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nRETRIEVER STATS\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `Files: ${stats.files}\nChunks: ${stats.chunks}\nGraph nodes: ${stats.graphNodes}\nGraph edges: ${stats.graphEdges}`,
   );
-  console.warn(`Files: ${stats.files}\nChunks: ${stats.chunks}\nGraph nodes: ${stats.graphNodes}\nGraph edges: ${stats.graphEdges}`);
 
   const query = process.argv.slice(2).join(" ") || "Where is normalizeId used?";
   console.warn(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nQUERY: "${query}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);

@@ -59,12 +59,12 @@ const isTransientError = (err: unknown): boolean => {
   if (!(err instanceof Error)) return false;
   const code = (err as MongoError & { code?: number }).code;
   return (
-    code === 6 ||         // HostUnreachable
-    code === 7 ||         // HostNotFound
-    code === 89 ||        // NetworkTimeout
-    code === 91 ||        // ShutdownInProgress
-    code === 189 ||       // PrimarySteppedDown
-    code === 262 ||       // ExceededTimeLimit
+    code === 6 || // HostUnreachable
+    code === 7 || // HostNotFound
+    code === 89 || // NetworkTimeout
+    code === 91 || // ShutdownInProgress
+    code === 189 || // PrimarySteppedDown
+    code === 262 || // ExceededTimeLimit
     err.message.includes("connection") ||
     err.message.includes("timeout")
   );
@@ -122,10 +122,7 @@ export const queryOne = async <T extends Document = Document>(
   filter: Document = {},
   options?: { projection?: Document },
 ): Promise<T | null> => {
-  return getCollection<T>(collectionName).findOne(
-    filter as Filter<T>,
-    options as FindOneOptions,
-  ) as Promise<T | null>;
+  return getCollection<T>(collectionName).findOne(filter as Filter<T>, options as FindOneOptions) as Promise<T | null>;
 };
 
 export const queryWithRetry = async <T extends Document = Document>(
@@ -150,9 +147,7 @@ export const queryWithRetry = async <T extends Document = Document>(
   }
 };
 
-export const withTransaction = async <T>(
-  callback: (session: ClientSession) => Promise<T>,
-): Promise<T> => {
+export const withTransaction = async <T>(callback: (session: ClientSession) => Promise<T>): Promise<T> => {
   const c = getClient();
   const session = c.startSession();
   try {
@@ -198,10 +193,7 @@ export const countDocuments = async (collectionName: string, filter: Document = 
   return getCollection(collectionName).countDocuments(filter);
 };
 
-export const bulkWrite = async (
-  collectionName: string,
-  operations: Document[],
-): Promise<void> => {
+export const bulkWrite = async (collectionName: string, operations: Document[]): Promise<void> => {
   if (operations.length === 0) return;
   await getCollection(collectionName).bulkWrite(operations as AnyBulkWriteOperation<Document>[], { ordered: false });
 };
@@ -226,7 +218,7 @@ export const getDatabaseHealth = async (): Promise<DatabaseHealthStatus> => {
   const start = Date.now();
   try {
     await getDb().command({ ping: 1 });
-    const status = await getDb().admin().serverStatus() as {
+    const status = (await getDb().admin().serverStatus()) as {
       connections?: { active?: number; available?: number; current?: number };
     };
     return {

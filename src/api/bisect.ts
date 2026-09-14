@@ -11,7 +11,7 @@ const getTenantContext = (request: Request) => {
 };
 
 const getRequestBody = (request: Request): Record<string, unknown> =>
-  typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {};
+  typeof request.body === "object" && request.body !== null ? (request.body as Record<string, unknown>) : {};
 
 const requireString = (body: Record<string, unknown>, key: string): string => {
   const value = body[key];
@@ -49,7 +49,12 @@ export async function runBisectHandler(request: Request, response: Response, nex
     const endRef = optionalString(body, "endRef", "HEAD");
 
     await executeGitStatus(repoId);
-    const result = await runBisect(makeRepository(repoId, context.tenantId, context.userId), startRef, endRef, testCommand);
+    const result = await runBisect(
+      makeRepository(repoId, context.tenantId, context.userId),
+      startRef,
+      endRef,
+      testCommand,
+    );
 
     response.status(200).json(result);
   } catch (error) {

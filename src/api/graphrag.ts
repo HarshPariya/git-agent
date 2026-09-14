@@ -10,7 +10,7 @@ const getTenantContext = (request: Request) => {
 };
 
 const getRequestBody = (request: Request): Record<string, unknown> =>
-  typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {};
+  typeof request.body === "object" && request.body !== null ? (request.body as Record<string, unknown>) : {};
 
 const requireString = (body: Record<string, unknown>, key: string): string => {
   const value = body[key];
@@ -19,7 +19,11 @@ const requireString = (body: Record<string, unknown>, key: string): string => {
 };
 
 const validateRepositoryAccess = async (repoId: string): Promise<void> => {
-  try { await executeGitStatus(repoId); } catch { throw new AppError("Repository not accessible", "VALIDATION_ERROR", 400); }
+  try {
+    await executeGitStatus(repoId);
+  } catch {
+    throw new AppError("Repository not accessible", "VALIDATION_ERROR", 400);
+  }
 };
 
 export async function indexRepositoryHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
@@ -87,7 +91,12 @@ export async function getIndexStatusHandler(request: Request, response: Response
     const repositoryId = request.params.repositoryId as string;
     let status: { repositoryId: string; status: string };
 
-    try { await executeGitStatus(repositoryId); status = { repositoryId, status: "ok" }; } catch { status = { repositoryId, status: "not_connected" }; }
+    try {
+      await executeGitStatus(repositoryId);
+      status = { repositoryId, status: "ok" };
+    } catch {
+      status = { repositoryId, status: "not_connected" };
+    }
 
     response.status(200).json(status);
   } catch (error) {

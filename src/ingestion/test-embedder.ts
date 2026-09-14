@@ -1,13 +1,19 @@
 import { embedText, getEmbeddingMetrics } from "./embedder.js";
 
 const runEmbedderTests = () => {
-  console.warn("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nEMBEDDING RESILIENCE & METRICS TESTS\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.warn(
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nEMBEDDING RESILIENCE & METRICS TESTS\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+  );
 
   let passed = 0;
   let failed = 0;
   const assert = (ok: boolean, name: string) => {
     console.warn(ok ? `✓ [PASS] ${name}` : `❌ [FAIL] ${name}`);
-    if (ok) { passed++; } else { failed++; }
+    if (ok) {
+      passed++;
+    } else {
+      failed++;
+    }
   };
 
   try {
@@ -38,7 +44,9 @@ const runEmbedderTests = () => {
     console.error("Embedder test crashed:", err instanceof Error ? err.message : err);
     failed++;
   } finally {
-    console.warn(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nEMBEDDER TEST RESULTS: ${passed} Passed, ${failed} Failed.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.warn(
+      `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nEMBEDDER TEST RESULTS: ${passed} Passed, ${failed} Failed.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    );
     if (failed > 0) process.exitCode = 1;
   }
 };
