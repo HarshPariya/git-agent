@@ -24,21 +24,12 @@
       "dest": "public/$1"
     }
   ],
-  "env": {
-    "NODE_ENV": "production",
-    "PORT": "3000",
-    "GROQ_API_KEY": "@groq_api_key",
-    "MONGODB_URI": "@mongodb_uri",
-    "MONGODB_DB_NAME": "@mongodb_db_name",
-    "GOOGLE_CLIENT_ID": "@google_client_id",
-    "CORS_ORIGIN": "@cors_origin",
-    "AUTH_SECRET": "@auth_secret",
-    "GROQ_MODEL": "@groq_model"
-  },
   "framework": "custom",
   "installCommand": "npm ci --ignore-scripts",
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
   "cleanDevOutput": false,
-  "regions": ["iad1"]
+  "regions": [
+    "iad1"
+  ]
 }
