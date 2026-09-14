@@ -247,3 +247,4 @@ The complete documentation suite consists of 4 focused guides:
 ## 📄 License
 
 This project is licensed under the [ISC License](LICENSE).
+<!-- trigger cache refresh -->
