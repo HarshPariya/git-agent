@@ -116,8 +116,8 @@ app.use(
     origin:
       env.nodeEnv === "production"
         ? (process.env.CORS_ORIGIN?.split(",")
-            .map((origin) => origin.trim())
-            .filter(Boolean) ?? [])
+          .map((origin) => origin.trim())
+          .filter(Boolean) ?? [])
         : true,
   }),
 );
@@ -436,9 +436,11 @@ const isDirectExecution =
   Boolean(executedFilePath && currentFilePath.endsWith(path.basename(executedFilePath))) ||
   process.argv.some((arg) => arg.includes("app.ts") || arg.includes("app.js"));
 
-if (isDirectExecution) {
+if (isDirectExecution && !process.env.VERCEL) {
   startServer().catch((err) => {
     console.error("Failed to start server:", err);
     process.exit(1);
   });
 }
+
+export default app;

@@ -12,6 +12,10 @@
   ],
   "routes": [
     {
+      "src": "/(health|ready|favicon.ico)",
+      "dest": "dist/src/app.js"
+    },
+    {
       "src": "/api/(.*)",
       "dest": "dist/src/app.js"
     },

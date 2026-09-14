@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import Groq from "groq-sdk";
+import { Groq } from "groq-sdk";
 import { env } from "../config/env.js";
 import { mockProvider } from "./mock-client.js";
 import type { LlmProvider, LlmRequest, LlmResponse, LlmTool, ToolCall, ToolLlmResponse } from "../types/llm.js";

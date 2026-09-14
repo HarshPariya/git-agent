@@ -1,20 +1,9 @@
-**/tests
-/**
-**/
-*.test.ts **
-/*.spec.ts
-**/
-docs
-/**
-**/
+.git
 .github
-/**
-**/
-.env* **
-/*.md
-**/
+tests
+docs
 scripts
-/**
-**/
-config
-/**
+scratch
+*.md
+.env*
+.cache
