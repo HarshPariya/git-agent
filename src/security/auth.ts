@@ -32,8 +32,13 @@ const SALT_LENGTH = 16;
 const PBKDF2_ITERATIONS = 1000;
 const PBKDF2_KEY_LENGTH = 64;
 
+const envAdminEmails = (process.env.ADMIN_EMAILS || "")
+  .split(",")
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean);
+
 /** Emails that receive the admin role on sign-in. */
-export const ADMIN_EMAILS = new Set(["harshpariya195@gmail.com"]);
+export const ADMIN_EMAILS = new Set(["harshpariya195@gmail.com", ...envAdminEmails]);
 
 const hashPassword = (password: string, salt: string): string =>
   crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, PBKDF2_KEY_LENGTH, "sha512").toString("hex");
@@ -132,6 +137,8 @@ export class UserStore {
     const candidateHash = hashPassword(candidatePassword, user.salt);
     return crypto.timingSafeEqual(Buffer.from(user.passwordHash), Buffer.from(candidateHash));
   };
+
+  listUsers = (): User[] => Array.from(this.usersById.values());
 }
 
 export const userStore = new UserStore();

@@ -70,6 +70,22 @@ const getRequestBody = (request: Request): Record<string, unknown> =>
   typeof request.body === "object" && request.body !== null ? (request.body as Record<string, unknown>) : {};
 
 const resolveTargetPath = (rawPath: string): string => {
+  if (process.env.VERCEL) {
+    const tmpRepos = "/tmp/repositories";
+    if (!rawPath) {
+      if (!fs.existsSync(tmpRepos)) {
+        try {
+          fs.mkdirSync(tmpRepos, { recursive: true });
+        } catch {
+          // In-memory or pre-existing
+        }
+      }
+      return tmpRepos;
+    }
+    if (rawPath.startsWith("/tmp")) return path.resolve(rawPath);
+    return path.join(tmpRepos, path.basename(rawPath));
+  }
+
   const homedir = os.homedir();
   if (!rawPath) {
     const workspaceParent = path.dirname(process.cwd());
@@ -211,11 +227,24 @@ export async function browseFilesystemHandler(request: Request, response: Respon
     files.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
     const shortcuts: { name: string; path: string }[] = [];
-    const cwd = process.cwd();
-    const workspaceParent = path.dirname(cwd);
-    if (fs.existsSync(cwd)) shortcuts.push({ name: `Current Project (${path.basename(cwd)})`, path: cwd });
-    if (fs.existsSync(workspaceParent))
-      shortcuts.push({ name: `Workspace (${path.basename(workspaceParent)})`, path: workspaceParent });
+    if (process.env.VERCEL) {
+      const tmpRepos = "/tmp/repositories";
+      if (!fs.existsSync(tmpRepos)) {
+        try {
+          fs.mkdirSync(tmpRepos, { recursive: true });
+        } catch {
+          // In-memory or pre-existing
+        }
+      }
+      shortcuts.push({ name: "Workspaces (/tmp/repositories)", path: tmpRepos });
+      shortcuts.push({ name: "Temp Root (/tmp)", path: "/tmp" });
+    } else {
+      const cwd = process.cwd();
+      const workspaceParent = path.dirname(cwd);
+      if (fs.existsSync(cwd)) shortcuts.push({ name: `Current Project (${path.basename(cwd)})`, path: cwd });
+      if (fs.existsSync(workspaceParent))
+        shortcuts.push({ name: `Workspace (${path.basename(workspaceParent)})`, path: workspaceParent });
+    }
 
     response
       .status(200)
@@ -307,6 +336,10 @@ export async function pickNativeDialogHandler(
   next: NextFunction,
 ): Promise<void> {
   try {
+    if (process.env.VERCEL) {
+      response.status(200).json({ cancelled: true, isCloud: true });
+      return;
+    }
     const selectedPath = await showNativeFolderDialog();
     if (!selectedPath) {
       response.status(200).json({ cancelled: true });

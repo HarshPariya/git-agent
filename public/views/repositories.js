@@ -396,19 +396,42 @@ function initDragAndDrop() {
       console.warn("Folder drop resolve error:", err);
     }
 
-    openFolderBrowser();
-    const pathInput = document.getElementById("folder-path-input");
-    if (pathInput) {
-      pathInput.value = folderName;
-      pathInput.focus();
-    }
-    showToast(`Folder "${folderName}" detected. Please confirm the path and click Connect.`, "info");
+    await connectSpecificFolder(folderName, folderName);
   });
 }
 
 async function triggerNativeFolderPicker() {
   const btn = document.getElementById("btn-open-os-dialog") || document.getElementById("open-os-dialog-btn");
   const origHtml = btn ? btn.innerHTML : "";
+
+  // Priority 1: Browser's native File System Access API (opens OS picker directly on user's computer)
+  if (typeof window.showDirectoryPicker === "function") {
+    try {
+      const dirHandle = await window.showDirectoryPicker({ mode: "read" });
+      if (dirHandle && dirHandle.name) {
+        showToast(`Connecting repository "${dirHandle.name}"...`, "info");
+        try {
+          const res = await api.resolveFolder(dirHandle.name, [], window.state.currentBrowsedPath);
+          if (res && res.resolvedPath && res.exists) {
+            await connectSpecificFolder(res.folderName || dirHandle.name, res.resolvedPath);
+            return;
+          }
+        } catch (err) {
+          // Local resolution not applicable in cloud mode
+        }
+        await connectSpecificFolder(dirHandle.name, dirHandle.name);
+        return;
+      }
+    } catch (fsErr) {
+      if (fsErr.name === "AbortError") {
+        showToast("Folder selection cancelled", "info");
+        return;
+      }
+      console.warn("Browser showDirectoryPicker fallback error:", fsErr);
+    }
+  }
+
+  // Priority 2: Backend native OS dialog (for local desktop / Electron instances)
   if (btn) {
     btn.disabled = true;
     btn.innerHTML = `⏳ Opening OS Dialog...`;
@@ -421,12 +444,20 @@ async function triggerNativeFolderPicker() {
       showToast(`Selected: ${res.path}`, "success");
       await connectSpecificFolder(res.folderName || "Repository", res.path);
       return;
+    } else if (res && res.isCloud) {
+      // Backend is in cloud — trigger HTML directory input
+      const input = document.getElementById("native-folder-input");
+      if (input) {
+        input.value = "";
+        input.click();
+        return;
+      }
     } else if (res && res.cancelled) {
       showToast("Folder selection cancelled", "info");
       return;
     }
   } catch (err) {
-    console.warn("Backend OS native dialog error, trying browser picker:", err);
+    console.warn("Backend OS native dialog error, falling back to input:", err);
   } finally {
     if (btn) {
       btn.disabled = false;
@@ -434,36 +465,7 @@ async function triggerNativeFolderPicker() {
     }
   }
 
-  if (typeof window.showDirectoryPicker === "function") {
-    try {
-      const dirHandle = await window.showDirectoryPicker({ mode: "read" });
-      if (dirHandle && dirHandle.name) {
-        showToast(`Locating folder "${dirHandle.name}" on your system...`, "info");
-        const res = await api.resolveFolder(dirHandle.name, [], window.state.currentBrowsedPath);
-        if (res && res.resolvedPath && res.exists) {
-          showToast(`Found: ${res.resolvedPath}`, "success");
-          await connectSpecificFolder(res.folderName || dirHandle.name, res.resolvedPath);
-          return;
-        } else {
-          openFolderBrowser();
-          const pathInput = document.getElementById("folder-path-input");
-          if (pathInput) {
-            pathInput.value = dirHandle.name;
-            pathInput.focus();
-          }
-          showToast(`Folder "${dirHandle.name}" selected. Please confirm full path and click Connect.`, "info");
-          return;
-        }
-      }
-    } catch (fsErr) {
-      if (fsErr.name === "AbortError") {
-        showToast("Folder selection cancelled", "info");
-        return;
-      }
-      console.warn("Browser showDirectoryPicker fallback error:", fsErr);
-    }
-  }
-
+  // Priority 3: Fallback to input webkitdirectory
   const input = document.getElementById("native-folder-input");
   if (input) {
     input.value = "";
@@ -497,12 +499,16 @@ function setupFolderDropZone() {
       const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
       if (entry && entry.isDirectory) {
         showToast(`Locating dropped folder "${entry.name}"...`, "info");
-        const res = await api.resolveFolder(entry.name, [], window.state.currentBrowsedPath);
-        if (res && res.resolvedPath && res.exists) {
-          await connectSpecificFolder(res.folderName || entry.name, res.resolvedPath);
-        } else {
-          triggerNativeFolderPicker();
+        try {
+          const res = await api.resolveFolder(entry.name, [], window.state.currentBrowsedPath);
+          if (res && res.resolvedPath && res.exists) {
+            await connectSpecificFolder(res.folderName || entry.name, res.resolvedPath);
+            return;
+          }
+        } catch (err) {
+          // Fall through
         }
+        await connectSpecificFolder(entry.name, entry.name);
       } else {
         triggerNativeFolderPicker();
       }
@@ -524,7 +530,7 @@ async function handleNativeFolderSelected(event) {
     })
     .filter(Boolean);
 
-  showToast(`Locating folder "${rootFolderName}" on your computer...`, "info");
+  showToast(`Connecting folder "${rootFolderName}"...`, "info");
 
   try {
     const res = await api.resolveFolder(rootFolderName, sampleFiles, window.state.currentBrowsedPath);
@@ -537,13 +543,8 @@ async function handleNativeFolderSelected(event) {
     console.warn("Folder auto-resolution error:", err);
   }
 
-  openFolderBrowser();
-  const pathInput = document.getElementById("folder-path-input");
-  if (pathInput) {
-    pathInput.value = rootFolderName;
-    pathInput.focus();
-  }
-  showToast(`Folder "${rootFolderName}" detected. Verify or paste the full path and click Connect.`, "info");
+  // Connect repository directly by folder name
+  await connectSpecificFolder(rootFolderName, rootFolderName);
 }
 
 function openFolderBrowser(targetPath = "") {

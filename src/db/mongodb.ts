@@ -104,6 +104,30 @@ export const connectDatabase = async (): Promise<void> => {
   console.warn(`MongoDB connected to ${MONGODB_DB_NAME}.`);
 };
 
+let connectPromise: Promise<boolean> | null = null;
+
+/** Ensure the database connection is established, reconnecting lazily if necessary (e.g. in serverless environments). */
+export const ensureDatabaseConnected = async (): Promise<boolean> => {
+  if (connected && client) return true;
+  if (!MONGODB_URI) return false;
+  if (connectPromise) return connectPromise;
+
+  connectPromise = (async () => {
+    try {
+      await connectDatabase();
+      return true;
+    } catch (err) {
+      console.error("Failed to connect to MongoDB:", err instanceof Error ? err.message : err);
+      connected = false;
+      return false;
+    } finally {
+      connectPromise = null;
+    }
+  })();
+
+  return connectPromise;
+};
+
 export const query = async <T extends Document = Document>(
   collectionName: string,
   filter: Document = {},
@@ -257,6 +281,7 @@ export const testDatabaseConnection = async (): Promise<boolean> => {
 };
 
 export const closeDatabase = async (): Promise<void> => {
+  connectPromise = null;
   if (client) {
     console.warn("Closing MongoDB connection...");
     await client.close();

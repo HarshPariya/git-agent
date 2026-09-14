@@ -23,12 +23,26 @@ const resolveLocalPath = (name: string): string => {
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, "-")
     .replace(/^-+|-+$/g, "");
-  return path.join(process.env.WORKSPACE_ROOT ?? process.cwd(), "repositories", sanitizedName || "repo");
+  const baseDir = process.env.VERCEL ? "/tmp" : (process.env.WORKSPACE_ROOT ?? process.cwd());
+  return path.join(baseDir, "repositories", sanitizedName || "repo");
 };
 
 const validateLocalPath = (candidate: string): string => {
   if (!candidate?.trim()) throw new Error("Repository path must be a non-empty string");
-  const resolved = path.resolve(candidate.replace(/^["']|["']$/g, "").trim());
+  const cleaned = candidate.replace(/^["']|["']$/g, "").trim();
+
+  // If in Vercel serverless environment, local client paths (e.g. C:\... or custom paths)
+  // are mapped into the writable /tmp storage.
+  if (process.env.VERCEL) {
+    const folderName = cleaned.split(/[\\/]/).filter(Boolean).pop() || "repo";
+    const sanitizedName = folderName
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return path.join("/tmp", "repositories", sanitizedName || "repo");
+  }
+
+  const resolved = path.resolve(cleaned);
 
   const repoRoot = process.env.REPOSITORY_ROOT?.trim();
   if (repoRoot) {
@@ -85,8 +99,44 @@ export class RepositoryStore {
     url: string | undefined;
     localPath: string | undefined;
   }): Promise<Repository> {
-    const localPath = params.localPath ? validateLocalPath(params.localPath) : resolveLocalPath(params.name);
-    if (params.localPath && !fs.existsSync(localPath)) throw new Error(`Directory does not exist: ${localPath}`);
+    let localPath = params.localPath ? validateLocalPath(params.localPath) : resolveLocalPath(params.name);
+
+    // Auto-provision directory if running on Vercel or if path doesn't exist yet
+    if (!fs.existsSync(localPath)) {
+      try {
+        fs.mkdirSync(localPath, { recursive: true });
+      } catch {
+        // Fallback to /tmp if write permission fails in current cwd
+        const sanitizedName = params.name
+          .toLowerCase()
+          .replace(/[^a-z0-9-]/g, "-")
+          .replace(/^-+|-+$/g, "");
+        localPath = path.join("/tmp", "repositories", sanitizedName || "repo");
+        fs.mkdirSync(localPath, { recursive: true });
+      }
+    }
+
+    // Ensure it is initialized as a valid git repository
+    const gitDir = path.join(localPath, ".git");
+    if (!fs.existsSync(gitDir)) {
+      try {
+        const { execFileAsync } = await import("../git/utils.js");
+        await execFileAsync("git", ["init", "-b", "main"], { cwd: localPath });
+        const readmePath = path.join(localPath, "README.md");
+        if (!fs.existsSync(readmePath)) {
+          fs.writeFileSync(
+            readmePath,
+            `# ${params.name}\n\nWorkspace repository managed by Git Debug Agent.\n\nCreated: ${new Date().toISOString()}\n`,
+          );
+          await execFileAsync("git", ["config", "user.name", "Git Agent"], { cwd: localPath });
+          await execFileAsync("git", ["config", "user.email", "agent@git-agent.local"], { cwd: localPath });
+          await execFileAsync("git", ["add", "README.md"], { cwd: localPath });
+          await execFileAsync("git", ["commit", "-m", "Initial commit from Git Agent"], { cwd: localPath });
+        }
+      } catch (gitErr) {
+        logger.warn("Could not auto-initialize git in workspace", { metadata: { localPath, error: String(gitErr) } });
+      }
+    }
 
     const existing = [...repositories.values()].find(
       (r) => r.tenantId === params.tenantId && (r.url === params.url || r.localPath === localPath),
