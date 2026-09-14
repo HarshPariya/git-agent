@@ -1,488 +1,781 @@
-document.addEventListener("DOMContentLoaded", () => {
-  const chatContainer = document.getElementById("chat-messages-container");
-  const userInput = document.getElementById("user-input");
-  const btnSend = document.getElementById("btn-send");
-  const btnNewChat = document.getElementById("btn-new-chat");
-  const btnClearHistory = document.getElementById("btn-clear-history");
-  const healthText = document.getElementById("sidebar-health-text");
-  const retrievalStatus = document.getElementById("retrieval-module-status");
-  const agentStatus = document.getElementById("agent-module-status");
-  const activeRouteLabel = document.getElementById("active-route-label");
+/**
+ * Git Debugging Agent — Application Controller & Orchestrator
+ * Modularized Architecture:
+ * - State: /state.js
+ * - Components: /components/diff-viewer.js, /components/commit-plan.js
+ * - Views: /views/dashboard.js, /views/repositories.js, /views/debugging.js,
+ *          /views/git-desktop.js, /views/pull-requests.js, /views/issues.js,
+ *          /views/conflicts.js, /views/history.js, /views/settings.js
+ */
 
-  let chatHistory = [];
-  const activeDocumentIds = new Set();
-  const tenantId = "tenant-1";
-  const userId = `user-${tenantId}`;
-  const userRole = "admin";
-  let sessionId = "session-prod-1";
-  let isSubmitting = false;
+// Application Reactive State reference
+window.state = window.state || {
+  currentPage: "dashboard",
+  repositories: [],
+  activeRepository: null,
+  currentSession: null,
+  gitHubConnected: false,
+  gitHubUsername: null,
+  cachedGitHubRepos: [],
+  agentRunning: false,
+  activeTab: "evidence",
+  currentBrowsedPath: null,
+  browsedFolderGit: null,
+  gitDesktop: {
+    changedFiles: [],
+    currentFilter: "all",
+    selectedFile: null,
+    commitPlan: null,
+    gitStatus: null,
+    outgoingCommits: [],
+  },
+  currentFixPlan: null,
+  currentCritic: null,
+};
 
-  const identityHeaders = () => ({
-    "x-tenant-id": tenantId,
-    "x-user-id": userId,
-    "x-user-role": userRole,
-  });
+// ============================================================
+// INITIALIZATION & AUTH
+// ============================================================
 
-  // Health Polling
-  async function checkHealth() {
+let googleSignInReady = false;
+
+document.addEventListener("DOMContentLoaded", async () => {
+  initNavigation();
+  initTabs();
+  initForms();
+  initUserMenu();
+  initMobileMenu();
+  initScrollToTop();
+  if (typeof initDragAndDrop === "function") initDragAndDrop();
+  if (typeof setupFolderDropZone === "function") setupFolderDropZone();
+
+  // Check authentication — verify stored token with the server
+  if (api.token) {
     try {
-      const res = await fetch("/health");
-      const data = await res.json();
-      if (!res.ok) throw new Error(`Health check failed (${res.status})`);
-      for (const [element, status] of [
-        [retrievalStatus, data.modules?.retrieval],
-        [agentStatus, data.modules?.agent],
-      ]) {
-        if (!element) continue;
-        element.textContent = status || "Ready";
-        element.classList.remove("offline");
-      }
-      if (healthText) {
-        healthText.textContent = `Online • ${data.status.toUpperCase()} (${data.database.poolIdleConnections ?? 0} idle pool)`;
-      }
+      const { user } = await api.getMe();
+      showApp(user);
     } catch {
-      for (const status of [retrievalStatus, agentStatus]) {
-        if (!status) continue;
-        status.textContent = "Offline";
-        status.classList.add("offline");
-      }
-      if (healthText) healthText.textContent = "Offline • Reconnecting...";
+      // Token invalid/expired — clear it and show login
+      api.clearToken();
+      showAuth();
     }
+  } else {
+    // No token → show login page
+    showAuth();
   }
+});
 
-  // Format Markdown with Copy Code Buttons
-  function formatMarkdown(text) {
-    if (!text) return "";
-    const cleanText = text
-      .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
-      .replace(/<function=[\w]+>[\s\S]*?<\/function>/gi, "")
-      .replace(/<parameter=[\w]+>[\s\S]*?<\/parameter>/gi, "")
-      .replace(/<\/?(?:function|parameter|tools|tool_call)\b[^>]*>/gi, "")
-      .trim();
-    let html = escapeHtml(cleanText);
-    const codeBlocks = [];
+function showAuth() {
+  document.getElementById("auth-page").style.display = "flex";
+  document.getElementById("app").style.display = "none";
+  // Render Google button now that auth page is visible (needs real dimensions)
+  initGoogleSignIn();
+}
 
-    // Format ```code blocks with Copy button and Language Badges
-    html = html.replace(
-      /```([a-zA-Z0-9_-]*)\r?\n([\s\S]*?)\r?\n```/g,
-      (_match, rawLang, code) => {
-        const lang = (rawLang || "code").toLowerCase();
-        const displayLang =
-          lang === "ts" || lang === "typescript" ? "TypeScript" :
-          lang === "js" || lang === "javascript" ? "JavaScript" :
-          lang === "py" || lang === "python" ? "Python" :
-          lang === "sql" ? "SQL" :
-          lang === "json" ? "JSON" :
-          lang === "bash" || lang === "sh" || lang === "shell" ? "Bash" :
-          lang === "html" ? "HTML" :
-          lang === "css" ? "CSS" :
-          lang === "md" || lang === "markdown" ? "Markdown" :
-          (rawLang ? rawLang.toUpperCase() : "CODE");
-
-        const token = `@@CODE_BLOCK_${codeBlocks.length}@@`;
-        codeBlocks.push(`
-        <div class="code-wrapper">
-          <div class="code-header">
-            <span class="code-lang-badge"><span class="lang-icon">💻</span> ${displayLang}</span>
-            <button class="btn-copy" onclick="copyCode(this)">📋 Copy</button>
-          </div>
-          <pre><code>${code}</code></pre>
-        </div>
-      `);
-        return token;
-      },
-    );
-
-    // Format `code` inline
-    html = html.replace(
-      /`([^`]+)`/g,
-      '<code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono); font-size: 0.85em;">$1</code>',
-    );
-    // Format **bold**
-    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    // Format ### Headings
-    html = html.replace(
-      /^### (.*$)/gim,
-      '<h3 style="margin: 10px 0 6px 0; font-family: var(--font-display); font-size: 1.1em; color: var(--accent-cyan);">$1</h3>',
-    );
-    // Format #### Headings
-    html = html.replace(
-      /^#### (.*$)/gim,
-      '<h4 style="margin: 8px 0 4px 0; font-family: var(--font-display); font-size: 0.95em; color: var(--text-main);">$1</h4>',
-    );
-
-    // Render standard Markdown tables instead of exposing pipe syntax.
-    const tableBlocks = [];
-    html = html.replace(
-      /(^\|.+\|\r?\n^\|(?:\s*:?-+:?\s*\|)+\r?\n(?:^\|.+\|(?:\r?\n|$))+)/gm,
-      (tableText) => {
-        const rows = tableText.trim().split(/\r?\n/);
-        const parseCells = (row) => row.slice(1, -1).split("|").map((cell) => cell.trim());
-        const headers = parseCells(rows[0]);
-        const bodyRows = rows.slice(2).map(parseCells);
-        const table = `<div class="markdown-table-wrapper"><table class="markdown-table"><thead><tr>${headers.map((cell) => `<th>${cell}</th>`).join("")}</tr></thead><tbody>${bodyRows.map((cells) => `<tr>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
-        const token = `@@TABLE_BLOCK_${tableBlocks.length}@@`;
-        tableBlocks.push(table);
-        return token;
-      },
-    );
-    // Format newlines
-    html = html.replace(/\n/g, "<br>");
-
-    for (const [index, block] of codeBlocks.entries()) {
-      html = html.replace(`@@CODE_BLOCK_${index}@@`, block);
-    }
-    for (const [index, table] of tableBlocks.entries()) {
-      html = html.replace(`@@TABLE_BLOCK_${index}@@`, table);
-    }
-
-    return html;
-  }
-
-  function escapeHtml(text) {
-    return text
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
-
-  window.copyCode = function (btn) {
-    const code = btn.closest(".code-wrapper").querySelector("code").innerText;
-    navigator.clipboard.writeText(code);
-    btn.textContent = "✓ Copied!";
-    setTimeout(() => (btn.textContent = "📋 Copy"), 2000);
-  };
-
-  function appendRow(role, content) {
-    if (!chatContainer) return;
-
-    // Remove welcome card on first message
-    const welcomeCard = chatContainer.querySelector(".welcome-card");
-    if (welcomeCard) welcomeCard.remove();
-
-    const row = document.createElement("div");
-    row.className = `chat-row ${role === "user" ? "user-row" : "bot-row"}`;
-
-    const formatted = role === "user" ? escapeHtml(content) : formatMarkdown(content);
-
-    row.innerHTML = `
-      ${role === "assistant" ? '<div class="avatar">🤖</div>' : ""}
-      <div class="chat-bubble">${formatted}</div>
-      ${role === "user" ? '<div class="avatar">👤</div>' : ""}
-    `;
-
-    chatContainer.appendChild(row);
-    chatContainer.scrollTop = chatContainer.scrollHeight;
-  }
-
-  async function handleSend(text) {
-    const query = text || userInput?.value.trim();
-    if (!query || isSubmitting) return;
-
-    if (userInput) {
-      userInput.value = "";
-      userInput.style.height = "auto";
-    }
-
-    appendRow("user", query);
-    chatHistory.push({ role: "user", content: query });
-    isSubmitting = true;
-    if (btnSend) btnSend.disabled = true;
-
-    // Bot Typing Indicator
-    const typingId = `typing-${Date.now()}`;
-    const typingRow = document.createElement("div");
-    typingRow.id = typingId;
-    typingRow.className = "chat-row bot-row";
-    typingRow.innerHTML = `
-      <div class="avatar">🤖</div>
-      <div class="chat-bubble" style="color: var(--text-muted);">
-        <span>Searching vector embeddings & AST knowledge graph...</span> ⏳
-      </div>
-    `;
-    chatContainer.appendChild(typingRow);
-    chatContainer.scrollTop = chatContainer.scrollHeight;
-
-    try {
-      const docIdsArray = Array.from(activeDocumentIds);
-      console.log("[UI] selectedDocumentIds=", docIdsArray);
-
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...identityHeaders(),
-        },
-        body: JSON.stringify({
-          sessionId,
-          message: query,
-          ...(docIdsArray.length > 0 && { documentIds: docIdsArray }),
-        }),
-      });
-
-      const data = await res.json();
-      document.getElementById(typingId)?.remove();
-
-      if (!res.ok) {
-        throw new Error(data.error?.message || `Request failed (${res.status})`);
-      }
-
-      const botText = data.message || "Hello! How can I assist you with your codebase today?";
-      if (activeRouteLabel && data.pipeline?.retrievalMode) {
-        activeRouteLabel.textContent = `Member 1: ${data.pipeline.retrievalMode} → Member 2: agent`;
-        activeRouteLabel.title = data.pipeline.routeReason || "Automatically routed";
-      }
-      const uniqueSources = new Map();
-      if (Array.isArray(data.sources)) {
-        for (const source of data.sources) {
-          const rawPath = String(source.source || "").replace(/\\/g, "/");
-          const repositoryPath = rawPath.match(/(?:^|\/)(src|public|tests|docs)\/.*$/i)?.[0]?.replace(/^\//, "") || rawPath;
-          const label = `${repositoryPath}${source.page ? ` (p. ${source.page})` : ""}`;
-          if (label && !uniqueSources.has(label)) uniqueSources.set(label, label);
-        }
-      }
-      const visibleSources = [...uniqueSources.values()].slice(0, 5);
-      const hiddenSourceCount = uniqueSources.size - visibleSources.length;
-      const sourceText = visibleSources.length > 0
-        ? `\n\n**Sources:** ${visibleSources.join(", ")}${hiddenSourceCount > 0 ? `, +${hiddenSourceCount} more` : ""}`
-        : "";
-      appendRow("assistant", `${botText}${sourceText}`);
-      chatHistory.push({ role: "assistant", content: botText });
-    } catch (err) {
-      document.getElementById(typingId)?.remove();
-      appendRow("assistant", `❌ **Error**: ${err.message}`);
-    } finally {
-      isSubmitting = false;
-      if (btnSend) btnSend.disabled = false;
-      userInput?.focus();
-    }
-  }
-
-  // Event Listeners
-  if (btnSend && userInput) {
-    btnSend.addEventListener("click", () => handleSend());
-    userInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        handleSend();
-      }
-    });
-
-    userInput.addEventListener("input", () => {
-      userInput.style.height = "auto";
-      userInput.style.height = `${Math.min(userInput.scrollHeight, 120)}px`;
-    });
-  }
-
-  // Handle Prompt Cards & Shortcut Buttons
-  document.addEventListener("click", (e) => {
-    const card = e.target.closest(".prompt-card");
-    if (card) {
-      const prompt = card.getAttribute("data-prompt");
-      if (prompt) handleSend(prompt);
-    }
-
-    const shortcut = e.target.closest(".shortcut-btn");
-    if (shortcut) {
-      const query = shortcut.getAttribute("data-query");
-      if (query) handleSend(query);
-    }
-  });
-
-  // Clear Chat History
-  if (btnClearHistory || btnNewChat) {
-    const clearFn = () => {
-      chatHistory = [];
-      chatContainer.innerHTML = `
-        <div class="welcome-card glass-panel">
-          <div class="welcome-icon">⚡</div>
-          <h2>GraphRAG AI Code Assistant</h2>
-          <p>Ask questions about your codebase, debug functions, or analyze impact paths in real-time.</p>
-          <div class="prompt-grid">
-            <button class="prompt-card" data-prompt="How does graph traversal work?">
-              <span class="title">🔍 Graph Traversal</span>
-              <span class="desc">How does BFS graph search find caller entities?</span>
-            </button>
-            <button class="prompt-card" data-prompt="/impact traverseGraph">
-              <span class="title">⚡ Impact Analysis</span>
-              <span class="desc">What breaks if I modify traverseGraph()?</span>
-            </button>
-            <button class="prompt-card" data-prompt="Where is normalizeId used?">
-              <span class="title">🔎 Function Lookup</span>
-              <span class="desc">Find exact occurrences and references to normalizeId.</span>
-            </button>
-            <button class="prompt-card" data-prompt="/metrics">
-              <span class="title">📊 SLA & Metrics</span>
-              <span class="desc">Show P50/P95 latency, pool stats, and cache hit rates.</span>
-            </button>
-          </div>
-        </div>
-      `;
-    };
-
-    if (btnClearHistory) btnClearHistory.addEventListener("click", clearFn);
-    if (btnNewChat) {
-      btnNewChat.addEventListener("click", () => {
-        sessionId = `session-${Math.random().toString(36).substring(2, 9)}`;
-        clearFn();
-      });
-    }
-  }
-
-  // Document Upload Elements
-  const btnUploadDoc = document.getElementById("btn-upload-doc");
-  const btnAttach = document.getElementById("btn-attach");
-  const fileInput = document.getElementById("file-input");
-  const uploadedDocsList = document.getElementById("uploaded-docs-list");
-
-  // Reusable File Upload Handler
-  async function uploadFile(file) {
-    if (!file) return;
-
-    const filename = file.name;
-    const mimeType = file.type || "text/plain";
-
-    // Show uploading indicator in chat
-    appendRow("assistant", `⏳ **Uploading & Indexing Document**: \`${filename}\` (${(file.size / 1024).toFixed(1)} KB)...`);
-
-    try {
-      const buffer = await file.arrayBuffer();
-      const res = await fetch(`/api/documents/upload?filename=${encodeURIComponent(filename)}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": mimeType,
-          ...identityHeaders(),
-        },
-        body: buffer,
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error?.message || data.message || "Upload failed");
-      }
-
-      const storageLabel = data.document.storage === "postgres"
-        ? "PostgreSQL/pgvector"
-        : "temporary in-memory fallback";
-      appendRow("assistant", `✅ **Document Successfully Indexed!**\n- **Filename**: \`${data.document.filename}\`\n- **Status**: \`${data.document.status.toUpperCase()}\`\n- **Quality**: \`${data.document.quality.toUpperCase()}\` (Score: ${data.document.score})\n- **Vector Chunks**: \`${data.document.chunks}\` chunks indexed in ${storageLabel}.\n\nYou can now ask questions about the contents of \`${filename}\`!`);
-
-      loadDocuments();
-    } catch (err) {
-      appendRow("assistant", `❌ **Document Upload Error**: ${err.message}`);
-    } finally {
-      if (fileInput) fileInput.value = "";
-    }
-  }
-
-  // Document Upload Handlers
-  const triggerUpload = () => fileInput?.click();
-  if (btnUploadDoc) btnUploadDoc.addEventListener("click", triggerUpload);
-  if (btnAttach) btnAttach.addEventListener("click", triggerUpload);
-
-  if (fileInput) {
-    fileInput.addEventListener("change", (e) => {
-      const file = e.target.files?.[0];
-      if (file) uploadFile(file);
-    });
-  }
-
-  // Drag & Drop File Upload Overlay Setup
-  const dragDropOverlay = document.getElementById("drag-drop-overlay");
-  let dragCounter = 0;
-
-  if (dragDropOverlay) {
-    window.addEventListener("dragenter", (e) => {
-      e.preventDefault();
-      dragCounter++;
-      if (e.dataTransfer && e.dataTransfer.types.includes("Files")) {
-        dragDropOverlay.classList.remove("hidden");
-      }
-    });
-
-    window.addEventListener("dragover", (e) => {
-      e.preventDefault();
-    });
-
-    window.addEventListener("dragleave", (e) => {
-      e.preventDefault();
-      dragCounter--;
-      if (dragCounter <= 0) {
-        dragCounter = 0;
-        dragDropOverlay.classList.add("hidden");
-      }
-    });
-
-    window.addEventListener("drop", (e) => {
-      e.preventDefault();
-      dragCounter = 0;
-      dragDropOverlay.classList.add("hidden");
-
-      const files = e.dataTransfer?.files;
-      if (files && files.length > 0) {
-        const droppedFile = files[0];
-        uploadFile(droppedFile);
-      }
-    });
-  }
-
-  async function loadDocuments() {
-    if (!uploadedDocsList) return;
-    try {
-      const res = await fetch("/api/documents", {
-        headers: identityHeaders(),
-      });
-      const data = await res.json();
-      const docs = data.documents || [];
-
-      activeDocumentIds.clear();
-
-      if (docs.length === 0) {
-        uploadedDocsList.innerHTML = `<span style="font-size: 0.75rem; color: var(--text-muted);">No documents uploaded yet.</span>`;
+// Wait (with a deadline) for the Google Identity Services script to load.
+// The script is injected with async defer, so it may still be downloading
+// when showAuth() runs — without this, initGoogleSignIn() would give up
+// because `google` is undefined yet and the button would never render.
+function waitForGoogleScript(timeoutMs) {
+  return new Promise((resolve) => {
+    const deadline = Date.now() + timeoutMs;
+    const check = () => {
+      if (typeof google !== "undefined" && google.accounts && google.accounts.id) {
+        resolve(true);
         return;
       }
+      if (Date.now() >= deadline) {
+        resolve(false);
+        return;
+      }
+      setTimeout(check, 100);
+    };
+    check();
+  });
+}
 
-      docs.forEach((d) => activeDocumentIds.add(d.id));
+async function initGoogleSignIn() {
+  try {
+    const { clientId } = await api.getGoogleClientId();
+    if (!clientId) return;
 
-      uploadedDocsList.innerHTML = docs
-        .map(
-          (d) => `
-          <div class="doc-item active-doc" data-id="${d.id}">
-            <span class="doc-name" title="${escapeHtml(d.filename)}">📄 ${escapeHtml(d.filename)}</span>
-            <button class="btn-delete-doc" data-id="${d.id}" title="Delete document">🗑️</button>
-          </div>
-        `,
-        )
-        .join("");
+    if (typeof google === "undefined") {
+      const ok = await waitForGoogleScript(8000);
+      if (!ok) return; // script never loaded (blocked/offline) — stay on email/password
+    }
 
-      // Add delete click handlers
-      uploadedDocsList.querySelectorAll(".btn-delete-doc").forEach((btn) => {
-        btn.addEventListener("click", async (e) => {
-          const id = e.currentTarget.getAttribute("data-id");
-          if (!id) return;
-
-          try {
-            const deleteResponse = await fetch(`/api/documents/${id}`, {
-              method: "DELETE",
-              headers: identityHeaders(),
-            });
-            if (!deleteResponse.ok) {
-              const errorBody = await deleteResponse.json().catch(() => ({}));
-              throw new Error(errorBody.error?.message || "Document deletion failed");
-            }
-            loadDocuments();
-          } catch (err) {
-            console.error("Delete doc error:", err);
-          }
+    if (googleSignInReady) {
+      // Already initialized — re-render button if container is now visible
+      const container = document.getElementById("google-signin-btn");
+      if (container && container.offsetWidth > 0) {
+        container.innerHTML = "";
+        google.accounts.id.renderButton(container, {
+          theme: "outline",
+          size: "large",
+          width: 320,
+          text: "continue_with",
         });
+      }
+      return;
+    }
+
+    google.accounts.id.initialize({
+      client_id: clientId,
+      callback: async (response) => {
+        const authError = document.getElementById("auth-error");
+        const loginBtn = document.getElementById("login-btn");
+        try {
+          if (authError) authError.style.display = "none";
+          if (loginBtn) { loginBtn.disabled = true; loginBtn.textContent = "Signing In..."; }
+          const { user } = await api.googleLogin(response.credential);
+          showToast("Signed in with Google!", "success");
+          showApp(user, true);
+        } catch (err) {
+          if (authError) {
+            authError.textContent = err.message || "Google sign-in failed";
+            authError.style.display = "block";
+          }
+        } finally {
+          if (loginBtn) { loginBtn.disabled = false; loginBtn.textContent = "Sign In"; }
+        }
+      },
+      // Catch Google Sign-In flow errors (e.g., popup blocked, invalid_client)
+      error_callback: (err) => {
+        const authError = document.getElementById("auth-error");
+        if (authError) {
+          const messages = {
+            popup_closed: "Sign-in popup was closed. Please try again.",
+            popup_failed_to_open: "Could not open sign-in popup. Check your popup blocker settings.",
+            cancelled: "Sign-in was cancelled.",
+          };
+          const msg = messages[err.type] || "Google Sign-In failed: " + (err.message || err.type || "Unknown error. Ensure GOOGLE_CLIENT_ID is configured correctly in Google Cloud Console.");
+          authError.textContent = msg;
+          authError.style.display = "block";
+        }
+      },
+    });
+
+    googleSignInReady = true;
+
+    const container = document.getElementById("google-signin-btn");
+    if (container) {
+      google.accounts.id.renderButton(container, {
+        theme: "outline",
+        size: "large",
+        width: 320,
+        text: "continue_with",
       });
-    } catch (err) {
-      console.warn("Load documents error:", err);
+    }
+  } catch {
+    // Google Sign-In not configured or unavailable — silently skip
+  }
+}
+
+function showApp(user, freshLogin = false) {
+  document.getElementById("auth-page").style.display = "none";
+  document.getElementById("app").style.display = "block";
+
+  const emailEl = document.getElementById("settings-email");
+  if (emailEl) emailEl.textContent = user?.email || user?.name || "Developer (Dev Mode)";
+
+  // Settings page: show admin-specific info
+  const accountTitle = document.getElementById("settings-account-title");
+  const roleBadge = document.getElementById("settings-role-badge");
+  const isAdmin = user?.role === "admin";
+  if (accountTitle) accountTitle.textContent = isAdmin ? "Admin Account" : "User Account";
+  if (roleBadge) {
+    if (isAdmin) {
+      roleBadge.style.display = "inline-flex";
+      roleBadge.className = "settings-role-badge admin";
+      roleBadge.textContent = "★ Administrator";
+    } else {
+      roleBadge.style.display = "inline-flex";
+      roleBadge.className = "settings-role-badge developer";
+      roleBadge.textContent = user?.role || "Developer";
     }
   }
 
-  loadDocuments();
-  checkHealth();
-  setInterval(checkHealth, 5000);
+  // Show profile picture if available
+  const avatarUrl = user?.picture || null;
+  const headerAvatar = document.getElementById("header-avatar");
+  const headerAvatarIcon = document.getElementById("header-avatar-icon");
+  const settingsAvatar = document.getElementById("settings-avatar");
+
+  if (avatarUrl) {
+    if (headerAvatar) {
+      headerAvatar.src = avatarUrl;
+      headerAvatar.style.display = "block";
+      headerAvatar.onerror = () => {
+        headerAvatar.style.display = "none";
+        if (headerAvatarIcon) headerAvatarIcon.style.display = "block";
+      };
+    }
+    if (headerAvatarIcon) headerAvatarIcon.style.display = "none";
+    if (settingsAvatar) {
+      settingsAvatar.src = avatarUrl;
+      settingsAvatar.style.display = "block";
+      settingsAvatar.onerror = () => {
+        settingsAvatar.style.display = "none";
+      };
+    }
+  } else {
+    if (headerAvatar) headerAvatar.style.display = "none";
+    if (headerAvatarIcon) headerAvatarIcon.style.display = "block";
+    if (settingsAvatar) settingsAvatar.style.display = "none";
+  }
+
+  // Show Admin nav item only for admin users, User Panel nav for non-admin users
+  const adminNav = document.getElementById("nav-admin");
+  const adminPage = document.getElementById("page-admin");
+  const userPanelNav = document.getElementById("nav-user-panel");
+  const userPanelPage = document.getElementById("page-user-panel");
+  if (adminNav) adminNav.style.display = isAdmin ? "" : "none";
+  if (adminPage) adminPage.style.display = isAdmin ? "" : "none";
+  if (userPanelNav) userPanelNav.style.display = isAdmin ? "none" : "";
+  if (userPanelPage) userPanelPage.style.display = isAdmin ? "none" : "";
+
+  loadAll();
+
+  if (freshLogin) {
+    // Fresh login — go to dashboard and clear any saved page
+    localStorage.removeItem("gda_current_page");
+    navigate("dashboard");
+  } else {
+    // Page refresh — restore the page the user was on
+    const savedPage = localStorage.getItem("gda_current_page");
+    if (savedPage && document.getElementById(`page-${savedPage}`)) {
+      navigate(savedPage);
+    }
+  }
+}
+
+async function loadAll() {
+  await Promise.allSettled([
+    typeof checkHealth === "function" && checkHealth(),
+    typeof loadRepositories === "function" && loadRepositories(),
+    typeof loadGitHubStatus === "function" && loadGitHubStatus(),
+    typeof loadDashboardStats === "function" && loadDashboardStats(),
+    typeof loadHistory === "function" && loadHistory(),
+  ].filter(Boolean));
+}
+
+function logout() {
+  api.clearToken();
+  localStorage.removeItem("gda_current_page");
+  if (typeof google !== "undefined" && google.accounts?.id) {
+    google.accounts.id.disableAutoSelect();
+  }
+  showAuth();
+  showToast("Signed out successfully", "info");
+}
+
+// ============================================================
+// USER / DEVELOPER PANEL
+// ============================================================
+
+const ACTIVITY_LABELS_APP = {
+  "auth:login": "🔑 Login",
+  "auth:register": "📝 Register",
+  "auth:google-login": "🔵 Google Login",
+  "git:commit": "💾 Git Commit",
+  "git:push": "⬆ Git Push",
+  "git:pull": "⬇ Git Pull",
+  "git:fetch": "🔄 Git Fetch",
+  "git:checkout": "🔀 Git Checkout",
+  "git:sync": "🔄 Git Sync",
+  "git:ship": "🚀 Git Ship",
+  "git:analyze-changes": "🔍 Analyze Changes",
+  "git:commit-plan-execute": "📋 Commit Plan",
+  "git:commit-all": "💾 Commit All",
+  "git:generate-message": "💬 Generate Message",
+  "git:resolve-conflicts": "🔧 Resolve Conflicts",
+  "debug:run": "🐛 Debug Run",
+  "debug:start": "🐛 Debug Start",
+  "debug:complete": "✅ Debug Complete",
+  "debug:abort": "🚫 Debug Abort",
+  "debug:approve-fix": "👍 Approve Fix",
+  "debug:revert-fix": "↩ Revert Fix",
+  "debug:classify": "🏷 Classify",
+  "debug:plan": "📋 Plan",
+  "debug:execute-step": "▶ Execute Step",
+  "repo:connect": "🔗 Repo Connect",
+  "repo:disconnect": "🔗 Repo Disconnect",
+  "repo:sync": "🔄 Repo Sync",
+  "graphrag:index": "📚 GraphRAG Index",
+  "graphrag:search": "🔍 GraphRAG Search",
+  "github:connect": "🐙 GitHub Connect",
+  "ci:trigger": "🔨 CI Trigger",
+  "pr:create": "🔃 PR Create",
+};
+
+function formatTimestampApp(ts) {
+  const d = new Date(ts);
+  const now = new Date();
+  const diffMs = now - d;
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHr = Math.floor(diffMs / 3600000);
+  const diffDay = Math.floor(diffMs / 86400000);
+  if (diffMin < 1) return "just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHr < 24) return `${diffHr}h ago`;
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return d.toLocaleDateString();
+}
+
+async function loadUserPanel() {
+  const listEl = document.getElementById("user-activity-list");
+  const greetingEl = document.getElementById("user-panel-greeting");
+  const subtitleEl = document.getElementById("user-panel-subtitle");
+
+  // Try to get user info from the current state
+  const user = window.state?.user;
+  if (greetingEl) greetingEl.textContent = `Welcome back, ${user?.name || user?.email?.split("@")[0] || "Developer"}`;
+  if (subtitleEl) subtitleEl.textContent = `Here's an overview of your activity on the platform`;
+
+  if (!listEl) return;
+
+  try {
+    const result = await window.api.userMyActivity({ limit: 50 });
+    const entries = result.entries ?? [];
+
+    if (entries.length === 0) {
+      listEl.innerHTML = '<div class="admin-empty-state"><div class="admin-empty-icon">📊</div><div class="admin-empty-text">No activity recorded yet. Start using the platform to see your activity here.</div></div>';
+      return;
+    }
+
+    listEl.innerHTML = entries.map((entry) => {
+      const label = ACTIVITY_LABELS_APP[entry.action] || entry.action;
+      const details = entry.details ? Object.entries(entry.details).map(([k, v]) => `${k}: ${v}`).join(", ") : "";
+      return `<div class="user-activity-item">
+        <div class="user-activity-icon">${label.split(" ")[0]}</div>
+        <div class="user-activity-info">
+          <div class="user-activity-action">${label.split(" ").slice(1).join(" ") || label}</div>
+          <div class="user-activity-meta">${details ? escapeHtmlApp(details) : "No details"}</div>
+        </div>
+        <div class="user-activity-time">${formatTimestampApp(entry.timestamp)}</div>
+      </div>`;
+    }).join("");
+  } catch (err) {
+    listEl.innerHTML = `<div class="admin-empty-state"><div class="admin-empty-icon">⚠️</div><div class="admin-empty-text">Failed to load activity: ${escapeHtmlApp(err.message || "unknown error")}</div></div>`;
+  }
+}
+
+function escapeHtmlApp(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ============================================================
+// NAVIGATION & ROUTING
+// ============================================================
+
+function initNavigation() {
+  document.querySelectorAll(".header-nav-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      const page = item.getAttribute("data-page");
+      if (page) navigate(page);
+    });
+  });
+}
+
+// Page-specific fresh loaders — keyed by page ID
+const PAGE_LOADERS = {
+  dashboard: () => typeof loadDashboardStats === "function" && loadDashboardStats(),
+  repositories: () => typeof loadRepositories === "function" && loadRepositories(),
+  "git-desktop": () => typeof loadGitDesktop === "function" && loadGitDesktop(),
+  debug: () => typeof populateRepoDropdowns === "function" && populateRepoDropdowns(),
+  issues: () => {
+    if (typeof populateRepoDropdowns === "function") populateRepoDropdowns();
+    if (typeof loadIssues === "function") loadIssues();
+  },
+  prs: () => {
+    if (typeof populateRepoDropdowns === "function") populateRepoDropdowns();
+    if (typeof loadPRs === "function") loadPRs();
+  },
+  conflicts: () => {
+    if (typeof populateRepoDropdowns === "function") populateRepoDropdowns();
+    if (typeof loadConflictsPage === "function") loadConflictsPage();
+  },
+  history: () => typeof loadHistory === "function" && loadHistory(),
+  settings: () => {
+    if (typeof loadGitHubStatus === "function") loadGitHubStatus();
+  },
+  admin: () => typeof loadAdminPanel === "function" && loadAdminPanel(),
+  "user-panel": () => typeof loadUserPanel === "function" && loadUserPanel(),
+};
+
+function navigate(pageId) {
+  window.setState("currentPage", pageId);
+  localStorage.setItem("gda_current_page", pageId);
+
+  // Update nav highlighting
+  document.querySelectorAll(".header-nav-item").forEach((item) => {
+    item.classList.toggle("active", item.getAttribute("data-page") === pageId);
+  });
+
+  // Switch pages
+  document.querySelectorAll(".page").forEach((page) => {
+    page.classList.toggle("active", page.id === `page-${pageId}`);
+  });
+
+  // Page-specific fresh loads
+  PAGE_LOADERS[pageId]?.();
+}
+
+// ============================================================
+// TABS
+// ============================================================
+
+function initTabs() {
+  document.querySelectorAll(".tab-item").forEach((tab) => {
+    tab.addEventListener("click", () => switchTab(tab.getAttribute("data-tab")));
+  });
+}
+
+function switchTab(tabName) {
+  window.setState("activeTab", tabName);
+  document.querySelectorAll(".tab-item").forEach((tab) => {
+    tab.classList.toggle("active", tab.getAttribute("data-tab") === tabName);
+  });
+  document.querySelectorAll(".tab-panel").forEach((panel) => {
+    panel.classList.toggle("active", panel.getAttribute("data-tab") === tabName);
+  });
+}
+
+// ============================================================
+// FORMS & AUTH EVENTS
+// ============================================================
+
+function initForms() {
+  // Login Form
+  const loginForm = document.getElementById("login-form");
+  const loginError = document.getElementById("auth-error");
+  const loginBtn = document.getElementById("login-btn");
+
+  loginForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    loginError.style.display = "none";
+    loginBtn.disabled = true;
+    loginBtn.textContent = "Signing In...";
+
+    try {
+      const email = document.getElementById("login-email")?.value.trim();
+      const password = document.getElementById("login-password")?.value;
+      const { user } = await api.login(email, password);
+      showToast("Welcome back!", "success");
+      showApp(user, true);
+    } catch (err) {
+      loginError.textContent = err.message || "Failed to sign in";
+      loginError.style.display = "block";
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = "Sign In";
+    }
+  });
+
+  // Register Form
+  const regForm = document.getElementById("register-form");
+  const regError = document.getElementById("register-error");
+  const regBtn = document.getElementById("register-btn");
+
+  regForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    regError.style.display = "none";
+    regBtn.disabled = true;
+    regBtn.textContent = "Creating Account...";
+
+    try {
+      const email = document.getElementById("reg-email")?.value.trim();
+      const password = document.getElementById("reg-password")?.value;
+      const { user } = await api.register(email, password);
+      showToast("Account created successfully!", "success");
+      showApp(user, true);
+    } catch (err) {
+      regError.textContent = err.message || "Failed to register";
+      regError.style.display = "block";
+    } finally {
+      regBtn.disabled = false;
+      regBtn.textContent = "Create Account";
+    }
+  });
+
+  // Toggle Forms
+  document.getElementById("show-register-btn")?.addEventListener("click", () => {
+    loginForm.style.display = "none";
+    regForm.style.display = "flex";
+  });
+
+  document.getElementById("show-login-btn")?.addEventListener("click", () => {
+    regForm.style.display = "none";
+    loginForm.style.display = "flex";
+  });
+
+  // Debug Form
+  document.getElementById("debug-form")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    startDebugFromForm?.();
+  });
+
+  // Folder path input Enter key
+  document.getElementById("folder-path-input")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      browseToEnteredPath?.();
+    }
+  });
+}
+
+function initUserMenu() {
+  document.getElementById("user-menu-btn")?.addEventListener("click", () => navigate("settings"));
+}
+
+// ============================================================
+// MOBILE MENU TOGGLE
+// ============================================================
+
+function initMobileMenu() {
+  const toggle = document.getElementById("mobile-nav-toggle");
+  const nav = document.querySelector(".header-nav");
+  if (!toggle || !nav) return;
+
+  toggle.addEventListener("click", () => {
+    nav.classList.toggle("mobile-open");
+    toggle.textContent = nav.classList.contains("mobile-open") ? "✕" : "☰";
+  });
+
+  // Close mobile menu when a nav item is clicked
+  nav.querySelectorAll(".header-nav-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      nav.classList.remove("mobile-open");
+      toggle.textContent = "☰";
+    });
+  });
+
+  // Close mobile menu when clicking outside
+  document.addEventListener("click", (e) => {
+    if (!nav.contains(e.target) && !toggle.contains(e.target)) {
+      nav.classList.remove("mobile-open");
+      toggle.textContent = "☰";
+    }
+  });
+}
+
+// ============================================================
+// SCROLL TO TOP
+// ============================================================
+
+function initScrollToTop() {
+  const btn = document.getElementById("scroll-top-btn");
+  if (!btn) return;
+
+  const mainLayout = document.querySelector(".main-layout");
+  const scrollTarget = mainLayout || window;
+
+  const toggleVisibility = () => {
+    const scrollTop = mainLayout ? mainLayout.scrollTop : window.scrollY;
+    btn.classList.toggle("visible", scrollTop > 300);
+  };
+
+  scrollTarget.addEventListener("scroll", toggleVisibility, { passive: true });
+  toggleVisibility();
+
+  btn.addEventListener("click", () => {
+    if (mainLayout) {
+      mainLayout.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  });
+}
+
+// ============================================================
+// MODALS & TOASTS
+// ============================================================
+
+function openModal(id) {
+  document.getElementById(id).style.display = "flex";
+}
+
+function closeModal(id) {
+  document.getElementById(id).style.display = "none";
+}
+
+// Close modals when clicking overlay background
+window.addEventListener("click", (e) => {
+  if (e.target.classList.contains("modal-overlay")) {
+    e.target.style.display = "none";
+  }
 });
+
+// ── Centralized data-action event delegation ─────────────────────────────────
+document.addEventListener("click", (e) => {
+  const target = e.target.closest("[data-action]");
+  if (!target) return;
+
+  const { action, value } = target.dataset;
+
+  const HANDLERS = {
+    navigate: () => navigate(value),
+    closeModal: () => closeModal(value),
+    logout: () => logout(),
+    openFolderBrowser: () => typeof openFolderBrowser === "function" && openFolderBrowser(),
+    showGitHubModalFlow: () => typeof showGitHubModalFlow === "function" && showGitHubModalFlow(),
+    showGitHubConnectModal: () => typeof showGitHubConnectModal === "function" && showGitHubConnectModal(),
+    filterChangedFiles: () => typeof filterChangedFiles === "function" && filterChangedFiles(value),
+    switchGitDesktopTab: () => typeof switchGitDesktopTab === "function" && switchGitDesktopTab(value),
+    switchGitDesktopLeftTab: () => typeof switchGitDesktopLeftTab === "function" && switchGitDesktopLeftTab(value),
+    openCurrentFileInOs: () => typeof openCurrentFileInOs === "function" && openCurrentFileInOs(value),
+    loadIssues: () => typeof loadIssues === "function" && loadIssues(),
+    filterGitHubRepos: () => typeof filterGitHubRepos === "function" && filterGitHubRepos(),
+    generateAutoCommitMessage: () => typeof generateAutoCommitMessage === "function" && generateAutoCommitMessage(value === "true"),
+    commitFromGitDesktop: () => typeof commitFromGitDesktop === "function" && commitFromGitDesktop(),
+    triggerAIAnalyzeChanges: () => typeof triggerAIAnalyzeChanges === "function" && triggerAIAnalyzeChanges(),
+    triggerAICommitAll: () => typeof triggerAICommitAll === "function" && triggerAICommitAll(),
+    openPushPreviewModal: () => typeof openPushPreviewModal === "function" && openPushPreviewModal(),
+    openBranchSwitcherModal: () => typeof openBranchSwitcherModal === "function" && openBranchSwitcherModal(),
+    triggerGitFetch: () => typeof triggerGitFetch === "function" && triggerGitFetch(),
+    triggerGitPull: () => typeof triggerGitPull === "function" && triggerGitPull(),
+    triggerGitSync: () => typeof triggerGitSync === "function" && triggerGitSync(),
+    triggerAIShip: () => typeof triggerAIShip === "function" && triggerAIShip(),
+    setDebugExample: () => typeof setDebugExample === "function" && setDebugExample(value),
+    connectCurrentBrowsedFolder: () => typeof connectCurrentBrowsedFolder === "function" && connectCurrentBrowsedFolder(),
+    browseToEnteredPath: () => typeof browseToEnteredPath === "function" && browseToEnteredPath(),
+    connectEnteredPath: () => typeof connectEnteredPath === "function" && connectEnteredPath(),
+    connectGitHub: () => typeof connectGitHub === "function" && connectGitHub(),
+    connectGitHubFromModal: () => typeof connectGitHubFromModal === "function" && connectGitHubFromModal(),
+    disconnectGitHub: () => typeof disconnectGitHub === "function" && disconnectGitHub(),
+    startDebugFromForm: () => typeof startDebugFromForm === "function" && startDebugFromForm(),
+    exitDebugSession: () => typeof exitDebugSession === "function" && exitDebugSession(),
+    abortCurrentSession: () => typeof abortCurrentSession === "function" && abortCurrentSession(),
+    applyFix: () => typeof applyFix === "function" && applyFix(),
+    revertFix: () => typeof revertFix === "function" && revertFix(),
+    requestDetails: () => typeof requestDetails === "function" && requestDetails(),
+    rejectFix: () => typeof rejectFix === "function" && rejectFix(),
+    triggerNativeFolderPicker: () => typeof triggerNativeFolderPicker === "function" && triggerNativeFolderPicker(),
+    onPushTargetBranchChanged: () => typeof onPushTargetBranchChanged === "function" && onPushTargetBranchChanged(),
+    executePushFromModal: () => typeof executePushFromModal === "function" && executePushFromModal(),
+    createAndCheckoutBranch: () => typeof createAndCheckoutBranch === "function" && createAndCheckoutBranch(),
+    filterBranchList: () => typeof filterBranchList === "function" && filterBranchList(),
+    indexRepo: () => typeof indexRepo === "function" && indexRepo(value),
+    checkHealth: () => typeof checkHealth === "function" && checkHealth(),
+    openActiveRepoPicker: () => typeof openActiveRepoPicker === "function" && openActiveRepoPicker(),
+    openCreatePRModal: () => typeof openCreatePRModal === "function" && openCreatePRModal(value),
+    resolveConflicts: () => typeof resolveConflicts === "function" && resolveConflicts(value),
+    triggerResolveAllConflicts: () => typeof triggerResolveAllConflicts === "function" && triggerResolveAllConflicts(),
+    loadConflictsPage: () => typeof loadConflictsPage === "function" && loadConflictsPage(),
+    loadPRs: () => typeof loadPRs === "function" && loadPRs(),
+    submitCreatePR: () => typeof submitCreatePR === "function" && submitCreatePR(),
+    saveAgentConfig: () => typeof saveAgentConfig === "function" && saveAgentConfig(),
+    commitAndPushFix: () => typeof commitAndPushFix === "function" && commitAndPushFix(),
+    quickDebugRepo: () => typeof quickDebugRepo === "function" && quickDebugRepo(value),
+    editGroupCommitMessage: () => typeof editGroupCommitMessage === "function" && editGroupCommitMessage(value),
+    previewGroupDiff: () => typeof previewGroupDiff === "function" && previewGroupDiff(value),
+    executeCommitPlanAll: () => typeof executeCommitPlanAll === "function" && executeCommitPlanAll(),
+    adminRefreshUsers: () => typeof loadAdminPanel === "function" && loadAdminPanel(),
+    adminRefreshActivity: () => typeof loadAdminPanel === "function" && loadAdminPanel(),
+    adminViewUser: () => typeof adminViewUser === "function" && adminViewUser(value),
+    adminCloseDetail: () => { const d = document.getElementById("admin-user-detail-overlay"); if (d) d.style.display = "none"; },
+    adminViewActivity: () => typeof adminViewActivity === "function" && adminViewActivity(value),
+    adminCloseActivityDetail: () => { const d = document.getElementById("admin-activity-detail-overlay"); if (d) d.style.display = "none"; },
+    userRefreshActivity: () => typeof loadUserPanel === "function" && loadUserPanel(),
+  };
+
+  // Delegate to view-specific handlers first, fall back to centralized handlers
+  HANDLERS[action]?.();
+});
+
+// ── Centralized data-action change delegation (select elements) ──────────────
+document.addEventListener("change", (e) => {
+  const target = e.target.closest("[data-action]");
+  if (!target) return;
+
+  const { action } = target.dataset;
+
+  const CHANGE_HANDLERS = {
+    loadIssues: () => typeof loadIssues === "function" && loadIssues(),
+    loadPRs: () => typeof loadPRs === "function" && loadPRs(),
+    loadConflictsPage: () => typeof loadConflictsPage === "function" && loadConflictsPage(),
+    onPushTargetBranchChanged: () => typeof onPushTargetBranchChanged === "function" && onPushTargetBranchChanged(),
+  };
+
+  CHANGE_HANDLERS[action]?.();
+});
+
+// ── Centralized data-action input delegation (search inputs) ─────────────────
+document.addEventListener("input", (e) => {
+  const target = e.target.closest("[data-action]");
+  if (!target) return;
+
+  const { action } = target.dataset;
+
+  const INPUT_HANDLERS = {
+    filterBranchList: () => typeof filterBranchList === "function" && filterBranchList(),
+    filterGitHubRepos: () => typeof filterGitHubRepos === "function" && filterGitHubRepos(),
+  };
+
+  INPUT_HANDLERS[action]?.();
+});
+
+function showToast(message, type = "info") {
+  const container = document.getElementById("toast-container");
+  if (!container) return;
+
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+
+  const icons = { success: "✓", error: "⚠️", info: "ℹ️" };
+  toast.textContent = `${icons[type] ?? icons.info} ${message}`;
+
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translateY(8px)";
+    setTimeout(() => toast.remove(), 250);
+  }, 3500);
+}
+
+// ============================================================
+// UTILITIES
+// ============================================================
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function escapeHtml(str) {
+  if (str == null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function formatRelativeTime(date) {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  const diffSec = Math.floor((Date.now() - d.getTime()) / 1000);
+
+  if (diffSec < 60) return "just now";
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+  return `${Math.floor(diffSec / 86400)}d ago`;
+}
+
+// ============================================================
+// GLOBAL WINDOW EXPORTS
+// ============================================================
+
+window.navigate = navigate;
+window.switchTab = switchTab;
+window.showToast = showToast;
+window.openModal = openModal;
+window.closeModal = closeModal;
+window.escapeHtml = escapeHtml;
+window.formatRelativeTime = formatRelativeTime;
+window.sleep = sleep;
+window.logout = logout;
+window.loadAll = loadAll;

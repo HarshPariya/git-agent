@@ -2,125 +2,1597 @@
 <html lang="en">
 
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Code Assistant</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap"
-    rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description"
+    content="Git Debugging Agent — AI-powered Git repository analysis, automated root cause detection, and intelligent fix generation." />
+  <title>Git Debugging Agent</title>
+  <link rel="icon" href="/favicon.ico?v=2" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 
-<body class="chatgpt-layout">
+<body>
 
-  <!-- Left Sidebar -->
-  <aside class="sidebar">
-    <div class="sidebar-header">
-      <div class="brand">
-        <span class="icon">🤖</span>
-        <span class="title">CodeGPT</span>
-      </div>
-      <button id="btn-new-chat" class="btn-new-chat">+ New Chat</button>
-    </div>
+  <!-- Global Drag & Drop Overlay -->
+  <div id="global-drop-overlay" class="global-drop-overlay">
+    <div class="drop-icon">📂</div>
+    <div class="drop-title">Drop Folder to Connect</div>
+    <div class="drop-sub">Release your project or repository folder to add it to Git Debug Agent</div>
+  </div>
 
-    <div class="sidebar-section">
-      <div class="section-title">Quick Actions</div>
-      <button class="shortcut-btn" data-query="/impact traverseGraph">⚡ Impact: traverseGraph</button>
-      <button class="shortcut-btn" data-query="/metrics">📊 Check System SLA</button>
-      <button class="shortcut-btn" data-query="How does graph search work?">🔍 How Graph Search Works</button>
-      <button class="shortcut-btn" data-query="Where is normalizeId used?">🔎 Find normalizeId Usages</button>
-    </div>
-
-    <div class="sidebar-section">
-      <div class="section-title">Knowledge Documents</div>
-      <button id="btn-upload-doc" class="shortcut-btn upload-doc-btn">
-        <span>📎 Upload Document</span>
-      </button>
-      <input type="file" id="file-input" accept=".pdf,.docx,.txt,.md" style="display: none;" />
-      <div id="uploaded-docs-list" class="uploaded-docs-list"></div>
-    </div>
-
-    <div class="sidebar-footer">
-      <div class="system-health">
-        <span class="health-dot online"></span>
-        <span id="sidebar-health-text">Online • 100% SLA</span>
-      </div>
-    </div>
-  </aside>
-
-  <!-- Main Chat Workspace -->
-  <main class="chat-workspace">
-
-    <!-- Top Chat Navigation Bar -->
-    <header class="chat-topbar">
-      <div class="chat-title">
-        <span class="chat-title-icon">⚡</span>
-        <span class="chat-title-text">CodeGPT AI Assistant</span>
-      </div>
-
-      <div class="topbar-actions">
-        <button id="btn-clear-history" class="btn-icon" title="Clear Chat History">🗑️ Clear</button>
-      </div>
-    </header>
-
-    <!-- Chat Messages Scroll Container -->
-    <div id="chat-messages-container" class="messages-container">
-      <div class="welcome-card glass-panel">
-        <div class="welcome-icon">⚡</div>
-        <h2>GraphRAG AI Code & Document Assistant</h2>
-        <p>Ask questions about your codebase, debug functions, analyze impact paths, or chat with uploaded PDF/DOCX
-          specifications in real-time.</p>
-
-        <div class="prompt-grid">
-          <button class="prompt-card" data-prompt="How does graph traversal work?">
-            <span class="title">🔍 Graph Traversal</span>
-            <span class="desc">How does BFS graph search find caller entities?</span>
-          </button>
-          <button class="prompt-card" data-prompt="/impact traverseGraph">
-            <span class="title">⚡ Impact Analysis</span>
-            <span class="desc">What breaks if I modify traverseGraph()?</span>
-          </button>
-          <button class="prompt-card" data-prompt="Where is normalizeId used?">
-            <span class="title">🔎 Function Lookup</span>
-            <span class="desc">Find exact occurrences and references to normalizeId.</span>
-          </button>
-          <button class="prompt-card" data-prompt="/metrics">
-            <span class="title">📊 SLA & Metrics</span>
-            <span class="desc">Show P50/P95 latency, pool stats, and cache hit rates.</span>
-          </button>
+  <!-- AUTH PAGE (shown when not logged in) -->
+  <div id="auth-page" class="auth-page" style="display:none">
+    <div class="auth-card">
+      <div class="auth-logo">
+        <div class="header-logo-icon"
+          style="width:32px;height:32px;background:linear-gradient(135deg,#1f2937,#000000);display:flex;align-items:center;justify-content:center;border-radius:8px">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4 17 10 11 4 5" />
+            <line x1="12" y1="19" x2="20" y2="19" />
+          </svg>
         </div>
+        <div style="font-weight:700;font-size:18px;color:var(--c-text)">Git Debug Agent</div>
       </div>
-    </div>
+      <h1 class="auth-title">Welcome back</h1>
+      <p class="auth-subtitle">Sign in to your account to continue debugging</p>
 
-    <!-- Bottom Fixed Input Bar -->
-    <footer class="input-container">
-      <div class="input-wrapper glass-panel">
-        <button id="btn-attach" class="btn-attach" title="Upload Document (.pdf, .docx, .txt, .md)">📎</button>
-        <textarea id="user-input" placeholder="Message CodeGPT or type /impact <symbol>..." rows="1"></textarea>
-        <button id="btn-send" class="btn-send">
-          <span>Send</span> 🚀
+      <form id="login-form" class="auth-form" autocomplete="on">
+        <div id="auth-error" class="auth-error"></div>
+        <div class="form-group">
+          <label class="form-label" for="login-email">Email address</label>
+          <input class="form-input" type="email" id="login-email" name="email" placeholder="you@company.com"
+            autocomplete="email" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="login-password">Password</label>
+          <input class="form-input" type="password" id="login-password" name="password" placeholder="••••••••"
+            autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="btn btn-primary full-width btn-lg" id="login-btn">
+          Sign In
         </button>
-      </div>
-      <div class="input-footer-hint">
-        <span>CodeGPT uses PostgreSQL + pgvector & AST Knowledge Graphs. Sub-20ms SLA.</span>
-      </div>
-    </footer>
+        <div class="auth-google-divider">
+          <span>or</span>
+        </div>
+        <div id="google-signin-btn" class="auth-google-section"></div>
+        <div class="auth-divider">
+          <div class="auth-divider-line"></div>
+          <div class="auth-divider-text">Don't have an account?</div>
+          <div class="auth-divider-line"></div>
+        </div>
+        <button type="button" class="btn btn-secondary full-width" id="show-register-btn">Create Account</button>
+      </form>
 
-  </main>
-
-  <!-- Drag & Drop Upload Overlay -->
-  <div id="drag-drop-overlay" class="drag-drop-overlay hidden">
-    <div class="drag-drop-modal">
-      <div class="drag-icon">📂</div>
-      <h3>Drop Document to Index</h3>
-      <p>Supports <strong>.pdf, .docx, .txt, .md</strong> files (up to 50MB)</p>
-      <div class="drag-badge">Release mouse to start indexing</div>
+      <form id="register-form" class="auth-form" style="display:none" autocomplete="on">
+        <div id="register-error" class="auth-error"></div>
+        <div class="form-group">
+          <label class="form-label" for="reg-email">Email address</label>
+          <input class="form-input" type="email" id="reg-email" name="email" placeholder="you@company.com"
+            autocomplete="email" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="reg-password">Password</label>
+          <input class="form-input" type="password" id="reg-password" name="password" placeholder="Create a password"
+            autocomplete="new-password" required />
+        </div>
+        <button type="submit" class="btn btn-primary full-width btn-lg" id="register-btn">Create Account</button>
+        <div class="auth-divider">
+          <div class="auth-divider-line"></div>
+          <div class="auth-divider-text">Already have an account?</div>
+          <div class="auth-divider-line"></div>
+        </div>
+        <button type="button" class="btn btn-secondary full-width" id="show-login-btn">Sign In Instead</button>
+      </form>
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <!-- MAIN APP (shown when logged in) -->
+  <div id="app" style="display:none">
+
+    <!-- HEADER -->
+    <header class="header">
+      <div class="header-left">
+        <div class="header-logo" data-action="navigate" data-value="dashboard">
+          <div class="header-logo-icon"
+            style="width:30px;height:30px;background:linear-gradient(135deg,#1f2937,#000000);display:flex;align-items:center;justify-content:center;border-radius:8px;flex-shrink:0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="4 17 10 11 4 5" />
+              <line x1="12" y1="19" x2="20" y2="19" />
+            </svg>
+          </div>
+          <span>Git Debug Agent</span>
+        </div>
+
+        <!-- Active repository switcher pill -->
+        <div class="active-repo-badge" id="header-active-repo" data-action="openActiveRepoPicker"
+          title="Switch active repository">
+          <div class="active-repo-dot"></div>
+          <span id="header-active-repo-name">No repo selected</span>
+          <span style="font-size:10px;color:var(--c-text-muted)">▾</span>
+        </div>
+      </div>
+
+      <nav class="header-nav">
+        <div class="header-nav-item active" data-page="dashboard" id="nav-dashboard">Dashboard</div>
+        <div class="header-nav-item" data-page="repositories" id="nav-repositories">Repositories</div>
+        <div class="header-nav-item" data-page="git-desktop" id="nav-git-desktop">Git Desktop</div>
+        <div class="header-nav-item" data-page="debug" id="nav-debug">AI Debugging</div>
+        <div class="header-nav-item" data-page="issues" id="nav-issues">Issues</div>
+        <div class="header-nav-item" data-page="prs" id="nav-prs">Pull Requests</div>
+        <div class="header-nav-item" data-page="conflicts" id="nav-conflicts">Conflicts</div>
+        <div class="header-nav-item" data-page="history" id="nav-history">History</div>
+        <div class="header-nav-item" data-page="settings" id="nav-settings">Settings</div>
+        <div class="header-nav-item" data-page="admin" id="nav-admin" style="display:none">
+          <span style="color:var(--c-warning)">★</span> Admin
+        </div>
+        <div class="header-nav-item" data-page="user-panel" id="nav-user-panel" style="display:none">My Activity</div>
+      </nav>
+
+      <!-- Mobile hamburger toggle -->
+      <button class="header-mobile-toggle" id="mobile-nav-toggle" aria-label="Toggle navigation">☰</button>
+
+      <div class="header-actions">
+        <div class="status-pill">
+          <div class="status-dot online" id="server-status-dot"></div>
+          <span id="server-status-text">Connected</span>
+        </div>
+
+        <button class="btn btn-secondary btn-sm" id="github-connect-btn" data-action="showGitHubConnectModal">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <path
+              d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
+          </svg>
+          Connect GitHub
+        </button>
+
+        <button class="btn btn-secondary btn-sm btn-icon user-menu-btn" id="user-menu-btn" title="Settings & Account">
+          <img id="header-avatar" class="header-avatar" src="" alt="" style="display:none" />
+          <svg id="header-avatar-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- PAGES -->
+    <div class="main-layout">
+
+      <!-- ===================== DASHBOARD ===================== -->
+      <div id="page-dashboard" class="page active">
+
+        <!-- 3-Action Quick Hero Row -->
+        <div class="action-grid">
+          <div class="action-card featured" data-action="navigate" data-value="debug">
+            <div>
+              <div class="action-card-icon">⚡</div>
+              <div class="action-card-title">Run AI Debugger</div>
+              <div class="action-card-desc">
+                Investigate bugs, test failures, regressions, and merge conflicts with autonomous multi-agent reasoning.
+              </div>
+            </div>
+            <div class="action-card-footer">
+              <span>Start debugging session</span>
+              <span>→</span>
+            </div>
+          </div>
+
+          <div class="action-card" data-action="navigate" data-value="git-desktop">
+            <div>
+              <div class="action-card-icon" style="color:#4f46e5">🖥️</div>
+              <div class="action-card-title">Open Git Desktop</div>
+              <div class="action-card-desc">
+                Inspect working tree changes, trigger AI semantic change grouping, review Conventional Commit plans, and
+                commit all.
+              </div>
+            </div>
+            <div class="action-card-footer" style="color:#4f46e5">
+              <span>Open Git Desktop</span>
+              <span>→</span>
+            </div>
+          </div>
+
+          <div class="action-card" data-action="openFolderBrowser">
+            <div>
+              <div class="action-card-icon" style="color:#0284c7">📁</div>
+              <div class="action-card-title">Connect Repository</div>
+              <div class="action-card-desc">
+                Connect any local folder or link GitHub cloud repositories to begin instant AI debugging and Git
+                operations.
+              </div>
+            </div>
+            <div class="action-card-footer" style="color:#0284c7">
+              <span>Browse & connect</span>
+              <span>→</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stats Row -->
+        <div class="grid-4" id="dashboard-stats">
+          <div class="stat-card" data-action="navigate" data-value="repositories" style="cursor:pointer">
+            <div class="stat-label">Connected Repositories</div>
+            <div class="stat-value" id="stat-repos">0</div>
+          </div>
+          <div class="stat-card" data-action="navigate" data-value="git-desktop" style="cursor:pointer">
+            <div class="stat-label">Current Changes</div>
+            <div class="stat-value" id="stat-changes">0 files</div>
+          </div>
+          <div class="stat-card" data-action="navigate" data-value="debug" style="cursor:pointer">
+            <div class="stat-label">Debug Sessions</div>
+            <div class="stat-value" id="stat-sessions">0</div>
+          </div>
+          <div class="stat-card" data-action="navigate" data-value="history" style="cursor:pointer">
+            <div class="stat-label">Fixes Applied</div>
+            <div class="stat-value" id="stat-fixes">0</div>
+          </div>
+        </div>
+
+        <!-- Dashboard Main Grid -->
+        <div class="grid-2">
+          <!-- Recent Repositories -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Connected Repositories</div>
+                <div class="card-subtitle">Active repositories ready for AI analysis</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" data-action="navigate" data-value="repositories">View
+                All</button>
+            </div>
+            <div id="dashboard-repos">
+              <div class="empty-state">
+                <div class="empty-icon">📁</div>
+                <div class="empty-title">No repositories yet</div>
+                <div class="empty-desc">Connect a local or GitHub repository to get started.</div>
+                <button class="btn btn-primary btn-sm" data-action="openFolderBrowser">Browse Folders</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recent Debug Sessions -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Recent Debug Sessions</div>
+                <div class="card-subtitle">History of bug investigations & root causes</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" data-action="navigate" data-value="history">View All</button>
+            </div>
+            <div id="dashboard-sessions">
+              <div class="empty-state">
+                <div class="empty-icon">🔍</div>
+                <div class="empty-title">No debug sessions yet</div>
+                <div class="empty-desc">Start a session to isolate failing code paths and verify fixes.</div>
+                <button class="btn btn-primary btn-sm" data-action="navigate" data-value="debug">Start
+                  Debugging</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- System & Engine Status -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Engine Health</div>
+                <div class="card-subtitle">Live status of debugging pipelines</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" data-action="checkHealth">Refresh</button>
+            </div>
+            <div id="system-status-list" style="display:flex;flex-direction:column;gap:10px">
+              <div class="agent-phase done">
+                <div class="agent-phase-icon done">✓</div>
+                <div class="agent-phase-body">
+                  <div class="agent-phase-name">Git Execution Engine</div>
+                  <div class="agent-phase-desc">Safe/controlled/dangerous operation classification active</div>
+                </div>
+              </div>
+              <div class="agent-phase done">
+                <div class="agent-phase-icon done">✓</div>
+                <div class="agent-phase-body">
+                  <div class="agent-phase-name">GraphRAG Code Intelligence</div>
+                  <div class="agent-phase-desc">AST symbol indexing & call graph analysis ready</div>
+                </div>
+              </div>
+              <div class="agent-phase done">
+                <div class="agent-phase-icon done">✓</div>
+                <div class="agent-phase-body">
+                  <div class="agent-phase-name">AI Debug Pipeline</div>
+                  <div class="agent-phase-desc" id="status-groq">Groq AI / Automated Root-Cause Engine ready</div>
+                </div>
+              </div>
+              <div class="agent-phase" id="github-status-phase">
+                <div class="agent-phase-icon pending" id="status-github-icon">🔗</div>
+                <div class="agent-phase-body">
+                  <div class="agent-phase-name">GitHub Cloud Integration</div>
+                  <div class="agent-phase-desc" id="status-github">Not connected — click header to link account</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 5-Step Workflow Card -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Autonomous Debugging Flow</div>
+                <div class="card-subtitle">How the agent investigates and repairs code</div>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;gap:12px;align-items:flex-start">
+                <div class="badge badge-accent" style="width:24px;height:24px;justify-content:center;border-radius:50%">
+                  1</div>
+                <div>
+                  <div style="font-weight:600;font-size:13px">Isolate & Trace</div>
+                  <div style="font-size:12px;color:var(--c-text-muted)">Inspects git status, commits, blame, and
+                    modified files.</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:12px;align-items:flex-start">
+                <div class="badge badge-accent" style="width:24px;height:24px;justify-content:center;border-radius:50%">
+                  2</div>
+                <div>
+                  <div style="font-weight:600;font-size:13px">Reproduce</div>
+                  <div style="font-size:12px;color:var(--c-text-muted)">Constructs focused test command to capture exact
+                    failure symptom.</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:12px;align-items:flex-start">
+                <div class="badge badge-accent" style="width:24px;height:24px;justify-content:center;border-radius:50%">
+                  3</div>
+                <div>
+                  <div style="font-weight:600;font-size:13px">Diagnose Root Cause</div>
+                  <div style="font-size:12px;color:var(--c-text-muted)">Ranks hypotheses using GraphRAG code graph & AST
+                    references.</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:12px;align-items:flex-start">
+                <div class="badge badge-accent" style="width:24px;height:24px;justify-content:center;border-radius:50%">
+                  4</div>
+                <div>
+                  <div style="font-weight:600;font-size:13px">Generate Safe Patch</div>
+                  <div style="font-size:12px;color:var(--c-text-muted)">Synthesizes minimal surgical fix; runs dry-run
+                    safety check.</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:12px;align-items:flex-start">
+                <div class="badge badge-success"
+                  style="width:24px;height:24px;justify-content:center;border-radius:50%">5</div>
+                <div>
+                  <div style="font-weight:600;font-size:13px">Verify & Commit</div>
+                  <div style="font-size:12px;color:var(--c-text-muted)">Validates tests, reviews diff, and generates
+                    pull request.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ===================== REPOSITORIES ===================== -->
+      <div id="page-repositories" class="page">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Repositories</div>
+            <div class="section-subtitle">Manage connected local folders and GitHub repositories</div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <button class="btn btn-secondary" data-action="openFolderBrowser">📁 Browse Local Folders</button>
+            <button class="btn btn-primary" data-action="showGitHubModalFlow">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <path
+                  d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
+              </svg>
+              Connect GitHub Repo
+            </button>
+          </div>
+        </div>
+
+        <div id="repos-list" class="grid-3">
+          <div class="empty-state" style="grid-column:1/-1">
+            <div class="empty-icon">📁</div>
+            <div class="empty-title">No repositories connected</div>
+            <div class="empty-desc">Add a local repository or connect a GitHub repository to start debugging.</div>
+            <div style="display:flex;gap:10px;margin-top:8px">
+              <button class="btn btn-secondary btn-sm" data-action="openFolderBrowser">Browse Folders</button>
+              <button class="btn btn-primary btn-sm" data-action="showGitHubModalFlow">Connect GitHub</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== WORKSPACE B — GIT DESKTOP ===================== -->
+      <div id="page-git-desktop" class="page">
+        <!-- Git Desktop Repository Header -->
+        <div class="git-desktop-header card" style="margin-bottom:16px;padding:14px 18px">
+          <div class="git-desktop-repo-info">
+            <div class="git-repo-pill" data-action="openActiveRepoPicker" title="Switch active repository"
+              style="cursor:pointer">
+              <span class="git-repo-icon">🌿</span>
+              <span id="gd-repo-name" class="git-repo-name" style="font-weight:700">Select a repository</span>
+              <span style="font-size:10px;color:var(--c-text-muted)">▾</span>
+            </div>
+            <div class="git-meta-item" data-action="openBranchSwitcherModal" style="cursor:pointer"
+              title="Click to switch or create branch">
+              <span class="git-meta-label">Branch:</span>
+              <span id="gd-branch-name" class="badge badge-accent"
+                style="cursor:pointer;display:inline-flex;align-items:center;gap:4px">
+                main <span style="font-size:9px">▾</span>
+              </span>
+            </div>
+            <div class="git-meta-item">
+              <span class="git-meta-label">Remote:</span>
+              <span id="gd-remote-name" class="git-meta-val">origin</span>
+            </div>
+            <div class="git-meta-item">
+              <span class="git-meta-label">Sync:</span>
+              <span id="gd-ahead-behind" class="badge" style="background:#f1f5f9;color:#334155">↑ 0 · ↓ 0</span>
+            </div>
+            <div class="git-meta-item">
+              <span class="git-meta-label">Working Tree:</span>
+              <span id="gd-working-status" class="badge badge-success">Clean</span>
+            </div>
+          </div>
+
+          <!-- Git Desktop Main Actions Toolbar -->
+          <div class="git-desktop-actions">
+            <button class="btn btn-primary btn-sm" id="gd-btn-analyze" data-action="triggerAIAnalyzeChanges">
+              ⚡ AI Analyze Changes
+            </button>
+            <button class="btn btn-secondary btn-sm" id="gd-btn-fetch" data-action="triggerGitFetch">
+              📥 Fetch origin
+            </button>
+            <button class="btn btn-secondary btn-sm" id="gd-btn-pull" data-action="triggerGitPull">
+              ⬇️ Pull
+            </button>
+            <button class="btn btn-secondary btn-sm" id="gd-btn-sync" data-action="triggerGitSync">
+              🔄 Sync
+            </button>
+            <button class="btn btn-secondary btn-sm" id="gd-btn-push" data-action="openPushPreviewModal">
+              ⬆️ Push origin
+            </button>
+            <button class="btn btn-secondary btn-sm" id="gd-btn-ship" data-action="triggerAIShip">
+              🚀 AI Ship
+            </button>
+          </div>
+        </div>
+
+        <!-- Git Desktop 2-Column Working Layout (GitHub Desktop Style) -->
+        <div class="git-desktop-grid" style="display:grid;grid-template-columns:350px 1fr;gap:16px;align-items:start">
+          <!-- Left Column: Changes, Commit Plan & History with Commit Box -->
+          <div class="card" style="padding:0;overflow:hidden;display:flex;flex-direction:column">
+            <!-- Left Tabs: Changes vs Commit Plan vs History -->
+            <div class="tabs"
+              style="padding:0 12px;border-bottom:1px solid var(--c-border);background:var(--c-surface-hover)">
+              <div class="tab-item active" id="gd-tab-changes" data-action="switchGitDesktopLeftTab"
+                data-value="changes">
+                Changes <span class="badge badge-accent" id="gd-changes-count"
+                  style="margin-left:4px;font-size:10px">0</span>
+              </div>
+              <div class="tab-item" id="gd-tab-commit-plan" data-action="switchGitDesktopLeftTab"
+                data-value="commit-plan">
+                🤖 Commit Plan
+              </div>
+              <div class="tab-item" id="gd-tab-history" data-action="switchGitDesktopLeftTab" data-value="history">
+                History
+              </div>
+            </div>
+
+            <!-- Panel A: Changes List + Bottom Commit Box -->
+            <div id="gd-panel-changes" style="display:flex;flex-direction:column">
+              <!-- Filter tabs & Select All -->
+              <div
+                style="padding:10px 14px;border-bottom:1px solid var(--c-border-subtle);display:flex;justify-content:space-between;align-items:center;background:#fff">
+                <div style="font-size:12px;font-weight:600;color:var(--c-text-secondary)">Changed Files</div>
+                <div class="git-filter-tabs">
+                  <button class="git-filter-tab active" data-filter="all" data-action="filterChangedFiles"
+                    data-value="all">All</button>
+                  <button class="git-filter-tab" data-filter="staged" data-action="filterChangedFiles"
+                    data-value="staged">Staged</button>
+                  <button class="git-filter-tab" data-filter="unstaged" data-action="filterChangedFiles"
+                    data-value="unstaged">Unstaged</button>
+                </div>
+              </div>
+
+              <!-- Changed Files List -->
+              <div id="gd-changes-list" class="git-changes-table-container"
+                style="max-height:360px;min-height:180px;overflow-y:auto">
+                <div class="empty-state" style="padding:32px 16px">
+                  <div class="empty-icon">✓</div>
+                  <div class="empty-title">Working tree is clean</div>
+                  <div class="empty-desc">No unstaged or modified files detected.</div>
+                </div>
+              </div>
+
+              <!-- GitHub Desktop Native Commit Box -->
+              <div class="git-desktop-commit-box"
+                style="padding:14px;border-top:1px solid var(--c-border);background:var(--c-surface)">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                  <div id="gd-author-avatar"
+                    style="width:20px;height:20px;border-radius:50%;background:var(--c-accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">
+                    GI</div>
+                  <span id="gd-author-name" style="font-size:12px;font-weight:600;color:var(--c-text)">Git User</span>
+                  <span style="font-size:10px;color:var(--c-text-muted)">Commit Author</span>
+                </div>
+                <!-- Auto-generate row -->
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+                  <span style="font-size:10.5px;font-weight:600;color:var(--c-text-muted);letter-spacing:.5px">COMMIT
+                    MESSAGE</span>
+                  <button type="button" id="gd-auto-generate-btn" class="btn btn-ghost btn-sm"
+                    data-action="generateAutoCommitMessage" data-value="true"
+                    style="padding:2px 8px;font-size:11px;border:1px solid var(--c-border);border-radius:var(--r-sm)">
+                    ✨ Auto-Generate
+                  </button>
+                </div>
+                <input class="form-input" id="gd-commit-summary" placeholder="Summary (required)"
+                  style="font-size:13px;padding:8px 10px;margin-bottom:6px;width:100%" />
+                <textarea class="form-input form-textarea" id="gd-commit-desc" rows="2"
+                  placeholder="Description (optional)"
+                  style="font-size:12px;padding:6px 10px;margin-bottom:8px;width:100%;resize:vertical;min-height:48px"></textarea>
+                <button class="btn btn-primary btn-sm full-width" id="gd-btn-commit" data-action="commitFromGitDesktop"
+                  style="padding:8px 12px;font-weight:600">
+                  Commit to <span id="gd-commit-branch-label" style="font-weight:700;margin-left:2px">main</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Panel B: Commit History List -->
+            <div id="gd-panel-history" style="display:none;max-height:560px;overflow-y:auto">
+              <div id="gd-history-list" style="display:flex;flex-direction:column;gap:1px;padding:8px">
+                <div class="text-muted" style="text-align:center;padding:24px;font-size:12px">Loading commit history...
+                </div>
+              </div>
+            </div>
+
+            <!-- Panel C: AI Commit Plan Panel -->
+            <div id="gd-panel-commit-plan"
+              style="display:none;max-height:560px;overflow-y:auto;padding:12px;display:none;flex-direction:column;gap:10px">
+              <div
+                style="display:flex;justify-content:space-between;align-items:center;padding-bottom:4px;border-bottom:1px solid var(--c-border-subtle)">
+                <div>
+                  <div style="font-size:12px;font-weight:700;color:var(--c-text)">Atomic Conventional Commits</div>
+                  <div id="gd-ai-summary" style="font-size:11px;color:var(--c-text-secondary);margin-top:1px">
+                    Auto-grouped changes</div>
+                </div>
+                <button class="btn btn-primary btn-sm" id="gd-btn-commit-all" data-action="triggerAICommitAll"
+                  style="display:none;font-size:11px;padding:3px 8px;white-space:nowrap">
+                  ⚡ Commit All
+                </button>
+              </div>
+              <div id="gd-commit-plan-container" style="display:flex;flex-direction:column;gap:8px">
+                <div class="empty-state" style="padding:24px 16px">
+                  <div class="empty-title" style="font-size:12px">Click "⚡ AI Analyze Changes" above to generate atomic
+                    commit groupings</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: Diff Inspector (Full Vertical Height) -->
+          <div style="display:flex;flex-direction:column">
+            <!-- Selected File Diff Card -->
+            <div class="card" style="padding:0;overflow:hidden">
+              <div class="card-header"
+                style="padding:10px 16px;border-bottom:1px solid var(--c-border);background:var(--c-surface-hover);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                <div style="display:flex;align-items:center;gap:10px;min-width:0">
+                  <span style="font-size:14px">📄</span>
+                  <div style="min-width:0">
+                    <div id="gd-diff-filepath"
+                      style="font-weight:700;font-size:13px;font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                      Select a file to inspect diff</div>
+                    <div id="gd-diff-meta" style="font-size:11px;color:var(--c-text-muted)">Changes preview &amp; syntax
+                      highlighting</div>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+                  <!-- OS Direct Open Actions -->
+                  <button class="btn btn-ghost btn-sm" id="gd-btn-reveal-os" data-action="openCurrentFileInOs"
+                    data-value="reveal" title="Reveal file in Windows File Explorer"
+                    style="padding:4px 8px;font-size:11px;display:none">
+                    📂 Reveal
+                  </button>
+                  <button class="btn btn-ghost btn-sm" id="gd-btn-open-editor" data-action="openCurrentFileInOs"
+                    data-value="edit" title="Open file directly in VS Code / default editor"
+                    style="padding:4px 8px;font-size:11px;display:none">
+                    📝 Open Editor
+                  </button>
+                  <span id="gd-diff-status-badge" class="badge badge-secondary" style="display:none">STATUS</span>
+                  <div class="tabs" style="padding:0;background:transparent;border:none">
+                    <button class="btn btn-secondary btn-sm" id="gd-tab-btn-diff" data-action="switchGitDesktopTab"
+                      data-value="gd-diff" style="padding:4px 10px;font-size:11px">File
+                      Diff</button>
+                    <button class="btn btn-ghost btn-sm" id="gd-tab-btn-all-diff" data-action="switchGitDesktopTab"
+                      data-value="gd-all-diff" style="padding:4px 10px;font-size:11px">📑 All
+                      Changes (<span id="gd-all-diff-count">0</span>)</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Diff Viewer Body (Single Selected File) -->
+              <div id="panel-gd-diff" class="tab-panel active" style="padding:0">
+                <div id="gd-diff-viewer" class="github-diff-viewer"
+                  style="min-height:500px;max-height:740px;overflow-y:auto;font-family:var(--font-mono);font-size:12px;background:#ffffff;padding:12px">
+                  <div class="empty-state" style="padding:48px 20px">
+                    <div class="empty-icon">🔍</div>
+                    <div class="empty-title">Select any changed file on the left</div>
+                    <div class="empty-desc">Unified additions, deletions, and AST symbols will render with clean GitHub
+                      diff colors.</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- All Changes Diff Body (Continuous unified diff for ALL modified files) -->
+              <div id="panel-gd-all-diff" class="tab-panel" style="display:none;padding:0">
+                <div id="gd-all-diff-viewer" class="github-diff-viewer"
+                  style="min-height:500px;max-height:740px;overflow-y:auto;font-family:var(--font-mono);font-size:12px;background:#ffffff;padding:12px">
+                  <div class="empty-state" style="padding:48px 20px">
+                    <div class="empty-icon">📑</div>
+                    <div class="empty-title">All Changed Files Diff</div>
+                    <div class="empty-desc">Unified continuous diff across every modified file in the working tree.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== WORKSPACE A — AI DEBUGGING ===================== -->
+      <div id="page-debug" class="page">
+        <div id="debug-form-view">
+          <div class="section-header">
+            <div>
+              <div class="section-title">New Debug Task</div>
+              <div class="section-subtitle">Select repository and describe problem for the AI agent to solve</div>
+            </div>
+          </div>
+
+          <div class="grid-2" style="align-items:start">
+            <!-- Debug Form -->
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Task Specification</div>
+              </div>
+              <form id="debug-form" style="display:flex;flex-direction:column;gap:14px">
+                <div class="form-group">
+                  <label class="form-label" for="debug-repo">Target Repository</label>
+                  <div style="display:flex;gap:8px">
+                    <select class="form-select" id="debug-repo" style="flex:1">
+                      <option value="">Select repository...</option>
+                    </select>
+                    <button type="button" class="btn btn-secondary btn-sm"
+                      data-action="openFolderBrowser">Browse...</button>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="debug-type">Investigation Mode</label>
+                  <select class="form-select" id="debug-type">
+                    <option value="debug">🐛 Bug / Error Investigation</option>
+                    <option value="ci">🔨 Build / Test Failure</option>
+                    <option value="conflicts">⚡ Merge Conflict Resolution</option>
+                    <option value="prs">🔍 Pull Request Review</option>
+                    <option value="history">📜 Regression Hunting (Git Bisect)</option>
+                    <option value="graphrag">🕸️ Code Graph & Dependency Tracing</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="debug-description">Problem Description</label>
+                  <textarea class="form-input form-textarea" id="debug-description" rows="5"
+                    placeholder="Describe the issue. E.g.: 'User authentication fails after latest commit. Token verification throwing error.'"
+                    style="resize:vertical;min-height:100px"></textarea>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="debug-logs">Error Logs or Stack Trace (optional)</label>
+                  <textarea class="form-input form-textarea" id="debug-logs" rows="3"
+                    placeholder="Paste terminal errors, exception stack trace, or failing test output..."></textarea>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-lg full-width" id="start-debug-btn">
+                  ⚡ Launch AI Debug Agent
+                </button>
+              </form>
+            </div>
+
+            <!-- Quick Presets -->
+            <div>
+              <div class="card" style="margin-bottom:14px">
+                <div class="card-header">
+                  <div class="card-title">Quick Presets</div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <div class="folder-row" data-action="setDebugExample"
+                    data-value="Fix authentication regression: requests failing with 500 error after recent commit">
+                    <div class="folder-row-left">
+                      <span style="font-size:16px">🔐</span>
+                      <span class="folder-name">Authentication flow regression</span>
+                    </div>
+                    <span class="badge badge-accent">Preset</span>
+                  </div>
+                  <div class="folder-row" data-action="setDebugExample"
+                    data-value="Investigate failing test suite in user service module">
+                    <div class="folder-row-left">
+                      <span style="font-size:16px">🧪</span>
+                      <span class="folder-name">Unit test failure analysis</span>
+                    </div>
+                    <span class="badge badge-accent">Preset</span>
+                  </div>
+                  <div class="folder-row" data-action="setDebugExample"
+                    data-value="Resolve git merge conflict between main branch and feature branch">
+                    <div class="folder-row-left">
+                      <span style="font-size:16px">⚡</span>
+                      <span class="folder-name">Merge conflict resolution</span>
+                    </div>
+                    <span class="badge badge-accent">Preset</span>
+                  </div>
+                  <div class="folder-row" data-action="setDebugExample"
+                    data-value="Find which commit introduced regression using git bisect">
+                    <div class="folder-row-left">
+                      <span style="font-size:16px">📜</span>
+                      <span class="folder-name">Regression search with Git Bisect</span>
+                    </div>
+                    <span class="badge badge-accent">Preset</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-header">
+                  <div class="card-title">Agent Safety Guarantees</div>
+                </div>
+                <div style="font-size:12px;color:var(--c-text-secondary);display:flex;flex-direction:column;gap:10px">
+                  <div>🛡️ <strong>Operation Classification:</strong> Dangerous commands (force push, hard reset)
+                    require explicit confirmation.</div>
+                  <div>🌿 <strong>Branch Protection:</strong> Protected branches require dry-run verification before
+                    patch application.</div>
+                  <div>📋 <strong>Audit Trail:</strong> Every action and git execution is recorded with timestamps and
+                    diffs.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Debug Session View -->
+        <div id="debug-session-view" style="display:none">
+          <div class="debug-layout">
+            <!-- Header bar -->
+            <div class="debug-header-bar">
+              <button class="btn btn-secondary btn-sm" data-action="exitDebugSession">← Back</button>
+              <div style="flex:1">
+                <div style="font-size:14px;font-weight:700" id="session-repo-label">Repository: —</div>
+                <div style="font-size:12px;color:var(--c-text-muted)" id="session-type-label">Type: —</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <span class="badge" id="session-agent-state"
+                  style="background:#e0e7ff;color:#3730a3;font-family:var(--font-mono);font-size:11px">INITIALIZING</span>
+                <div id="session-status-badge" class="badge badge-accent">Investigating...</div>
+              </div>
+              <button class="btn btn-danger btn-sm" id="abort-session-btn"
+                data-action="abortCurrentSession">Abort</button>
+            </div>
+
+            <!-- Problem & Agent Execution Row -->
+            <div class="debug-panels-row">
+              <!-- Left: Stepper & Hypotheses -->
+              <div style="display:flex;flex-direction:column;gap:16px">
+                <!-- Investigation Plan Card -->
+                <div class="card" id="session-plan-card" style="display:none;background:var(--c-surface)">
+                  <div class="card-header" style="padding-bottom:8px">
+                    <div class="card-title" style="font-size:13px">📋 Investigation Plan</div>
+                    <span class="badge badge-accent" id="plan-task-class">BUG</span>
+                  </div>
+                  <div id="plan-content" style="font-size:12px;display:flex;flex-direction:column;gap:6px">
+                    <div id="plan-summary" style="color:var(--c-text-secondary)">Planning investigation steps...</div>
+                    <div style="display:flex;gap:8px;font-size:11px;color:var(--c-text-muted)">
+                      <span>Complexity: <strong id="plan-complexity">moderate</strong></span>
+                      <span>·</span>
+                      <span>Approval: <strong id="plan-approval">Required</strong></span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Agent Phases Stepper -->
+                <div class="card">
+                  <div class="card-header">
+                    <div class="card-title">Agent Execution Timeline</div>
+                    <div class="spinner" id="agent-spinner"></div>
+                  </div>
+                  <div id="agent-phases" style="display:flex;flex-direction:column;gap:8px">
+                    <!-- Stepper injected here -->
+                  </div>
+                </div>
+
+                <!-- Hypotheses Engine -->
+                <div class="card">
+                  <div class="card-header">
+                    <div class="card-title">Ranked Hypotheses</div>
+                  </div>
+                  <div id="session-hypotheses" style="display:flex;flex-direction:column;gap:8px">
+                    <div class="text-muted" style="font-size:12px">Evaluating candidate hypotheses...</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Right: Tabbed Inspection -->
+              <div class="card" style="padding:0;overflow:hidden">
+                <div class="tabs">
+                  <div class="tab-item active" data-tab="evidence">Evidence Chain</div>
+                  <div class="tab-item" data-tab="diff">Diff Viewer</div>
+                  <div class="tab-item" data-tab="critic">Critic Review</div>
+                  <div class="tab-item" data-tab="conflicts">Merge Conflicts</div>
+                  <div class="tab-item" data-tab="tests">Test Results</div>
+                  <div class="tab-item" data-tab="git">Git & Commit</div>
+                  <div class="tab-item" data-tab="logs">Execution Log</div>
+                </div>
+
+                <div class="tab-panel active" data-tab="evidence" style="padding:20px">
+                  <div id="evidence-list" style="display:flex;flex-direction:column;gap:12px">
+                    <div class="text-muted" style="font-size:13px">Investigating repository context...</div>
+                  </div>
+                </div>
+
+                <div class="tab-panel" data-tab="diff" style="padding:20px">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                    <div style="font-size:12px;font-weight:600;color:var(--c-text-secondary)">
+                      SURGICAL PATCH PREVIEW
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                      <button class="btn btn-primary btn-sm" id="diff-apply-btn" data-action="applyFix">🔧 Apply
+                        Patch</button>
+                      <button class="btn btn-danger btn-sm" id="diff-revert-btn" data-action="revertFix"
+                        style="display:none">↩️ Revert Patch</button>
+                      <button class="btn btn-secondary btn-sm" id="diff-commit-btn" data-action="commitAndPushFix">📝
+                        Commit & Push</button>
+                      <button class="btn btn-secondary btn-sm" id="diff-pr-btn" data-action="openCreatePRModal">🚀
+                        Create
+                        PR</button>
+                    </div>
+                  </div>
+                  <div id="diff-view">
+                    <div class="text-muted" style="font-size:13px">No changes generated yet.</div>
+                  </div>
+                </div>
+
+                <div class="tab-panel" data-tab="critic" style="padding:20px">
+                  <div id="critic-view">
+                    <div class="text-muted" style="font-size:13px">Waiting for critic evaluation...</div>
+                  </div>
+                </div>
+
+                <div class="tab-panel" data-tab="conflicts" style="padding:20px">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                    <div style="font-size:12px;font-weight:600;color:var(--c-text-secondary)">
+                      3-WAY MERGE CONFLICT RESOLVER
+                    </div>
+                    <button class="btn btn-primary btn-sm" id="resolve-conflicts-btn" data-action="resolveConflicts">
+                      ⚡ AI Semantic Resolve All
+                    </button>
+                  </div>
+                  <div id="conflicts-view">
+                    <div class="text-muted" style="font-size:13px">No merge conflicts detected.</div>
+                  </div>
+                </div>
+
+                <div class="tab-panel" data-tab="tests" style="padding:20px">
+                  <div id="tests-view">
+                    <div class="text-muted" style="font-size:13px">Waiting for fix verification...</div>
+                  </div>
+                </div>
+
+                <div class="tab-panel" data-tab="git" style="padding:20px">
+                  <div id="git-view">
+                    <div class="text-muted" style="font-size:13px">Loading Git state...</div>
+                  </div>
+                </div>
+
+                <div class="tab-panel" data-tab="logs" style="padding:20px">
+                  <div id="logs-view" class="code-block" style="height:320px;overflow-y:auto;white-space:pre-wrap">
+                    Waiting for agent output...
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Root Cause Diagnosis Card -->
+            <div id="root-cause-card" class="card"
+              style="display:none;background:var(--c-accent-light);border-color:var(--c-accent-border);margin-top:16px">
+              <div class="card-header">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div class="card-title" style="color:var(--c-accent)">🎯 Root Cause Diagnosis</div>
+                  <span class="badge badge-accent" id="rc-risk">LOW RISK</span>
+                </div>
+                <div class="badge badge-success" id="root-cause-confidence">High Confidence (92%)</div>
+              </div>
+              <div id="root-cause-content" style="font-size:13px;display:flex;flex-direction:column;gap:8px">
+                <div><strong>Symptom:</strong> <span id="rc-symptom">Failing execution path detected</span></div>
+                <div><strong>Root Cause:</strong> <span id="rc-rootcause"></span></div>
+                <div><strong>Evidence:</strong> <span id="rc-evidence"></span></div>
+                <div><strong>Fix Plan:</strong> <span id="rc-fix"></span></div>
+              </div>
+              <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+                <button class="btn btn-primary" id="apply-fix-btn" data-action="applyFix">🔧 Apply Verified
+                  Patch</button>
+                <button class="btn btn-danger" id="revert-fix-btn" data-action="revertFix" style="display:none">↩️
+                  Revert
+                  Patch</button>
+                <button class="btn btn-secondary" id="commit-fix-btn" data-action="commitAndPushFix">📝 Safe Commit &
+                  Push</button>
+                <button class="btn btn-secondary" id="create-pr-btn" data-action="openCreatePRModal">🚀 Create Pull
+                  Request</button>
+                <button class="btn btn-secondary" data-action="requestDetails">Review Evidence</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== ISSUES ===================== -->
+      <div id="page-issues" class="page">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Repository Issues</div>
+            <div class="section-subtitle">Issues tracked across connected repositories</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <select class="form-select" id="issues-repo-select" style="width:220px" data-action="loadIssues">
+              <option value="">Select repository...</option>
+            </select>
+            <select class="form-select" id="issues-state-filter" style="width:110px" data-action="loadIssues">
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+              <option value="all">All</option>
+            </select>
+          </div>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <div id="issues-list">
+            <div class="empty-state">
+              <div class="empty-icon">📋</div>
+              <div class="empty-title">Select a repository</div>
+              <div class="empty-desc">Choose a connected repository to view its issues.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== PULL REQUESTS ===================== -->
+      <div id="page-prs" class="page">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Pull Requests</div>
+            <div class="section-subtitle">Review, audit, and analyze PR diffs with AI</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <select class="form-select" id="prs-repo-select" style="width:220px" data-action="loadPRs">
+              <option value="">Select repository...</option>
+            </select>
+            <select class="form-select" id="prs-state-filter" style="width:110px" data-action="loadPRs">
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+            </select>
+            <button class="btn btn-primary btn-sm" data-action="openCreatePRModal"
+              style="display:flex;align-items:center;gap:6px;padding:6px 14px">
+              🚀 + New Pull Request
+            </button>
+          </div>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <div id="prs-list">
+            <div class="empty-state">
+              <div class="empty-icon">🔀</div>
+              <div class="empty-title">Select a repository</div>
+              <div class="empty-desc">Choose a connected repository to view pull requests.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== 3-WAY MERGE CONFLICT CENTER ===================== -->
+      <div id="page-conflicts" class="page">
+        <div class="section-header">
+          <div>
+            <div class="section-title">3-Way Merge Conflict Center</div>
+            <div class="section-subtitle">Semantic resolution across merge, rebase, and cherry-pick branches</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <select class="form-select" id="conflicts-repo-select" style="width:220px" data-action="loadConflictsPage">
+              <option value="">Select repository...</option>
+            </select>
+            <button class="btn btn-primary btn-sm" data-action="triggerResolveAllConflicts">
+              ⚡ Resolve All Conflicts
+            </button>
+          </div>
+        </div>
+
+        <div id="conflicts-container" class="card" style="padding:0;overflow:hidden">
+          <div class="empty-state" style="padding:48px 24px">
+            <div class="empty-icon">🌿</div>
+            <div class="empty-title">No Active Conflicts</div>
+            <div class="empty-desc">The repository working tree is clean with no unresolved conflict markers.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== HISTORY ===================== -->
+      <div id="page-history" class="page">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Debug History</div>
+            <div class="section-subtitle">Chronological record of debugging sessions and agent runs</div>
+          </div>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <div id="history-list">
+            <div class="empty-state">
+              <div class="empty-icon">📜</div>
+              <div class="empty-title">No history yet</div>
+              <div class="empty-desc">Completed debug sessions will appear here.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== SETTINGS ===================== -->
+      <div id="page-settings" class="page">
+        <div class="section-title" style="margin-bottom:14px">Settings & Configuration</div>
+
+        <div class="grid-2" style="gap:14px">
+          <!-- GitHub Connection -->
+          <div class="card" style="padding:14px">
+            <div class="card-header" style="margin-bottom:10px">
+              <div class="card-title" style="font-size:14px">GitHub Integration</div>
+            </div>
+            <div id="github-status-view">
+              <div class="text-muted" style="font-size:12px;margin-bottom:10px">Loading GitHub connection status...
+              </div>
+            </div>
+            <div id="github-connect-form" style="display:flex;flex-direction:column;gap:10px">
+              <div class="form-group" style="margin-bottom:0">
+                <label class="form-label" for="github-token-input" style="font-size:12px;margin-bottom:4px">Personal
+                  Access Token</label>
+                <input class="form-input" type="password" id="github-token-input" placeholder="ghp_your_token_here"
+                  autocomplete="off" style="padding:7px 10px;font-size:12px" />
+                <div style="font-size:11px;color:var(--c-text-muted);margin-top:3px">
+                  Requires: <code>repo</code>, <code>read:user</code>. <a href="https://github.com/settings/tokens/new"
+                    target="_blank" rel="noopener noreferrer" style="color:var(--c-accent)">Generate token →</a>
+                </div>
+              </div>
+              <button class="btn btn-github btn-sm" data-action="connectGitHub">Connect GitHub Account</button>
+            </div>
+            <div id="github-connected-view" style="display:none">
+              <div class="agent-phase done" style="margin-bottom:10px">
+                <div class="agent-phase-icon done">✓</div>
+                <div class="agent-phase-body">
+                  <div class="agent-phase-name" id="github-username" style="font-size:13px">Connected</div>
+                  <div class="agent-phase-desc" style="font-size:11px">GitHub account active & synced</div>
+                </div>
+              </div>
+              <button class="btn btn-danger btn-sm" data-action="disconnectGitHub">Disconnect GitHub</button>
+            </div>
+          </div>
+
+          <!-- Account Settings -->
+          <div class="card" style="padding:14px">
+            <div class="card-header" style="margin-bottom:10px">
+              <div class="card-title" style="font-size:14px" id="settings-account-title">User Account</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <img id="settings-avatar" class="settings-avatar" src="" alt=""
+                  style="display:none;width:36px;height:36px;border-radius:50%;object-fit:cover" />
+                <div>
+                  <div class="form-label" style="font-size:11px;margin-bottom:2px">Signed in as</div>
+                  <div style="font-size:13px;font-weight:600" id="settings-email">—</div>
+                  <div id="settings-role-badge" style="margin-top:4px;display:none"></div>
+                </div>
+              </div>
+              <button class="btn btn-danger btn-sm" data-action="logout" style="width:fit-content">Sign Out</button>
+            </div>
+          </div>
+
+          <!-- Agent Configuration -->
+          <div class="card" style="padding:14px">
+            <div class="card-header" style="margin-bottom:10px">
+              <div class="card-title" style="font-size:14px">Agent Autonomy</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div class="form-group" style="margin-bottom:0">
+                <label class="form-label" for="autonomy-level" style="font-size:12px;margin-bottom:4px">Autonomy
+                  Level</label>
+                <select class="form-select" id="autonomy-level" style="padding:7px 10px;font-size:12px">
+                  <option value="assisted">Assisted — Agent diagnoses and presents diff for review</option>
+                  <option value="autonomous">Autonomous — Auto-applies low-risk fixes and runs tests</option>
+                </select>
+              </div>
+              <button class="btn btn-primary btn-sm" data-action="saveAgentConfig" style="width:fit-content">Save
+                Settings</button>
+            </div>
+          </div>
+
+          <!-- Data Security & Privacy -->
+          <div class="card card-security" style="padding:14px;grid-column:1/-1">
+            <div class="card-header" style="margin-bottom:10px">
+              <div class="card-title" style="font-size:14px">Data Security & Privacy</div>
+              <span class="security-badge">Verified</span>
+            </div>
+            <div class="security-grid" style="gap:10px">
+              <div class="security-item" style="padding:10px;min-height:48px">
+                <div class="security-icon" style="font-size:16px">🛡️</div>
+                <div class="security-content">
+                  <div class="security-heading" style="font-size:12px">Data Isolation</div>
+                  <div class="security-desc" style="font-size:11px">Your activity, sessions, and repos are stored
+                    separately per user — no cross-user access.</div>
+                </div>
+              </div>
+              <div class="security-item" style="padding:10px;min-height:48px">
+                <div class="security-icon" style="font-size:16px">🔐</div>
+                <div class="security-content">
+                  <div class="security-heading" style="font-size:12px">Encrypted Storage</div>
+                  <div class="security-desc" style="font-size:11px">All data stored in MongoDB Atlas with encryption at
+                    rest enabled.</div>
+                </div>
+              </div>
+              <div class="security-item" style="padding:10px;min-height:48px">
+                <div class="security-icon" style="font-size:16px">✅</div>
+                <div class="security-content">
+                  <div class="security-heading" style="font-size:12px">Secure Auth</div>
+                  <div class="security-desc" style="font-size:11px">HMAC-SHA256 session tokens. Google OAuth tokens are
+                    verified, never stored.</div>
+                </div>
+              </div>
+              <div class="security-item" style="padding:10px;min-height:48px">
+                <div class="security-icon" style="font-size:16px">🔒</div>
+                <div class="security-content">
+                  <div class="security-heading" style="font-size:12px">No Data Leaks</div>
+                  <div class="security-desc" style="font-size:11px">Per-user filtering enforced on every API endpoint.
+                    Your data stays yours.</div>
+                </div>
+              </div>
+            </div>
+            <div class="security-footer" style="margin-top:10px;padding:8px 12px;font-size:11px">
+              Your data never leaves this platform and is never shared with third parties.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================================
+         ADMIN PANEL — Professional Dashboard (admin role only)
+         ============================================================ -->
+      <div id="page-admin" class="page" style="display:none">
+
+        <!-- Admin Banner -->
+        <div class="admin-banner">
+          <div class="admin-banner-text">
+            <h2>Admin Control Center</h2>
+            <p>Monitor all users, activity, and system health across the platform</p>
+          </div>
+          <div class="admin-banner-badge">★ Administrator</div>
+        </div>
+
+        <!-- Stats Row -->
+        <div class="admin-stats-row" id="admin-stats-grid">
+          <div class="admin-stat-card accent">
+            <div class="admin-stat-icon">👥</div>
+            <div class="admin-stat-number" id="admin-stat-users">—</div>
+            <div class="admin-stat-label">Total Users</div>
+          </div>
+          <div class="admin-stat-card success">
+            <div class="admin-stat-icon">📊</div>
+            <div class="admin-stat-number" id="admin-stat-activities">—</div>
+            <div class="admin-stat-label">Total Activities</div>
+          </div>
+          <div class="admin-stat-card warning">
+            <div class="admin-stat-icon">📁</div>
+            <div class="admin-stat-number" id="admin-stat-repos">—</div>
+            <div class="admin-stat-label">Connected Repos</div>
+          </div>
+          <div class="admin-stat-card purple">
+            <div class="admin-stat-icon">🐛</div>
+            <div class="admin-stat-number" id="admin-stat-sessions">—</div>
+            <div class="admin-stat-label">Debug Sessions</div>
+          </div>
+        </div>
+
+        <!-- Main Grid: Users + Activity -->
+        <div class="admin-main-grid">
+
+          <!-- Users Panel -->
+          <div class="admin-panel-card">
+            <div class="admin-panel-header">
+              <div class="admin-panel-title">
+                👥 All Users <span class="admin-panel-count" id="admin-users-count">0</span>
+              </div>
+              <button class="btn btn-secondary btn-sm" data-action="adminRefreshUsers">↻ Refresh</button>
+            </div>
+            <div class="admin-panel-body" id="admin-users-list">
+              <div class="admin-empty-state">
+                <div class="admin-empty-icon">👥</div>
+                <div class="admin-empty-text">Loading users...</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Activity Panel -->
+          <div class="admin-panel-card">
+            <div class="admin-panel-header">
+              <div class="admin-panel-title">
+                📊 All Activity <span class="admin-panel-count" id="admin-activity-count">0</span>
+              </div>
+              <button class="btn btn-secondary btn-sm" data-action="adminRefreshActivity">↻ Refresh</button>
+            </div>
+            <div class="admin-panel-body" id="admin-activity-list">
+              <div class="admin-empty-state">
+                <div class="admin-empty-icon">📊</div>
+                <div class="admin-empty-text">Loading activity...</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- User Detail Overlay (shown when clicking a user) -->
+        <div id="admin-user-detail-overlay" class="admin-detail-overlay" style="display:none">
+          <div class="admin-detail-panel">
+            <div class="admin-detail-header">
+              <div class="admin-panel-title" id="admin-detail-title">User Detail</div>
+              <button class="btn btn-secondary btn-sm" data-action="adminCloseDetail">✕ Close</button>
+            </div>
+            <div id="admin-detail-content"></div>
+          </div>
+        </div>
+
+        <!-- Activity Detail Overlay (shown when clicking an activity entry) -->
+        <div id="admin-activity-detail-overlay" class="admin-detail-overlay" style="display:none">
+          <div class="admin-detail-panel">
+            <div class="admin-detail-header">
+              <div class="admin-panel-title" id="admin-activity-detail-title">Activity Detail</div>
+              <button class="btn btn-secondary btn-sm" data-action="adminCloseActivityDetail">✕ Close</button>
+            </div>
+            <div id="admin-activity-detail-content"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================================
+         USER / DEVELOPER PANEL — Visible to non-admin users
+         ============================================================ -->
+      <div id="page-user-panel" class="page" style="display:none">
+        <div class="user-welcome-banner">
+          <div class="user-welcome-icon">👤</div>
+          <div class="user-welcome-text">
+            <h3 id="user-panel-greeting">Welcome back, Developer</h3>
+            <p id="user-panel-subtitle">Here's an overview of your activity on the platform</p>
+          </div>
+        </div>
+
+        <div class="user-activity-card">
+          <div class="user-activity-header">
+            <div class="user-activity-title">📊 Your Recent Activity</div>
+            <button class="btn btn-secondary btn-sm" data-action="userRefreshActivity">↻ Refresh</button>
+          </div>
+          <div class="user-activity-body" id="user-activity-list">
+            <div class="admin-empty-state">
+              <div class="admin-empty-icon">📊</div>
+              <div class="admin-empty-text">Loading your activity...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============================================================
+     INTERACTIVE FOLDER BROWSER MODAL
+     ============================================================ -->
+  <div id="modal-folder-browser" class="modal-overlay" style="display:none">
+    <div class="modal" style="max-width:780px;width:96vw">
+      <div class="modal-close" data-action="closeModal" data-value="modal-folder-browser">×</div>
+      <div
+        style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:12px;flex-wrap:wrap">
+        <div class="modal-title" style="margin-bottom:0">Select Repository / Project Folder</div>
+        <button class="btn btn-secondary btn-sm" id="btn-open-os-dialog" data-action="triggerNativeFolderPicker"
+          style="display:flex;align-items:center;gap:6px;font-weight:600">
+          🗔 Open OS File Dialog
+        </button>
+      </div>
+      <div class="modal-desc" style="margin-bottom:12px">
+        Connect any local workspace or Git repository folder from your computer. Select your current workspace, pick
+        directly from the OS dialog, or browse directories below.
+      </div>
+
+      <!-- Drag & Drop / Native OS Dialog Zone -->
+      <div class="folder-drop-zone" id="folder-drop-zone" data-action="triggerNativeFolderPicker"
+        style="border:2px dashed var(--c-border);border-radius:var(--r-md);padding:12px;text-align:center;cursor:pointer;background:var(--c-surface-hover);transition:var(--transition-fast);margin-bottom:10px;font-size:12px">
+        <span style="font-size:15px">📁</span> <strong>Drag &amp; drop any folder here</strong> or click to open native
+        OS Folder Dialog
+      </div>
+
+      <div class="folder-browser-dialog">
+        <!-- Quick Workspace Cards -->
+        <div id="folder-workspace-quickpicks" style="display:flex;gap:8px;flex-wrap:wrap">
+          <!-- Injected local workspaces / current workspace -->
+        </div>
+
+        <!-- Path breadcrumb bar -->
+        <div class="folder-path-bar">
+          <span style="white-space:nowrap;flex-shrink:0">📍 Path:</span>
+          <code id="folder-current-path">Loading folders...</code>
+        </div>
+
+        <!-- Current folder status card (if Git Repo) -->
+        <div id="folder-repo-detected" class="current-target-card" style="display:none">
+          <div style="flex:1;min-width:0">
+            <div class="current-target-title">🌿 Git Repository Detected</div>
+            <div class="current-target-path" id="folder-repo-name">—</div>
+          </div>
+          <button class="btn btn-primary btn-sm" id="folder-connect-current-btn"
+            data-action="connectCurrentBrowsedFolder" style="white-space:nowrap;flex-shrink:0">
+            Select &amp; Connect Repo
+          </button>
+        </div>
+
+        <!-- Manual path input bar -->
+        <div style="display:flex;gap:8px">
+          <input class="form-input" id="folder-path-input"
+            placeholder="Paste or enter any local repository path (e.g. ~/projects/repo, C:\projects\workspace)"
+            style="flex:1;font-size:12px;font-family:var(--font-mono)" />
+          <button class="btn btn-secondary btn-sm" data-action="browseToEnteredPath">Go</button>
+          <button class="btn btn-primary btn-sm" data-action="connectEnteredPath">Connect</button>
+        </div>
+
+        <!-- Folder + file list container -->
+        <div class="folder-list-container" id="folder-list">
+          <div class="text-muted" style="text-align:center;padding:24px">Loading workspace contents...</div>
+        </div>
+      </div>
+
+      <div class="modal-actions" style="margin-top:14px;display:flex;justify-content:space-between;align-items:center">
+        <button class="btn btn-secondary btn-sm" id="folder-connect-anyway-btn"
+          data-action="connectCurrentBrowsedFolder">
+          📁 Connect Current Folder
+        </button>
+        <button class="btn btn-ghost btn-sm" data-action="closeModal" data-value="modal-folder-browser">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GitHub Repos Modal -->
+  <div id="modal-github-repos" class="modal-overlay" style="display:none">
+    <div class="modal" style="max-width:640px">
+      <div class="modal-close" data-action="closeModal" data-value="modal-github-repos">×</div>
+      <div class="modal-title">Select GitHub Repository</div>
+      <div class="modal-desc">Choose a cloud repository to import for AI debugging.</div>
+      <div class="form-group" style="margin-bottom:12px">
+        <input class="form-input" type="text" id="github-repo-search" placeholder="Filter repositories..."
+          data-action="filterGitHubRepos" />
+      </div>
+      <div id="github-repos-list" style="max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:8px">
+        <div class="text-muted" style="font-size:13px;text-align:center;padding:20px">
+          Loading repositories...
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" data-action="closeModal" data-value="modal-github-repos">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GitHub Connect Modal -->
+  <div id="modal-github-connect" class="modal-overlay" style="display:none">
+    <div class="modal">
+      <div class="modal-close" data-action="closeModal" data-value="modal-github-connect">×</div>
+      <div class="modal-title">Connect GitHub Account</div>
+      <div class="modal-desc">Enter your Personal Access Token to link cloud repositories, issues, and pull requests.
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div class="form-group">
+          <label class="form-label" for="modal-github-token">Personal Access Token</label>
+          <input class="form-input" type="password" id="modal-github-token" placeholder="ghp_your_token_here" />
+          <div style="font-size:11px;color:var(--c-text-muted);margin-top:4px">
+            <a href="https://github.com/settings/tokens/new?scopes=repo,read:user" target="_blank"
+              rel="noopener noreferrer" style="color:var(--c-accent)">
+              Generate token with repo and read:user scopes on GitHub →
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" data-action="closeModal" data-value="modal-github-connect">Cancel</button>
+        <button class="btn btn-primary" data-action="connectGitHubFromModal">Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Pull Request Modal -->
+  <div id="modal-create-pr" class="modal-overlay" style="display:none">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-close" data-action="closeModal" data-value="modal-create-pr">×</div>
+      <div class="modal-title">🚀 Create Pull Request</div>
+      <div class="modal-desc">Create a PR from this verified fix to merge into your target branch.</div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="form-group">
+          <label class="form-label" for="pr-title-input">PR Title</label>
+          <input class="form-input" id="pr-title-input" placeholder="fix: resolve defect identified by debug agent" />
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="form-group">
+            <label class="form-label" for="pr-source-branch">Source Branch</label>
+            <input class="form-input" id="pr-source-branch" placeholder="e.g. fix/agent-patch" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="pr-target-branch">Target Branch</label>
+            <input class="form-input" id="pr-target-branch" value="main" placeholder="main" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="pr-desc-input">Description</label>
+          <textarea class="form-textarea" id="pr-desc-input" rows="4"
+            placeholder="Summary of changes and verified test results..."></textarea>
+        </div>
+      </div>
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn btn-secondary" data-action="closeModal" data-value="modal-create-pr">Cancel</button>
+        <button class="btn btn-primary" id="submit-create-pr-btn" data-action="submitCreatePR">Create Pull
+          Request</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Push Preview & Target Branch Selection Modal -->
+  <div id="modal-push-preview" class="modal-overlay" style="display:none">
+    <div class="modal" style="max-width:620px;width:96vw">
+      <div class="modal-close" data-action="closeModal" data-value="modal-push-preview">×</div>
+      <div class="modal-title">⬆️ Push to Remote Repository</div>
+      <div class="modal-desc">Choose which remote branch you want to push to and verify outgoing commits.</div>
+
+      <div style="display:flex;flex-direction:column;gap:14px;margin-top:12px">
+        <!-- Target Repo & Current Branch Status -->
+        <div class="current-target-card" style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-weight:600;font-size:13px">Repository:</div>
+            <div style="font-family:var(--font-mono);font-size:12px;margin-top:2px">
+              <code id="push-target-repo" style="font-weight:700">ai-chatbot</code>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:11px;color:var(--c-text-muted)">Current Branch</div>
+            <span id="push-current-branch" class="badge badge-accent">feature/git-agent</span>
+          </div>
+        </div>
+
+        <!-- Target Branch & Remote Selection -->
+        <div style="display:grid;grid-template-columns:1fr 140px;gap:10px">
+          <div class="form-group">
+            <label class="form-label" for="push-target-branch-select">Target Branch to Push To</label>
+            <select class="form-select" id="push-target-branch-select" data-action="onPushTargetBranchChanged">
+              <option value="">Loading branches...</option>
+            </select>
+            <input class="form-input" id="push-custom-branch-input"
+              placeholder="Type new or custom remote branch name..."
+              style="display:none;margin-top:6px;font-family:var(--font-mono);font-size:12px" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="push-remote-select">Remote</label>
+            <select class="form-select" id="push-remote-select">
+              <option value="origin">origin</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Push Options -->
+        <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="push-set-upstream" checked />
+            <span>Set upstream tracking (-u)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="push-force-with-lease" />
+            <span style="color:var(--c-danger-text)">Force with lease</span>
+          </label>
+        </div>
+
+        <!-- Safeguards Checklist -->
+        <div class="card" style="padding:12px;background:var(--c-surface-hover);border:1px solid var(--c-border)">
+          <div style="font-weight:600;font-size:11px;margin-bottom:6px;color:var(--c-text)">PRE-PUSH SAFEGUARDS</div>
+          <div style="display:flex;flex-direction:column;gap:6px;font-size:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span>🌿 Target Branch Safety</span>
+              <span id="push-check-branch" class="badge badge-success">PASSED (Safe Branch)</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span>🔐 Outgoing Commits</span>
+              <span id="push-commits-count" class="badge badge-accent">0 commits</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Outgoing Commits List -->
+        <div>
+          <div style="font-weight:600;font-size:12px;margin-bottom:6px">OUTGOING COMMITS:</div>
+          <div id="push-commits-list"
+            style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;border:1px solid var(--c-border);border-radius:var(--r-md);padding:8px;background:#fff">
+            <div class="text-muted" style="font-size:12px">Loading outgoing commits...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn btn-secondary" data-action="closeModal" data-value="modal-push-preview">Cancel</button>
+        <button class="btn btn-primary" id="confirm-push-btn" data-action="executePushFromModal">
+          Confirm &amp; Push to Remote
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Branch Switcher Modal (GitHub Desktop Style) -->
+  <div id="modal-branch-switcher" class="modal-overlay" style="display:none">
+    <div class="modal" style="max-width:520px;width:96vw">
+      <div class="modal-close" data-action="closeModal" data-value="modal-branch-switcher">×</div>
+      <div class="modal-title">🔀 Switch Branch</div>
+      <div class="modal-desc">Checkout an existing local/remote branch or create a new branch.</div>
+
+      <div class="form-group" style="margin-bottom:12px">
+        <input class="form-input" id="branch-search-input" placeholder="Search branches..."
+          data-action="filterBranchList" style="font-size:13px" />
+      </div>
+
+      <!-- Branch list container -->
+      <div id="branch-list-container"
+        style="max-height:260px;overflow-y:auto;border:1px solid var(--c-border);border-radius:var(--r-md);background:#fff;display:flex;flex-direction:column">
+        <div class="text-muted" style="text-align:center;padding:20px;font-size:12px">Loading branches...</div>
+      </div>
+
+      <!-- Create New Branch section -->
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--c-border)">
+        <div style="font-weight:600;font-size:12px;margin-bottom:6px">Create New Branch from Current</div>
+        <div style="display:flex;gap:8px">
+          <input class="form-input" id="new-branch-name-input" placeholder="e.g. feature/my-new-task"
+            style="flex:1;font-size:12px;font-family:var(--font-mono)" />
+          <button class="btn btn-primary btn-sm" data-action="createAndCheckoutBranch">Create &amp; Switch</button>
+        </div>
+      </div>
+
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn btn-secondary" data-action="closeModal" data-value="modal-branch-switcher">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scroll to Top Button -->
+  <button class="scroll-top-btn" id="scroll-top-btn" title="Scroll to top">↑</button>
+
+  <!-- Toast container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="/api.js"></script>
+  <script src="/state.js"></script>
+  <script src="/components/diff-viewer.js"></script>
+  <script src="/components/commit-plan.js"></script>
+  <script src="/views/dashboard.js"></script>
+  <script src="/views/repositories.js"></script>
+  <script src="/views/debugging.js"></script>
+  <script src="/views/git-desktop.js"></script>
+  <script src="/views/pull-requests.js"></script>
+  <script src="/views/issues.js"></script>
+  <script src="/views/conflicts.js"></script>
+  <script src="/views/history.js"></script>
+  <script src="/views/settings.js"></script>
+  <script src="/views/admin.js"></script>
+  <script src="/app.js"></script>
 </body>
 
 </html>

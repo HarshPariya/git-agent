@@ -6,6 +6,7 @@ export interface EmbeddingMetrics {
 }
 
 const DIMENSIONS = 384;
+
 const metrics: EmbeddingMetrics = {
   modelLoadTimeMs: 0,
   totalEmbeddings: 0,
@@ -13,30 +14,24 @@ const metrics: EmbeddingMetrics = {
   totalEmbeddingTimeMs: 0,
 };
 
-function hashFeature(feature: string): number {
+const hashFeature = (feature: string): number => {
   let hash = 2166136261;
-  for (let index = 0; index < feature.length; index++) {
-    hash ^= feature.charCodeAt(index);
+  for (let i = 0; i < feature.length; i++) {
+    hash ^= feature.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
   return hash >>> 0;
-}
+};
 
-function createEmbedding(text: string): number[] {
+const createEmbedding = (text: string): number[] => {
   const vector = new Array<number>(DIMENSIONS).fill(0);
-  const normalized = text.toLowerCase().replace(/[^a-z0-9_$.-]+/g, " ").trim();
-  const words = normalized.split(/\s+/).filter(Boolean);
-  const features = [
-    ...words.map((word) => `word:${word}`),
-    ...words.slice(0, -1).map((word, index) => `pair:${word}_${words[index + 1]}`),
-  ];
+  const words = text.toLowerCase().replace(/[^a-z0-9_$.-]+/g, " ").trim().split(/\s+/).filter(Boolean);
 
-  for (const word of words) {
-    if (word.length < 3) continue;
-    for (let index = 0; index <= word.length - 3; index++) {
-      features.push(`tri:${word.slice(index, index + 3)}`);
-    }
-  }
+  const features = [
+    ...words.map((w) => `word:${w}`),
+    ...words.slice(0, -1).map((w, i) => `pair:${w}_${words[i + 1]}`),
+    ...words.filter((w) => w.length >= 3).flatMap((w) => Array.from({ length: w.length - 2 }, (_, i) => `tri:${w.slice(i, i + 3)}`)),
+  ];
 
   for (const feature of features) {
     const hash = hashFeature(feature);
@@ -44,15 +39,11 @@ function createEmbedding(text: string): number[] {
     vector[bucket] = (vector[bucket] ?? 0) + ((hash & 0x80000000) === 0 ? 1 : -1);
   }
 
-  const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
-  if (magnitude === 0) return vector;
-  return vector.map((value) => value / magnitude);
-}
+  const magnitude = Math.sqrt(vector.reduce((sum, v) => sum + v * v, 0));
+  return magnitude === 0 ? vector : vector.map((v) => v / magnitude);
+};
 
-/** Compatibility hook for callers that previously loaded a transformer pipeline. */
-export async function getExtractor(): Promise<(text: string) => number[]> {
-  return createEmbedding;
-}
+export const getExtractor = (): (text: string) => number[] => createEmbedding;
 
 export interface EmbedOptions {
   maxRetries?: number;
@@ -60,44 +51,33 @@ export interface EmbedOptions {
   backoffMs?: number;
 }
 
-export async function embedText(text: string, _options: EmbedOptions = {}): Promise<number[]> {
+export const embedText = (text: string, _options: EmbedOptions = {}): number[] => {
   const startTime = Date.now();
   try {
     const embedding = createEmbedding(text);
     metrics.totalEmbeddings++;
     metrics.totalEmbeddingTimeMs += Date.now() - startTime;
     return embedding;
-  } catch (error) {
+  } catch (err) {
     metrics.failedEmbeddings++;
-    throw error;
+    throw err instanceof Error ? err : new Error(String(err));
   }
-}
+};
 
 export interface EmbeddedChunk {
   id: string;
   embedding: number[];
 }
 
-export async function embedChunks(
-  chunks: { id: string; content: string }[],
-  options?: EmbedOptions,
-): Promise<EmbeddedChunk[]> {
-  return Promise.all(
-    chunks.map(async (chunk) => ({
-      id: chunk.id,
-      embedding: await embedText(chunk.content, options),
-    })),
-  );
-}
+export const embedChunks = (chunks: { id: string; content: string }[], options?: EmbedOptions): EmbeddedChunk[] =>
+  chunks.map((chunk) => ({
+    id: chunk.id,
+    embedding: embedText(chunk.content, options),
+  }));
 
-export function getEmbeddingMetrics() {
-  return {
-    modelLoadTimeMs: metrics.modelLoadTimeMs,
-    totalEmbeddings: metrics.totalEmbeddings,
-    failedEmbeddings: metrics.failedEmbeddings,
-    averageLatencyMs:
-      metrics.totalEmbeddings > 0
-        ? Math.round(metrics.totalEmbeddingTimeMs / metrics.totalEmbeddings)
-        : 0,
-  };
-}
+export const getEmbeddingMetrics = () => ({
+  modelLoadTimeMs: metrics.modelLoadTimeMs,
+  totalEmbeddings: metrics.totalEmbeddings,
+  failedEmbeddings: metrics.failedEmbeddings,
+  averageLatencyMs: metrics.totalEmbeddings > 0 ? Math.round(metrics.totalEmbeddingTimeMs / metrics.totalEmbeddings) : 0,
+});

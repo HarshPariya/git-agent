@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import Groq from "groq-sdk";
-
 import { env } from "../config/env.js";
 import { mockProvider } from "./mock-client.js";
 import type {
@@ -12,13 +11,18 @@ import type {
   ToolLlmResponse,
 } from "../types/llm.js";
 
-export type { LlmTool, ToolLlmResponse };
+type Response = Groq.Chat.Completions.ChatCompletion;
+type Message = Groq.Chat.Completions.ChatCompletionMessage;
+
+export type { LlmTool, LlmResponse, ToolLlmResponse };
+
+export interface LlmMessage {
+  readonly role: "system" | "user";
+  readonly content: string;
+}
 
 const MAX_COMPLETION_TOKENS = 4096;
-
-const client = new Groq({
-  apiKey: env.groqApiKey,
-});
+const client = new Groq({ apiKey: env.groqApiKey });
 
 const FALLBACK_MODELS = [
   "qwen/qwen3.8-27b",
@@ -28,45 +32,36 @@ const FALLBACK_MODELS = [
   env.groqModel,
 ];
 
-const delay = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
+const TRANSIENT_NAMES = new Set(["APIConnectionError", "APIConnectionTimeoutError"]);
+const TRANSIENT_SUBSTRINGS = ["Connection error", "ETIMEDOUT", "ECONNRESET", "rate_limit"];
+
+const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 const isTransientLlmError = (err: unknown): boolean => {
   if (typeof err !== "object" || err === null) return false;
+
   const e = err as Record<string, unknown>;
   const status = Number(e.status ?? (e as { error?: { status?: number } }).error?.status);
-  const msg = String(e.message || e.error || "");
-  const name = String(e.name || "");
+  const msg = String(typeof e.message === "string" ? e.message : typeof e.error === "string" ? e.error : "");
+  const name = String(typeof e.name === "string" ? e.name : "");
 
   return (
-    status === 429 ||
-    status === 503 ||
-    status === 500 ||
-    status === 502 ||
-    status === 504 ||
-    name === "APIConnectionError" ||
-    name === "APIConnectionTimeoutError" ||
-    msg.includes("Connection error") ||
-    msg.includes("ETIMEDOUT") ||
-    msg.includes("ECONNRESET") ||
-    msg.includes("rate_limit")
+    TRANSIENT_STATUSES.has(status) ||
+    TRANSIENT_NAMES.has(name) ||
+    TRANSIENT_SUBSTRINGS.some((s) => msg.includes(s))
   );
 };
 
 const extractRetryDelayMs = (err: unknown): number => {
-  const str = String(err);
-  const match = /try again in (\d+(?:\.\d+)?)s/i.exec(str);
-  if (match && match[1]) {
-    return Math.ceil(parseFloat(match[1]) * 1000) + 500;
-  }
-  return 0;
+  const match = /try again in (\d+(?:\.\d+)?)s/i.exec(String(err));
+  return match?.[1] ? Math.ceil(parseFloat(match[1]) * 1000) + 500 : 0;
 };
 
-const callGroqWithFallback = async <T>(
-  apiFn: (model: string) => Promise<T>,
-): Promise<T> => {
-  let lastErr: unknown = null;
+const callGroqWithFallback = async <T>(apiFn: (model: string) => Promise<T>): Promise<T> => {
   const modelsToTry = Array.from(new Set(FALLBACK_MODELS.filter(Boolean)));
+  let lastErr: unknown = null;
+
   for (let i = 0; i < modelsToTry.length; i++) {
     const model = modelsToTry[i]!;
     try {
@@ -75,19 +70,20 @@ const callGroqWithFallback = async <T>(
       lastErr = err;
       if (i < modelsToTry.length - 1) {
         const parsedMs = extractRetryDelayMs(err);
-        const isTransient = isTransientLlmError(err);
-        const waitMs = parsedMs > 0 ? parsedMs : isTransient ? Math.min(1000 * Math.pow(2, i), 4000) : 300;
+        const waitMs = parsedMs > 0
+          ? parsedMs
+          : isTransientLlmError(err)
+            ? Math.min(1000 * 2 ** i, 4000)
+            : 300;
         await delay(waitMs);
       }
     }
   }
+
   throw lastErr;
 };
 
-
-const toToolCalls = (
-  rawCalls: readonly Groq.Chat.Completions.ChatCompletionMessageToolCall[],
-): readonly ToolCall[] =>
+const toToolCalls = (rawCalls: readonly Groq.Chat.Completions.ChatCompletionMessageToolCall[]): ToolCall[] =>
   rawCalls.map((call) => ({
     callId: call.id,
     name: call.function.name,
@@ -104,24 +100,16 @@ const stripThinkingTags = (content: string): string => {
     .replace(/\[?TOOL_CALL[\s\S]*?END_TOOL_CALL\]?/gi, "")
     .trim();
 
-  if (stripped.length > 0) return stripped;
+  if (stripped) return stripped;
 
-  // Fallback: If the model placed response inside <think>, extract the text rather than returning empty
   const thinkMatch = /<think>([\s\S]*?)<\/think>/i.exec(content);
-  if (thinkMatch && thinkMatch[1]?.trim()) {
-    return thinkMatch[1]
-      .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
-      .trim();
-  }
+  if (thinkMatch?.[1]?.trim()) return thinkMatch[1].replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "").trim();
 
-  // Fallback 2: strip angle bracket tags
   const bracketCleaned = content.replace(/<[^>]+>/g, "").trim();
-  return bracketCleaned.length > 0 ? bracketCleaned : content.trim();
+  return bracketCleaned || content.trim();
 };
 
-const parseXmlToolCalls = (
-  content: string,
-): { toolCalls: ToolCall[]; cleanContent: string } => {
+const parseXmlToolCalls = (content: string): { toolCalls: ToolCall[]; cleanContent: string } => {
   const toolCalls: ToolCall[] = [];
   const regex = /<tool_call>([\s\S]*?)<\/tool_call>/gi;
   let match: RegExpExecArray | null;
@@ -131,149 +119,197 @@ const parseXmlToolCalls = (
     if (!raw) continue;
 
     try {
-      const parsed = JSON.parse(raw) as {
-        name?: string;
-        arguments?: Record<string, unknown> | string;
-      };
+      const parsed = JSON.parse(raw) as { name?: string; arguments?: Record<string, unknown> | string };
       if (parsed.name) {
         toolCalls.push({
           callId: `call_${crypto.randomUUID().slice(0, 8)}`,
           name: parsed.name,
-          arguments:
-            typeof parsed.arguments === "object"
-              ? JSON.stringify(parsed.arguments)
-              : String(parsed.arguments ?? "{}"),
+          arguments: typeof parsed.arguments === "object"
+            ? JSON.stringify(parsed.arguments)
+            : String(parsed.arguments ?? "{}"),
         });
       }
-    } catch {
-      // Ignored malformed XML chunk
-    }
+    } catch { /* Ignored malformed XML chunk */ }
   }
 
-  const cleanContent = content
-    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
-    .trim();
-  return { toolCalls, cleanContent };
+  return {
+    toolCalls,
+    cleanContent: content.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "").trim(),
+  };
 };
 
 const extractFailedGeneration = (err: unknown): string | null => {
   if (typeof err === "object" && err !== null) {
-    const errorObj = (err as Record<string, unknown>).error as
-      | Record<string, unknown>
-      | undefined;
-    if (typeof errorObj?.failed_generation === "string") {
-      return errorObj.failed_generation;
-    }
+    const failedGen = (err as Record<string, unknown>).error as Record<string, unknown> | undefined;
+    if (typeof failedGen?.failed_generation === "string") return failedGen.failed_generation;
   }
-  const str = String(err);
-  const match = /"failed_generation":\s*"([\s\S]*?)"\s*[,}]/.exec(str);
-  if (match && match[1]) {
-    try {
-      return JSON.parse(`"${match[1]}"`);
-    } catch {
-      return match[1];
-    }
-  }
-  return null;
+
+  const match = /"failed_generation":\s*"([\s\S]*?)"\s*[,}]/.exec(String(err));
+  if (!match?.[1]) return null;
+
+  try { return JSON.parse(`"${match[1]}"`) as string; } catch { return match[1]; }
 };
 
 const recoverToolCallsFromFailedGeneration = (
   failedGen: string,
 ): { toolCalls: ToolCall[]; cleanContent: string } => {
-  if (failedGen.includes("<tool_call>")) {
-    return parseXmlToolCalls(failedGen);
-  }
+  if (failedGen.includes("<tool_call>")) return parseXmlToolCalls(failedGen);
 
   try {
-    const parsed = JSON.parse(failedGen.trim()) as {
-      name?: string;
-      arguments?: Record<string, unknown> | string;
-    };
-    if (parsed && typeof parsed.name === "string") {
-      const callId = `call_${crypto.randomUUID().slice(0, 8)}`;
-      const argsStr =
-        typeof parsed.arguments === "object"
+    const parsed = JSON.parse(failedGen.trim()) as { name?: string; arguments?: Record<string, unknown> | string };
+    if (typeof parsed?.name !== "string") return { toolCalls: [], cleanContent: "" };
+
+    return {
+      toolCalls: [{
+        callId: `call_${crypto.randomUUID().slice(0, 8)}`,
+        name: parsed.name,
+        arguments: typeof parsed.arguments === "object"
           ? JSON.stringify(parsed.arguments)
-          : String(parsed.arguments || "{}");
-      return {
-        toolCalls: [
-          {
-            callId,
-            name: parsed.name,
-            arguments: argsStr,
-          },
-        ],
-        cleanContent: "",
-      };
-    }
+          : String(parsed.arguments ?? "{}"),
+      }],
+      cleanContent: "",
+    };
   } catch {
     const nameMatch = /"name":\s*"([^"]+)"/.exec(failedGen);
-    const argsMatch = /"arguments":\s*({[\s\S]*})/.exec(failedGen);
-    if (nameMatch && nameMatch[1]) {
-      const callId = `call_${crypto.randomUUID().slice(0, 8)}`;
-      return {
-        toolCalls: [
-          {
-            callId,
-            name: nameMatch[1],
-            arguments: argsMatch?.[1] ?? "{}",
-          },
-        ],
-        cleanContent: "",
-      };
-    }
-  }
+    if (!nameMatch?.[1]) return { toolCalls: [], cleanContent: "" };
 
-  return { toolCalls: [], cleanContent: "" };
+    const argsMatch = /"arguments":\s*({[\s\S]*})/.exec(failedGen);
+    return {
+      toolCalls: [{
+        callId: `call_${crypto.randomUUID().slice(0, 8)}`,
+        name: nameMatch[1],
+        arguments: argsMatch?.[1] ?? "{}",
+      }],
+      cleanContent: "",
+    };
+  }
 };
 
-export const generateText = async ({
-  instructions,
-  input,
-}: LlmRequest): Promise<LlmResponse> => {
+const extractToolCallsFromResponse = (message: Message | undefined, rawContent: string) => {
+  const toolCalls: ToolCall[] = message?.tool_calls ? toToolCalls(message.tool_calls) : [];
+  if (toolCalls.length > 0) return { toolCalls, text: rawContent.trim() };
+
+  if (!rawContent.includes("<tool_call>")) return { toolCalls, text: rawContent.trim() };
+
+  const parsed = parseXmlToolCalls(rawContent);
+  return parsed.toolCalls.length > 0
+    ? { toolCalls: parsed.toolCalls, text: parsed.cleanContent }
+    : { toolCalls, text: rawContent.trim() };
+};
+
+const buildToolResponse = (
+  response: Response,
+  toolCalls: readonly ToolCall[],
+  text: string,
+  message?: Message,
+): ToolLlmResponse => ({
+  id: response.id,
+  model: response.model,
+  text,
+  toolCalls,
+  message: {
+    role: "assistant",
+    content: message?.content ?? null,
+    ...(message?.tool_calls !== undefined && { tool_calls: message.tool_calls }),
+  },
+});
+
+const buildRecoveredResponse = (_model: string, parsed: { toolCalls: ToolCall[]; cleanContent: string }): ToolLlmResponse => ({
+  id: `recovered-${crypto.randomUUID()}`,
+  model: _model,
+  text: parsed.cleanContent,
+  toolCalls: parsed.toolCalls,
+  message: {
+    role: "assistant",
+    content: parsed.cleanContent || null,
+    tool_calls: parsed.toolCalls.map((tc) => ({
+      id: tc.callId,
+      type: "function" as const,
+      function: { name: tc.name, arguments: tc.arguments },
+    })),
+  },
+});
+
+const handleToolCallResponse = async (
+  messages: readonly Groq.Chat.Completions.ChatCompletionMessageParam[],
+  tools: readonly LlmTool[],
+): Promise<ToolLlmResponse> =>
+  callGroqWithFallback(async (selectedModel) => {
+    try {
+      const response = await client.chat.completions.create({
+        model: selectedModel,
+        max_tokens: MAX_COMPLETION_TOKENS,
+        messages: [...messages],
+        tools: tools.map((t) => ({
+          type: "function",
+          function: {
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters,
+          },
+        })),
+        tool_choice: "auto",
+      });
+
+      const message = response.choices[0]?.message;
+      const rawContent = stripThinkingTags(message?.content ?? "");
+      const { toolCalls, text } = extractToolCallsFromResponse(message, rawContent);
+
+      return buildToolResponse(response, toolCalls, text, message);
+    } catch (err) {
+      const failedGen = extractFailedGeneration(err);
+      if (failedGen) {
+        const parsed = recoverToolCallsFromFailedGeneration(failedGen);
+        if (parsed.toolCalls.length > 0) return buildRecoveredResponse(selectedModel, parsed);
+      }
+      throw err;
+    }
+  });
+
+export const generateText = async ({ instructions, input }: LlmRequest): Promise<LlmResponse> => {
   if (process.env.NODE_ENV === "test" || env.nodeEnv === "test") {
     return mockProvider.generate({ instructions, input });
   }
+
   try {
     return await callGroqWithFallback(async (selectedModel) => {
       const response = await client.chat.completions.create({
         model: selectedModel,
         max_tokens: MAX_COMPLETION_TOKENS,
         messages: [
-          {
-            role: "system",
-            content: instructions,
-          },
-          {
-            role: "user",
-            content: input,
-          },
+          { role: "system", content: instructions },
+          { role: "user", content: input },
         ],
       });
 
-      const rawText = response.choices[0]?.message.content?.trim() ?? "";
-      const text = stripThinkingTags(rawText);
+      const text = stripThinkingTags(response.choices[0]?.message.content?.trim() ?? "");
+      if (!text) throw new Error("LLM returned an empty response");
 
-      if (!text) {
-        throw new Error("LLM returned an empty response");
-      }
-
-      return {
-        id: response.id,
-        model: response.model,
-        text,
-      };
+      return { id: response.id, model: response.model, text };
     });
   } catch (error) {
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error("Groq text generation failed");
+    if (error instanceof Error) throw error;
+    throw new Error("Groq text generation failed", { cause: error });
   }
 };
 
-export const groqProvider: LlmProvider = {
-  generate: generateText,
+export const groqProvider: LlmProvider = { generate: generateText };
+
+export const isLlmAvailable = (): boolean => Boolean(env.groqApiKey);
+
+export const callLlm = async (
+  messages: readonly LlmMessage[],
+  options: { readonly maxTokens?: number; readonly temperature?: number } = {},
+): Promise<LlmResponse & { readonly content: string }> => {
+  void options;
+  const system = messages.find((m) => m.role === "system");
+  const user = messages.find((m) => m.role === "user");
+  const response = await generateText({
+    instructions: system?.content ?? "",
+    input: user?.content ?? "",
+  });
+
+  return { ...response, content: response.text };
 };
 
 export const generateWithTools = async ({
@@ -284,93 +320,14 @@ export const generateWithTools = async ({
   readonly instructions: string;
   readonly input: string;
   readonly tools: readonly LlmTool[];
-}): Promise<ToolLlmResponse> => {
-  return callGroqWithFallback(async (selectedModel) => {
-    try {
-      const response = await client.chat.completions.create({
-        model: selectedModel,
-        max_tokens: MAX_COMPLETION_TOKENS,
-        messages: [
-          {
-            role: "system",
-            content: instructions,
-          },
-          {
-            role: "user",
-            content: input,
-          },
-        ],
-        tools: tools.map((tool) => ({
-          type: "function",
-          function: {
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.parameters as Record<string, unknown>,
-          },
-        })),
-        tool_choice: "auto",
-      });
-
-      const choice = response.choices[0];
-      const message = choice?.message;
-      const rawContent = stripThinkingTags(message?.content ?? "");
-
-      let toolCalls: readonly ToolCall[] = message?.tool_calls
-        ? toToolCalls(message.tool_calls)
-        : [];
-
-      let text = rawContent.trim();
-
-      if (toolCalls.length === 0 && rawContent.includes("<tool_call>")) {
-        const parsed = parseXmlToolCalls(rawContent);
-        if (parsed.toolCalls.length > 0) {
-          toolCalls = parsed.toolCalls;
-          text = parsed.cleanContent;
-        }
-      }
-
-      return {
-        id: response.id,
-        model: response.model,
-        text,
-        toolCalls,
-        message: {
-          role: "assistant",
-          content: message?.content ?? null,
-          ...(message?.tool_calls !== undefined && {
-            tool_calls: message.tool_calls,
-          }),
-        },
-      };
-    } catch (err) {
-      const failedGen = extractFailedGeneration(err);
-      if (failedGen) {
-        const parsed = recoverToolCallsFromFailedGeneration(failedGen);
-        if (parsed.toolCalls.length > 0) {
-          return {
-            id: `recovered-${crypto.randomUUID()}`,
-            model: selectedModel,
-            text: parsed.cleanContent,
-            toolCalls: parsed.toolCalls,
-            message: {
-              role: "assistant",
-              content: parsed.cleanContent || null,
-              tool_calls: parsed.toolCalls.map((tc) => ({
-                id: tc.callId,
-                type: "function" as const,
-                function: {
-                  name: tc.name,
-                  arguments: tc.arguments,
-                },
-              })),
-            },
-          };
-        }
-      }
-      throw err;
-    }
-  });
-};
+}): Promise<ToolLlmResponse> =>
+  handleToolCallResponse(
+    [
+      { role: "system", content: instructions },
+      { role: "user", content: input },
+    ],
+    tools,
+  );
 
 export const continueWithTools = async ({
   instructions,
@@ -380,87 +337,8 @@ export const continueWithTools = async ({
   readonly instructions: string;
   readonly messages: readonly Groq.Chat.Completions.ChatCompletionMessageParam[];
   readonly tools: readonly LlmTool[];
-}): Promise<ToolLlmResponse> => {
-  return callGroqWithFallback(async (selectedModel) => {
-    try {
-      const response = await client.chat.completions.create({
-        model: selectedModel,
-        max_tokens: MAX_COMPLETION_TOKENS,
-        messages: [
-          {
-            role: "system",
-            content: instructions,
-          },
-          ...messages,
-        ],
-        tools: tools.map((tool) => ({
-          type: "function",
-          function: {
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.parameters as Record<string, unknown>,
-          },
-        })),
-        tool_choice: "auto",
-      });
-
-      const choice = response.choices[0];
-      const message = choice?.message;
-      const rawContent = stripThinkingTags(message?.content ?? "");
-
-      let toolCalls: readonly ToolCall[] = message?.tool_calls
-        ? toToolCalls(message.tool_calls)
-        : [];
-
-      let text = rawContent.trim();
-
-      if (toolCalls.length === 0 && rawContent.includes("<tool_call>")) {
-        const parsed = parseXmlToolCalls(rawContent);
-        if (parsed.toolCalls.length > 0) {
-          toolCalls = parsed.toolCalls;
-          text = parsed.cleanContent;
-        }
-      }
-
-      return {
-        id: response.id,
-        model: response.model,
-        text,
-        toolCalls,
-        message: {
-          role: "assistant",
-          content: message?.content ?? null,
-          ...(message?.tool_calls !== undefined && {
-            tool_calls: message.tool_calls,
-          }),
-        },
-      };
-    } catch (err) {
-      const failedGen = extractFailedGeneration(err);
-      if (failedGen) {
-        const parsed = recoverToolCallsFromFailedGeneration(failedGen);
-        if (parsed.toolCalls.length > 0) {
-          return {
-            id: `recovered-${crypto.randomUUID()}`,
-            model: selectedModel,
-            text: parsed.cleanContent,
-            toolCalls: parsed.toolCalls,
-            message: {
-              role: "assistant",
-              content: parsed.cleanContent || null,
-              tool_calls: parsed.toolCalls.map((tc) => ({
-                id: tc.callId,
-                type: "function" as const,
-                function: {
-                  name: tc.name,
-                  arguments: tc.arguments,
-                },
-              })),
-            },
-          };
-        }
-      }
-      throw err;
-    }
-  });
-};
+}): Promise<ToolLlmResponse> =>
+  handleToolCallResponse(
+    [{ role: "system", content: instructions }, ...messages],
+    tools,
+  );

@@ -5,8 +5,8 @@ export interface RetrievalRuntimeStatus {
   vector: RetrievalComponentState;
   files: number;
   chunks: number;
-  lastRefreshAt?: string | undefined;
-  lastError?: string | undefined;
+  lastRefreshAt?: string;
+  lastError?: string;
 }
 
 const status: RetrievalRuntimeStatus = {
@@ -16,10 +16,8 @@ const status: RetrievalRuntimeStatus = {
   chunks: 0,
 };
 
-export function updateRetrievalRuntimeStatus(update: Partial<RetrievalRuntimeStatus>): void {
+export const updateRetrievalRuntimeStatus = (update: Partial<RetrievalRuntimeStatus>): void => {
   Object.assign(status, update);
-}
+};
 
-export function getRetrievalRuntimeStatus(): Readonly<RetrievalRuntimeStatus> {
-  return { ...status };
-}
+export const getRetrievalRuntimeStatus = (): Readonly<RetrievalRuntimeStatus> => ({ ...status });

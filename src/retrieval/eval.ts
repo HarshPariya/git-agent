@@ -1,308 +1,92 @@
-import {
-  performance,
-} from "node:perf_hooks";
-
-import {
-  CodeRetriever,
-} from "./retriever.js";
-
-import {
-  retrievalEvalDataset,
-} from "./eval-dataset.js";
-
-import {
-  closeDatabase,
-} from "../db/postgres.js";
+import { performance } from "node:perf_hooks";
+import { CodeRetriever } from "./retriever.js";
+import { retrievalEvalDataset } from "./eval-dataset.js";
+import { closeDatabase } from "../db/mongodb.js";
 
 interface EvalCaseResult {
   id: string;
   query: string;
-
   expected: string[];
-
   returned: string[];
-
   rank: number | null;
-
   recallAt1: number;
   recallAt5: number;
-
   reciprocalRank: number;
-
   latencyMs: number;
 }
 
-function findFirstRelevantRank(
-  returned: string[],
-  expected: string[],
-): number | null {
-  for (
-    let index = 0;
-    index < returned.length;
-    index++
-  ) {
-    const item = returned[index];
-    if (
-      item !== undefined &&
-      expected.includes(
-        item,
-      )
-    ) {
-      return index + 1;
-    }
-  }
+const findFirstRelevantRank = (returned: string[], expected: string[]): number | null => {
+  const idx = returned.findIndex((item) => item !== undefined && expected.includes(item));
+  return idx >= 0 ? idx + 1 : null;
+};
 
-  return null;
-}
+const calculateRecallAtK = (returned: string[], expected: string[], k: number): number =>
+  expected.filter((n) => returned.slice(0, k).includes(n)).length / expected.length;
 
-function calculateRecallAtK(
-  returned: string[],
-  expected: string[],
-  k: number,
-): number {
-  const topK =
-    returned.slice(0, k);
+const evaluateCase = async (retriever: CodeRetriever, tc: (typeof retrievalEvalDataset)[number]): Promise<EvalCaseResult> => {
+  const start = performance.now();
+  const retrieved = await retriever.retrieve(tc.query, { limit: 10 });
+  const latencyMs = performance.now() - start;
+  const returned = retrieved.map((r) => r.name);
+  const rank = findFirstRelevantRank(returned, tc.expectedNames);
 
-  const relevantFound =
-    expected.filter(
-      (name) =>
-        topK.includes(name),
-    );
+  return {
+    id: tc.id,
+    query: tc.query,
+    expected: tc.expectedNames,
+    returned,
+    rank,
+    recallAt1: calculateRecallAtK(returned, tc.expectedNames, 1),
+    recallAt5: calculateRecallAtK(returned, tc.expectedNames, 5),
+    reciprocalRank: rank ? 1 / rank : 0,
+    latencyMs,
+  };
+};
 
-  return (
-    relevantFound.length /
-    expected.length
+const printCaseResult = ({ id, query, expected, returned, rank, latencyMs }: EvalCaseResult): void => {
+  const indicator = rank ? "✓" : "✗";
+  const topResult = returned[0] ?? "none";
+  const firstRelevant = rank ?? "not found";
+  console.warn(
+    `${indicator} ${id}\n` +
+    `  Query: ${query}\n` +
+    `  Expected: ${expected.join(", ")}\n` +
+    `  Top result: ${topResult}\n` +
+    `  First relevant rank: ${firstRelevant}\n` +
+    `  Latency: ${latencyMs.toFixed(1)} ms\n`,
   );
-}
+};
 
-async function main() {
-  console.log(
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+const printSummary = (results: EvalCaseResult[]): void => {
+  const avg = (fn: (r: EvalCaseResult) => number) => results.reduce((s, r) => s + fn(r), 0) / results.length;
+  const sortedLatency = results.map((r) => r.latencyMs).sort((a, b) => a - b);
+  const p95Idx = Math.min(sortedLatency.length - 1, Math.floor(sortedLatency.length * 0.95));
+
+  console.warn(
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nEVALUATION SUMMARY\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+    `Queries: ${results.length}\n` +
+    `Recall@1: ${(avg((r) => r.recallAt1) * 100).toFixed(1)}%\n` +
+    `Recall@5: ${(avg((r) => r.recallAt5) * 100).toFixed(1)}%\n` +
+    `MRR: ${avg((r) => r.reciprocalRank).toFixed(3)}\n` +
+    `Mean latency: ${avg((r) => r.latencyMs).toFixed(1)} ms\n` +
+    `P95 latency: ${(sortedLatency[p95Idx] ?? 0).toFixed(1)} ms`,
   );
+};
 
-  console.log(
-    "RETRIEVAL EVALUATION",
-  );
+const main = async (): Promise<void> => {
+  console.warn("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nRETRIEVAL EVALUATION\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
-  console.log(
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-  );
-
-  console.log();
-
-  const retriever =
-    new CodeRetriever(
-      process.cwd(),
-    );
-
+  const retriever = new CodeRetriever(process.cwd());
   await retriever.initialize();
 
-  const results: EvalCaseResult[] = [];
-
-  for (
-    const testCase
-    of retrievalEvalDataset
-  ) {
-    const start =
-      performance.now();
-
-    const retrieved =
-      await retriever.retrieve(
-        testCase.query,
-        {
-          limit: 10,
-        },
-      );
-
-    const latencyMs =
-      performance.now() -
-      start;
-
-    const returned =
-      retrieved.map(
-        (result) =>
-          result.name,
-      );
-
-    const rank =
-      findFirstRelevantRank(
-        returned,
-        testCase.expectedNames,
-      );
-
-    const recallAt1 =
-      calculateRecallAtK(
-        returned,
-        testCase.expectedNames,
-        1,
-      );
-
-    const recallAt5 =
-      calculateRecallAtK(
-        returned,
-        testCase.expectedNames,
-        5,
-      );
-
-    const reciprocalRank =
-      rank
-        ? 1 / rank
-        : 0;
-
-    results.push({
-      id:
-        testCase.id,
-
-      query:
-        testCase.query,
-
-      expected:
-        testCase.expectedNames,
-
-      returned,
-
-      rank,
-
-      recallAt1,
-      recallAt5,
-
-      reciprocalRank,
-
-      latencyMs,
-    });
-
-    console.log(
-      `${rank ? "✓" : "✗"} ${testCase.id}`,
-    );
-
-    console.log(
-      `  Query: ${testCase.query}`,
-    );
-
-    console.log(
-      `  Expected: ${testCase.expectedNames.join(", ")}`,
-    );
-
-    console.log(
-      `  Top result: ${returned[0] ?? "none"}`,
-    );
-
-    console.log(
-      `  First relevant rank: ${rank ?? "not found"}`,
-    );
-
-    console.log(
-      `  Latency: ${latencyMs.toFixed(1)} ms`,
-    );
-
-    console.log();
-  }
-
-  const count =
-    results.length;
-
-  const meanRecallAt1 =
-    results.reduce(
-      (sum, result) =>
-        sum +
-        result.recallAt1,
-      0,
-    ) / count;
-
-  const meanRecallAt5 =
-    results.reduce(
-      (sum, result) =>
-        sum +
-        result.recallAt5,
-      0,
-    ) / count;
-
-  const mrr =
-    results.reduce(
-      (sum, result) =>
-        sum +
-        result.reciprocalRank,
-      0,
-    ) / count;
-
-  const meanLatency =
-    results.reduce(
-      (sum, result) =>
-        sum +
-        result.latencyMs,
-      0,
-    ) / count;
-
-  const sortedLatency =
-    results
-      .map(
-        (result) =>
-          result.latencyMs,
-      )
-      .sort(
-        (a, b) =>
-          a - b,
-      );
-
-  const p95Index =
-    Math.min(
-      sortedLatency.length - 1,
-      Math.floor(
-        sortedLatency.length *
-          0.95,
-      ),
-    );
-
-  const p95Latency =
-    sortedLatency[p95Index] ?? 0;
-
-  console.log(
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-  );
-
-  console.log(
-    "EVALUATION SUMMARY",
-  );
-
-  console.log(
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-  );
-
-  console.log();
-
-  console.log(
-    `Queries: ${count}`,
-  );
-
-  console.log(
-    `Recall@1: ${(meanRecallAt1 * 100).toFixed(1)}%`,
-  );
-
-  console.log(
-    `Recall@5: ${(meanRecallAt5 * 100).toFixed(1)}%`,
-  );
-
-  console.log(
-    `MRR: ${mrr.toFixed(3)}`,
-  );
-
-  console.log(
-    `Mean latency: ${meanLatency.toFixed(1)} ms`,
-  );
-
-  console.log(
-    `P95 latency: ${p95Latency.toFixed(1)} ms`,
-  );
-}
+  const results = await Promise.all(retrievalEvalDataset.map((tc) => evaluateCase(retriever, tc)));
+  results.forEach(printCaseResult);
+  printSummary(results);
+};
 
 main()
-  .catch((error) => {
-    console.error(
-      "Retrieval evaluation failed:",
-    );
-
-    console.error(error);
-
+  .catch((err: unknown) => {
+    console.error("Retrieval evaluation failed:", err);
     process.exitCode = 1;
   })
   .finally(async () => {

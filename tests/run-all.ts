@@ -1,0 +1,50 @@
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
+
+const execAsync = promisify(exec);
+
+interface TestSuite { name: string; command: string; }
+
+const SUITES: TestSuite[] = [
+  { name: "Git Engine & Safety Controls", command: "npx tsx tests/git-engine.test.ts" },
+  { name: "Agent Orchestration & State Machine", command: "npx tsx tests/agent-orchestrator.test.ts" },
+  { name: "Express API & Service Endpoints", command: "npx tsx tests/api.test.ts" },
+  { name: "Guardrails, Security & Limits", command: "npx tsx tests/guardrails.test.ts" },
+  { name: "Git Desktop & Commit Plan Engine", command: "npx tsx tests/git-desktop.test.ts" },
+  { name: "E2E Git Desktop Workflow & Synchronization", command: "npx tsx tests/e2e-git-desktop-workflow.test.ts" },
+];
+
+async function runAll() {
+  console.log("════════════════════════════════════════════════════════════════\nPRODUCTION GIT DEBUGGING AGENT — FULL TEST SUITE RUNNER\n════════════════════════════════════════════════════════════════\n");
+
+  const startTime = Date.now();
+  let passedSuites = 0, failedSuites = 0;
+
+  for (const suite of SUITES) {
+    console.log(`▶ Running Suite: ${suite.name}...`);
+    const suiteStart = Date.now();
+    try {
+      const { stdout, stderr } = await execAsync(suite.command, { cwd: process.cwd(), env: { ...process.env, NODE_ENV: "test" } });
+      const durationMs = Date.now() - suiteStart;
+      console.log(stdout.trim());
+      if (stderr?.trim()) console.warn(stderr.trim());
+      console.log(`✓ Suite "${suite.name}" PASSED in ${durationMs}ms\n`);
+      passedSuites++;
+    } catch (err: any) {
+      const durationMs = Date.now() - suiteStart;
+      console.error(`❌ Suite "${suite.name}" FAILED in ${durationMs}ms`);
+      if (err.stdout) console.log(err.stdout);
+      if (err.stderr) console.error(err.stderr);
+      failedSuites++;
+    }
+  }
+
+  const totalTimeMs = Date.now() - startTime;
+  console.log(`════════════════════════════════════════════════════════════════\nSUMMARY OF TEST EXECUTION\n════════════════════════════════════════════════════════════════`);
+  console.log(`Total Suites:   ${SUITES.length}\nPassed Suites:  ${passedSuites}\nFailed Suites:  ${failedSuites}\nTotal Duration: ${(totalTimeMs / 1000).toFixed(2)}s\n`);
+
+  if (failedSuites > 0) { console.error("CI TEST SUITE FAILED"); process.exit(1); }
+  else { console.log("ALL TEST SUITES PASSED CLEANLY!"); process.exit(0); }
+}
+
+runAll().catch((err) => { console.error("Master test runner error:", err); process.exit(1); });

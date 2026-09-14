@@ -1,31 +1,22 @@
 import crypto from "node:crypto";
 import type { CodeChunk } from "../ingestion/chunker.js";
 import { embedText } from "../ingestion/embedder.js";
-import { query } from "./postgres.js";
+import { getCollection, type DatabaseHealthStatus, getDatabaseHealth } from "./mongodb.js";
 import type { VectorSearchResult } from "../retrieval/vector-search.js";
 
-export interface StoredChunkRow {
-  id: string;
-  repository: string;
-  file_path: string;
-  chunk_type: string;
-  name: string | null;
-  language: string | null;
-  start_line: number;
-  end_line: number;
-  content: string;
-  metadata: Record<string, unknown>;
-  content_hash?: string;
-  similarity?: number;
+export interface ChunkMetadata {
+  fileName: string;
+  directory: string;
+  imports: string[];
 }
 
 export interface VectorSearchFilterOptions {
-  repository?: string | undefined;
-  language?: string | undefined;
-  chunkType?: string | undefined;
-  filePathPrefix?: string | undefined;
-  metadata?: Record<string, unknown> | undefined;
-  limit?: number | undefined;
+  repository?: string;
+  language?: string;
+  chunkType?: string;
+  filePathPrefix?: string;
+  metadata?: Record<string, unknown>;
+  limit?: number;
 }
 
 export interface UpsertResultStats {
@@ -36,85 +27,104 @@ export interface UpsertResultStats {
   total: number;
 }
 
-function computeContentHash(content: string): string {
-  return crypto.createHash("sha256").update(content).digest("hex");
-}
+const CODE_CHUNKS = "code_chunks";
+const REPO_STATUS = "repository_status";
 
-export async function deleteStaleChunks(
+const computeContentHash = (content: string): string =>
+  crypto.createHash("sha256").update(content).digest("hex");
+
+const buildEmbeddingText = (chunk: CodeChunk): string =>
+  [`Type: ${chunk.type}`, `Name: ${chunk.name ?? ""}`, `File: ${chunk.filePath}`, "", chunk.content].join("\n");
+
+/** Cosine similarity between two vectors */
+const cosineSimilarity = (a: number[], b: number[]): number => {
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    const ai = a[i]!;
+    const bi = b[i]!;
+    dot += ai * bi;
+    normA += ai * ai;
+    normB += bi * bi;
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+};
+
+const mapDocToResult = (doc: Record<string, unknown>, score: number): VectorSearchResult => ({
+  chunk: {
+    id: doc.chunk_id as string,
+    type: doc.chunk_type as CodeChunk["type"],
+    filePath: doc.file_path as string,
+    language: doc.language as CodeChunk["language"],
+    name: (doc.name as string) ?? undefined,
+    startLine: doc.start_line as number,
+    endLine: doc.end_line as number,
+    content: doc.content as string,
+    metadata: doc.metadata as ChunkMetadata,
+  },
+  score,
+});
+
+export const deleteStaleChunks = async (
   repository: string,
   activeChunkIds: string[],
-): Promise<number> {
-  if (activeChunkIds.length === 0) {
-    const result = await query(
-      `DELETE FROM code_chunks WHERE repository = $1`,
-      [repository],
-    );
-    return result.rowCount ?? 0;
+): Promise<number> => {
+  const col = getCollection(CODE_CHUNKS);
+  const filter: Record<string, unknown> = { repository };
+  if (activeChunkIds.length > 0) {
+    filter.chunk_id = { $nin: activeChunkIds };
   }
-
-  const result = await query(
-    `DELETE FROM code_chunks WHERE repository = $1 AND NOT (id = ANY($2::text[]))`,
-    [repository, activeChunkIds],
-  );
-
-  const deletedCount = result.rowCount ?? 0;
-  if (deletedCount > 0) {
-    console.log(`🧹 Cleaned up ${deletedCount} stale code chunks from PostgreSQL.`);
-  }
-
+  const result = await col.deleteMany(filter);
+  const deletedCount = result.deletedCount;
+  if (deletedCount > 0) console.warn(`Cleaned up ${deletedCount} stale code chunks from MongoDB.`);
   return deletedCount;
-}
+};
 
-export async function updateRepositoryStatus(
+export const updateRepositoryStatus = async (
   repository: string,
   repoHash: string,
   totalFiles: number,
   totalChunks: number,
-): Promise<void> {
-  await query(
-    `
-    INSERT INTO repository_status (
-      repository,
-      repository_hash,
-      total_files,
-      total_chunks,
-      status,
-      last_indexed_at
-    )
-    VALUES ($1, $2, $3, $4, 'completed', NOW())
-    ON CONFLICT (repository) DO UPDATE SET
-      repository_hash = EXCLUDED.repository_hash,
-      total_files = EXCLUDED.total_files,
-      total_chunks = EXCLUDED.total_chunks,
-      status = 'completed',
-      last_indexed_at = NOW()
-    `,
-    [repository, repoHash, totalFiles, totalChunks],
+): Promise<void> => {
+  const col = getCollection(REPO_STATUS);
+  await col.updateOne(
+    { repository },
+    {
+      $set: {
+        repository_hash: repoHash,
+        total_files: totalFiles,
+        total_chunks: totalChunks,
+        status: "completed",
+        last_indexed_at: new Date().toISOString(),
+      },
+    },
+    { upsert: true },
   );
-}
+};
 
-export async function upsertChunks(
+export const upsertChunks = async (
   repository: string,
   chunks: CodeChunk[],
   repositoryHash = "",
   totalFiles = 0,
-): Promise<UpsertResultStats> {
-  console.log(`💾 Processing ${chunks.length} chunks for PostgreSQL + pgvector...`);
+): Promise<UpsertResultStats> => {
+  console.warn(`Processing ${chunks.length} chunks for MongoDB vector store...`);
 
-  // 1. Clean up stale chunks no longer present in repository
-  const activeChunkIds = chunks.map((c) => c.id);
+  const activeChunkIds = chunks.map(({ id }) => id);
   const deletedStale = await deleteStaleChunks(repository, activeChunkIds);
 
-  // 2. Fetch existing hashes to skip unchanged chunks
-  const existingRows = await query<{ id: string; content_hash: string }>(
-    `SELECT id, content_hash FROM code_chunks WHERE repository = $1`,
-    [repository],
-  );
+  const col = getCollection(CODE_CHUNKS);
+  const existingRows = await col.find(
+    { repository },
+    { projection: { chunk_id: 1, content_hash: 1 } },
+  ).toArray();
 
   const existingHashMap = new Map<string, string>();
-  for (const row of existingRows.rows) {
-    if (row.content_hash) {
-      existingHashMap.set(row.id, row.content_hash);
+  for (const r of existingRows) {
+    const chunkId = r.chunk_id as unknown;
+    const hash = r.content_hash as unknown;
+    if (typeof chunkId === "string" && typeof hash === "string") {
+      existingHashMap.set(chunkId, hash);
     }
   }
 
@@ -123,187 +133,131 @@ export async function upsertChunks(
   let skipped = 0;
 
   for (const chunk of chunks) {
-    if (!chunk.content.trim()) {
-      continue;
-    }
+    if (!chunk.content.trim()) continue;
 
     const currentHash = computeContentHash(chunk.content);
     const storedHash = existingHashMap.get(chunk.id);
 
-    // Skip embedding generation if content hash matches
-    if (storedHash === currentHash) {
-      skipped++;
-      continue;
-    }
+    if (storedHash === currentHash) { skipped++; continue; }
 
-    const embedding = await embedText(
-      [
-        `Type: ${chunk.type}`,
-        `Name: ${chunk.name ?? ""}`,
-        `File: ${chunk.filePath}`,
-        "",
-        chunk.content,
-      ].join("\n"),
+    const embedding = embedText(buildEmbeddingText(chunk));
+
+    const doc: Record<string, unknown> = {
+      chunk_id: chunk.id,
+      repository,
+      file_path: chunk.filePath,
+      chunk_type: chunk.type,
+      name: chunk.name ?? null,
+      language: chunk.language,
+      start_line: chunk.startLine,
+      end_line: chunk.endLine,
+      content: chunk.content,
+      metadata: chunk.metadata,
+      embedding,
+      content_hash: currentHash,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (storedHash !== undefined) { updated++; } else { inserted++; }
+
+    await col.updateOne(
+      { chunk_id: chunk.id },
+      { $set: doc },
+      { upsert: true },
     );
-
-    const vectorString = `[${embedding.join(",")}]`;
-
-    await query(
-      `
-      INSERT INTO code_chunks (
-        id,
-        repository,
-        file_path,
-        chunk_type,
-        name,
-        language,
-        start_line,
-        end_line,
-        content,
-        metadata,
-        embedding,
-        content_hash,
-        updated_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::vector, $12, NOW())
-      ON CONFLICT (id) DO UPDATE SET
-        repository = EXCLUDED.repository,
-        file_path = EXCLUDED.file_path,
-        chunk_type = EXCLUDED.chunk_type,
-        name = EXCLUDED.name,
-        language = EXCLUDED.language,
-        start_line = EXCLUDED.start_line,
-        end_line = EXCLUDED.end_line,
-        content = EXCLUDED.content,
-        metadata = EXCLUDED.metadata,
-        embedding = EXCLUDED.embedding,
-        content_hash = EXCLUDED.content_hash,
-        updated_at = NOW()
-      `,
-      [
-        chunk.id,
-        repository,
-        chunk.filePath,
-        chunk.type,
-        chunk.name ?? null,
-        chunk.language,
-        chunk.startLine,
-        chunk.endLine,
-        chunk.content,
-        JSON.stringify(chunk.metadata),
-        vectorString,
-        currentHash,
-      ],
-    );
-
-    if (storedHash !== undefined) {
-      updated++;
-    } else {
-      inserted++;
-    }
   }
 
-  // 3. Update indexing status record
-  await updateRepositoryStatus(
-    repository,
-    repositoryHash,
-    totalFiles,
-    chunks.length,
-  );
+  await updateRepositoryStatus(repository, repositoryHash, totalFiles, chunks.length);
 
-  console.log(
-    `✓ Incremental indexing finished: ${inserted} inserted, ${updated} updated, ${skipped} skipped, ${deletedStale} stale deleted (total ${chunks.length}).`,
+  console.warn(
+    `Incremental indexing finished: ${inserted} inserted, ${updated} updated, ${skipped} skipped, ${deletedStale} stale deleted (total ${chunks.length}).`,
   );
 
   return { inserted, updated, skipped, deletedStale, total: chunks.length };
-}
+};
 
-export async function pgVectorSearch(
+/**
+ * Vector similarity search.
+ * Attempts Atlas Vector Search first; falls back to application-level
+ * cosine similarity for local MongoDB instances.
+ */
+export const pgVectorSearch = async (
   queryText: string,
   filterOrRepo?: string | VectorSearchFilterOptions,
   limitParam = 10,
-): Promise<VectorSearchResult[]> {
+): Promise<VectorSearchResult[]> => {
   const options: VectorSearchFilterOptions =
     typeof filterOrRepo === "string"
       ? { repository: filterOrRepo, limit: limitParam }
       : filterOrRepo ?? { limit: limitParam };
 
   if (!options.repository) {
-    throw new Error(
-      "Security Error: Repository scope is required for vector search.",
-    );
+    throw new Error("Security Error: Repository scope is required for vector search.");
   }
 
-  const queryEmbedding = await embedText(queryText);
-  const vectorString = `[${queryEmbedding.join(",")}]`;
+  const queryEmbedding = embedText(queryText);
   const limit = options.limit ?? 10;
 
-  let sql = `
-    SELECT
-      id,
-      file_path,
-      chunk_type,
-      name,
-      language,
-      start_line,
-      end_line,
-      content,
-      metadata,
-      1 - (embedding <=> $1::vector) AS similarity
-    FROM code_chunks
-  `;
-
-  const whereConditions: string[] = [];
-  const params: unknown[] = [vectorString];
-
-  // Mandated Repository Isolation
-  params.push(options.repository);
-  whereConditions.push(`repository = $${params.length}`);
-
-  if (options.language) {
-    params.push(options.language);
-    whereConditions.push(`language = $${params.length}`);
-  }
-
-  if (options.chunkType) {
-    params.push(options.chunkType);
-    whereConditions.push(`chunk_type = $${params.length}`);
-  }
-
-  if (options.filePathPrefix) {
-    params.push(`${options.filePathPrefix}%`);
-    whereConditions.push(`file_path LIKE $${params.length}`);
-  }
-
+  // Build MongoDB filter
+  const filter: Record<string, unknown> = { repository: options.repository };
+  if (options.language) filter.language = options.language;
+  if (options.chunkType) filter.chunk_type = options.chunkType;
+  if (options.filePathPrefix) filter.file_path = { $regex: `^${options.filePathPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}` };
   if (options.metadata && Object.keys(options.metadata).length > 0) {
-    params.push(JSON.stringify(options.metadata));
-    whereConditions.push(`metadata @> $${params.length}::jsonb`);
+    for (const [key, value] of Object.entries(options.metadata)) {
+      filter[`metadata.${key}`] = value;
+    }
   }
 
-  if (whereConditions.length > 0) {
-    sql += ` WHERE ` + whereConditions.join(" AND ");
+  // Try Atlas Vector Search first
+  try {
+    const col = getCollection(CODE_CHUNKS);
+    const pipeline = [
+      { $match: filter },
+      {
+        $vectorSearch: {
+          index: "vector_index",
+          path: "embedding",
+          queryVector: queryEmbedding,
+          numCandidates: Math.max(limit * 10, 100),
+          limit,
+        },
+      },
+      {
+        $addFields: {
+          similarity: { $meta: "vectorSearchScore" },
+        },
+      },
+    ];
+
+    const results = await col.aggregate(pipeline).toArray();
+    return results.map((doc: Record<string, unknown>) =>
+      mapDocToResult(doc, (doc.similarity as number) ?? 0),
+    );
+  } catch {
+    // Atlas Vector Search not available — fall back to application-level cosine similarity
   }
 
-  params.push(limit);
-  sql += `
-    ORDER BY embedding <=> $1::vector ASC
-    LIMIT $${params.length}
-  `;
+  // Fallback: application-level cosine similarity search
+  const col = getCollection(CODE_CHUNKS);
+  const candidates = await col.find(filter).limit(500).toArray();
 
-  const result = await query<StoredChunkRow>(sql, params);
+  interface ScoredCandidate {
+    doc: Record<string, unknown>;
+    similarity: number;
+  }
 
-  return result.rows.map((row: StoredChunkRow) => ({
-    chunk: {
-      id: row.id,
-      type: row.chunk_type as any,
-      filePath: row.file_path,
-      language: row.language as any,
-      name: row.name ?? undefined,
-      startLine: row.start_line,
-      endLine: row.end_line,
-      content: row.content,
-      metadata: row.metadata as any,
-    },
-    score: Number(row.similarity ?? 0),
-  }));
-}
+  const scored: ScoredCandidate[] = [];
+  for (const doc of candidates) {
+    const emb = doc.embedding as number[] | undefined;
+    if (!emb || emb.length === 0) continue;
+    const similarity = cosineSimilarity(queryEmbedding, emb);
+    scored.push({ doc, similarity });
+  }
+
+  scored.sort((a, b) => b.similarity - a.similarity);
+  return scored.slice(0, limit).map(({ doc, similarity }) => mapDocToResult(doc, similarity));
+};
+
+export { type DatabaseHealthStatus };
+export { getDatabaseHealth };

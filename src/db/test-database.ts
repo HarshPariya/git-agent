@@ -1,53 +1,25 @@
-import {
-  closeDatabase,
-  testDatabaseConnection,
-} from "./postgres.js";
+import { closeDatabase, testDatabaseConnection } from "./mongodb.js";
+import { initializeSchema } from "./schema.js";
 
-import {
-  initializeSchema,
-} from "./schema.js";
+const SEPARATOR = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
 
-async function main() {
-  console.log(
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-  );
+const main = async () => {
+  console.warn(SEPARATOR);
+  console.warn("MONGODB ATLAS TEST");
+  console.warn(`${SEPARATOR}\n`);
 
-  console.log(
-    "POSTGRESQL + PGVECTOR TEST",
-  );
-
-  console.log(
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-  );
-
-  console.log();
-
-  const connected =
-    await testDatabaseConnection();
-
-  if (!connected) {
+  if (!(await testDatabaseConnection())) {
     process.exitCode = 1;
     return;
   }
 
-  await initializeSchema();
-
-  console.log();
-  console.log(
-    "✓ PostgreSQL + pgvector setup successful.",
-  );
-}
+  initializeSchema();
+  console.warn("\nMongoDB Atlas setup successful.");
+};
 
 main()
   .catch((error) => {
-    console.error(
-      "Database setup failed:",
-    );
-
-    console.error(error);
-
+    console.error("Database setup failed:", error);
     process.exitCode = 1;
   })
-  .finally(async () => {
-    await closeDatabase();
-  });
+  .finally(closeDatabase);

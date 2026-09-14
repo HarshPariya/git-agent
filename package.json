@@ -1,23 +1,27 @@
 {
   "name": "ai-chatbot",
-  "version": "1.0.0",
-  "description": "Production-ready GraphRAG AI chatbot",
+  "version": "2.0.0",
+  "description": "Autonomous AI Git Debugging Agent",
   "type": "module",
   "main": "dist/src/app.js",
   "scripts": {
+    "typecheck": "tsc --noEmit",
     "dev": "tsx watch src/app.ts",
     "build": "tsc",
     "start": "node dist/src/app.js",
-    "test": "npm run build && node --test dist/tests/**/*.test.js",
+    "test": "tsx tests/run-all.ts",
+    "test:git": "tsx tests/git-engine.test.ts",
+    "test:agent": "tsx tests/agent-orchestrator.test.ts",
+    "test:api": "tsx tests/api.test.ts",
+    "test:guardrails": "tsx tests/guardrails.test.ts",
+    "test:desktop": "tsx tests/git-desktop.test.ts",
     "rag:parse": "tsx src/ingestion/test-parser.ts",
     "rag:graph": "tsx src/retrieval/test-graph-search.ts",
     "rag:vector": "tsx src/retrieval/test-vector-search.ts",
     "rag:hybrid": "tsx src/retrieval/test-hybrid-search.ts",
     "rag:retrieve": "tsx src/retrieval/test-retriever.ts",
-    "tool:search-code": "tsx src/tools/test-search-code.ts",
     "db:test": "tsx src/db/test-database.ts",
     "db:vector": "tsx src/db/test-vector-store.ts",
-    "db:migrate": "tsx src/db/migrate.ts",
     "rag:eval": "tsx src/retrieval/eval.ts",
     "rag:ablation": "tsx src/retrieval/ablation-eval.ts",
     "rag:security-test": "tsx src/ingestion/test-security.ts",
@@ -26,7 +30,12 @@
     "rag:limits-test": "tsx src/guardrails/test-limits.ts",
     "rag:integration-test": "tsx src/retrieval/test-integration.ts",
     "db:backup-test": "tsx src/db/test-backup.ts",
-    "tool:impact-analysis": "tsx src/tools/test-impact-analysis.ts"
+    "tool:search-code": "tsx src/retrieval/test-graph-search.ts",
+    "tool:impact-analysis": "tsx src/retrieval/test-retriever.ts",
+    "lint": "eslint src/ --ext .ts",
+    "lint:fix": "eslint src/ --ext .ts --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\""
   },
   "repository": {
     "type": "git",
@@ -34,10 +43,12 @@
   },
   "keywords": [
     "ai",
-    "chatbot",
+    "git",
+    "debugging",
+    "agent",
     "graphrag",
-    "postgresql",
-    "pgvector"
+    "mongodb",
+    "atlas-vector-search"
   ],
   "author": "HarshPariya",
   "license": "ISC",
@@ -46,26 +57,25 @@
   },
   "homepage": "https://github.com/HarshPariya/ai-chatbot#readme",
   "dependencies": {
-    "@napi-rs/canvas": "^1.0.8",
-    "@types/pdf-parse": "^1.1.5",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "google-auth-library": "^11.0.2",
     "groq-sdk": "^1.6.0",
-    "mammoth": "^1.12.2",
-    "openai": "^5.23.2",
-    "pdf-parse": "^1.1.1",
-    "pdfjs-dist": "^6.3.289",
-    "pg": "^8.23.0",
-    "tesseract.js": "^7.0.0"
+    "mongodb": "^7.6.0",
+    "openai": "^5.23.2"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^26.3.0",
-    "@types/pg": "^8.23.1",
-    "pdf-lib": "^1.17.1",
+    "@typescript-eslint/eslint-plugin": "^8.70.0",
+    "@typescript-eslint/parser": "^8.70.0",
+    "eslint": "^10.10.0",
+    "prettier": "^3.9.6",
     "tsx": "^4.23.12",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.70.0"
   }
 }

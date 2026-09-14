@@ -2,8 +2,7 @@ export interface RetrievalRequest {
   readonly query: string;
   readonly tenantId?: string;
   readonly limit?: number;
-  readonly documentIds?: readonly string[] | undefined;
-  readonly mode?: "code" | "document" | "mixed" | "general" | "system" | undefined;
+  readonly mode?: "code" | "general" | "system";
 }
 
 export interface RetrievalResult {
@@ -12,7 +11,7 @@ export interface RetrievalResult {
   readonly page?: number;
   readonly score: number;
   readonly metadata?: Readonly<Record<string, string>>;
-  readonly sourceType?: "code" | "document" | undefined;
+  readonly sourceType?: "code";
 }
 
 export type SymbolReferenceKind = "definition" | "call" | "import" | "reference";

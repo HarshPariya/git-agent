@@ -3,13 +3,17 @@ export interface TenantContext {
   readonly userId: string;
 }
 
-export type Role = "user" | "admin" | "superadmin";
+export type Role = "user" | "developer" | "admin" | "superadmin" | "viewer";
 
 export type Permission =
-  | "chat:read"
-  | "chat:write"
-  | "documents:read"
-  | "documents:write";
+  | "repository:read"
+  | "repository:write"
+  | "repository:ci"
+  | "repository:pr"
+  | "repository:debug"
+  | "repository:audit"
+  | "graphrag:read"
+  | "graphrag:write";
 
 export interface AuthorizeRequest {
   readonly context: TenantContext;

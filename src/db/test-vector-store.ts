@@ -1,76 +1,59 @@
+import type { VectorSearchResult } from "../retrieval/vector-search.js";
 import { parseRepository } from "../ingestion/parser.js";
 import { chunkRepository } from "../ingestion/chunker.js";
-import { closeDatabase, testDatabaseConnection } from "./postgres.js";
+import { closeDatabase, testDatabaseConnection } from "./mongodb.js";
 import { initializeSchema } from "./schema.js";
 import { upsertChunks, pgVectorSearch } from "./vector-store.js";
 
-async function main() {
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log("METADATA FILTERED PGVECTOR TEST");
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log();
+const SEPARATOR = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
 
-  const connected = await testDatabaseConnection();
-  if (!connected) {
+const printResult = (result: VectorSearchResult, index: number) => {
+  console.warn(`${index + 1}. ${result.chunk.type.toUpperCase()} — ${result.chunk.name}`);
+  console.warn(`   Similarity: ${result.score.toFixed(4)}`);
+  console.warn(`   File: ${result.chunk.filePath}\n`);
+};
+
+const main = async () => {
+  console.warn(SEPARATOR);
+  console.warn("METADATA FILTERED MONGODB VECTOR TEST");
+  console.warn(`${SEPARATOR}\n`);
+
+  if (!(await testDatabaseConnection())) {
     process.exitCode = 1;
     return;
   }
 
-  await initializeSchema();
+  initializeSchema();
+  console.warn("\nParsing & chunking repository...");
 
-  console.log();
-  console.log("🔍 Parsing & chunking repository...");
-  const parsedFiles = await parseRepository(process.cwd());
-  const chunks = chunkRepository(parsedFiles);
-
+  const chunks = chunkRepository(await parseRepository(process.cwd()));
   await upsertChunks("ai-chatbot", chunks);
 
-  const query = process.argv.slice(2).join(" ") || "Where is normalizeId used?";
+  const queryText = process.argv.slice(2).join(" ") || "Where is normalizeId used?";
 
-  console.log();
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log(`1. Unfiltered Vector Search: "${query}"`);
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log();
+  console.warn(`\n${SEPARATOR}`);
+  console.warn(`1. Unfiltered Vector Search: "${queryText}"`);
+  console.warn(`${SEPARATOR}\n`);
 
-  const allResults = await pgVectorSearch(query, {
-    repository: "ai-chatbot",
-    limit: 5,
-  });
+  const allResults = await pgVectorSearch(queryText, { repository: "ai-chatbot", limit: 5 });
+  allResults.forEach(printResult);
 
-  allResults.forEach((result, index) => {
-    console.log(`${index + 1}. ${result.chunk.type.toUpperCase()} — ${result.chunk.name}`);
-    console.log(`   Similarity: ${result.score.toFixed(4)}`);
-    console.log(`   File: ${result.chunk.filePath}`);
-    console.log();
-  });
+  console.warn(`\n${SEPARATOR}`);
+  console.warn(`2. Filtered Search (chunkType: function, language: typescript): "${queryText}"`);
+  console.warn(`${SEPARATOR}\n`);
 
-  console.log();
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log(`2. Filtered Search (chunkType: function, language: typescript): "${query}"`);
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log();
-
-  const filteredResults = await pgVectorSearch(query, {
+  const filteredResults = await pgVectorSearch(queryText, {
     repository: "ai-chatbot",
     chunkType: "function",
     language: "typescript",
     limit: 5,
   });
-
-  filteredResults.forEach((result, index) => {
-    console.log(`${index + 1}. ${result.chunk.type.toUpperCase()} — ${result.chunk.name}`);
-    console.log(`   Similarity: ${result.score.toFixed(4)}`);
-    console.log(`   File: ${result.chunk.filePath}`);
-    console.log();
-  });
-}
+  filteredResults.forEach(printResult);
+};
 
 main()
   .catch((error) => {
     console.error("Filtered vector search test failed:", error);
     process.exitCode = 1;
   })
-  .finally(async () => {
-    await closeDatabase();
-  });
+  .finally(closeDatabase);

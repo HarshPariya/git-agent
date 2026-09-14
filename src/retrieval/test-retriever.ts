@@ -1,135 +1,59 @@
-import {
-  CodeRetriever,
-} from "./retriever.js";
-import {
-  closeDatabase,
-} from "../db/postgres.js";
+import { CodeRetriever } from "./retriever.js";
+import { closeDatabase } from "../db/mongodb.js";
 
-async function main() {
-  const retriever =
-    new CodeRetriever(
-      process.cwd(),
-    );
+const formatResult = (result: {
+  rank: number;
+  name: string;
+  rerankScore?: number;
+  score: number;
+  vectorScore: number;
+  graphScore: number;
+  sources: string[];
+  filePath?: string;
+  startLine?: number;
+  endLine?: number;
+}): string => {
+  const rerank = result.rerankScore !== undefined ? `\n   Rerank: ${result.rerankScore.toFixed(4)}` : "";
+  const file = result.filePath ? `\n   File: ${result.filePath}` : "";
+  const lines =
+    result.startLine !== undefined && result.endLine !== undefined
+      ? `\n   Lines: ${result.startLine}-${result.endLine}`
+      : "";
 
+  return (
+    `${result.rank}. ${result.name}${rerank}\n` +
+    `   Hybrid Score: ${result.score.toFixed(4)}\n` +
+    `   Vector Score: ${result.vectorScore.toFixed(4)}\n` +
+    `   Graph Score: ${result.graphScore.toFixed(4)}\n` +
+    `   Sources: ${result.sources.join(" + ")}` +
+    file +
+    lines +
+    "\n"
+  );
+};
+
+const main = async (): Promise<void> => {
+  const retriever = new CodeRetriever(process.cwd());
   await retriever.initialize();
 
-  const stats =
-    retriever.getStats();
-
-  console.log();
-  console.log(
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+  const stats = retriever.getStats();
+  console.warn(
+    `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nRETRIEVER STATS\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
   );
+  console.warn(`Files: ${stats.files}\nChunks: ${stats.chunks}\nGraph nodes: ${stats.graphNodes}\nGraph edges: ${stats.graphEdges}`);
 
-  console.log(
-    "RETRIEVER STATS",
-  );
+  const query = process.argv.slice(2).join(" ") || "Where is normalizeId used?";
+  console.warn(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nQUERY: "${query}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 
-  console.log(
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-  );
-
-  console.log(
-    `Files: ${stats.files}`,
-  );
-
-  console.log(
-    `Chunks: ${stats.chunks}`,
-  );
-
-  console.log(
-    `Graph nodes: ${stats.graphNodes}`,
-  );
-
-  console.log(
-    `Graph edges: ${stats.graphEdges}`,
-  );
-
-  const query =
-    process.argv
-      .slice(2)
-      .join(" ") ||
-    "Where is normalizeId used?";
-
-  console.log();
-  console.log(
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-  );
-
-  console.log(
-    `QUERY: "${query}"`,
-  );
-
-  console.log(
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-  );
-
-  console.log();
-
-  const results =
-    await retriever.retrieve(
-      query,
-      {
-        limit: 8,
-      },
-    );
-
+  const results = await retriever.retrieve(query, { limit: 8 });
   for (const result of results) {
-    console.log(
-      `${result.rank}. ${result.name}`,
-    );
-
-    if (
-      result.rerankScore !== undefined
-    ) {
-      console.log(
-        `   Rerank: ${result.rerankScore.toFixed(4)}`,
-      );
-    }
-
-    console.log(
-      `   Hybrid Score: ${result.score.toFixed(4)}`,
-    );
-
-    console.log(
-      `   Vector Score: ${result.vectorScore.toFixed(4)}`,
-    );
-
-    console.log(
-      `   Graph Score: ${result.graphScore.toFixed(4)}`,
-    );
-
-    console.log(
-      `   Sources: ${result.sources.join(" + ")}`,
-    );
-
-    if (result.filePath) {
-      console.log(
-        `   File: ${result.filePath}`,
-      );
-    }
-
-    if (
-      result.startLine !== undefined &&
-      result.endLine !== undefined
-    ) {
-      console.log(
-        `   Lines: ${result.startLine}-${result.endLine}`,
-      );
-    }
-
-    console.log();
+    console.warn(`${formatResult(result)}\n`);
   }
-}
+};
 
 main()
-  .catch((error) => {
-    console.error(
-      "Retriever test failed:",
-    );
-
-    console.error(error);
-
+  .catch((error: unknown) => {
+    console.error("Retriever test failed:", error);
     process.exitCode = 1;
   })
   .finally(async () => {

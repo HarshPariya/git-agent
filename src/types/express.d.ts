@@ -5,8 +5,10 @@ declare global {
     interface Request {
       requestId?: string;
       tenantContext?: TenantContext;
+      workspaceRoot?: string;
+      workspaceId?: string;
     }
   }
 }
 
-export {};
+export { };

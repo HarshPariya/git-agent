@@ -1,9 +1,5 @@
 import ts from "typescript";
-import type {
-  ParsedImport,
-  ParsedFunction,
-  ParsedClass,
-} from "./parser.js";
+import type { ParsedImport, ParsedFunction, ParsedClass } from "./parser.js";
 
 export interface ASTParseResult {
   imports: ParsedImport[];
@@ -11,130 +7,77 @@ export interface ASTParseResult {
   classes: ParsedClass[];
 }
 
-export function parseTypeScriptAST(
-  content: string,
-  filePath: string,
-): ASTParseResult {
-  const scriptTarget = ts.ScriptTarget.Latest;
-  const sourceFile = ts.createSourceFile(
-    filePath,
-    content,
-    scriptTarget,
-    true, // setParentNodes
-  );
-
+export const parseTypeScriptAST = (content: string, filePath: string): ASTParseResult => {
+  const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
   const imports: ParsedImport[] = [];
   const functions: ParsedFunction[] = [];
   const classes: ParsedClass[] = [];
 
-  function getLineNumber(pos: number): number {
-    return sourceFile.getLineAndCharacterOfPosition(pos).line + 1;
-  }
+  const getLineNumber = (pos: number) => sourceFile.getLineAndCharacterOfPosition(pos).line + 1;
+  const getNodeContent = (node: ts.Node) => node.getText(sourceFile);
+  const pushFunction = (node: ts.Node, name: string, containerNode?: ts.Node) =>
+    functions.push({
+      name,
+      startLine: getLineNumber(node.getStart()),
+      endLine: getLineNumber(node.getEnd()),
+      content: getNodeContent(containerNode ?? node),
+    });
 
-  function getNodeContent(node: ts.Node): string {
-    return node.getText(sourceFile);
-  }
+  const extractNamedImports = (bindings: ts.NamedImportBindings): string[] =>
+    ts.isNamedImports(bindings)
+      ? bindings.elements.map((el) => el.name.getText(sourceFile))
+      : ts.isNamespaceImport(bindings)
+        ? [bindings.name.getText(sourceFile)]
+        : [];
 
-  function visit(node: ts.Node) {
-    // 1. Imports
+  const visit = (node: ts.Node): void => {
     if (ts.isImportDeclaration(node)) {
-      const moduleSpecifier = (node.moduleSpecifier as ts.StringLiteral).text;
-      const names: string[] = [];
-
-      if (node.importClause) {
-        if (node.importClause.name) {
-          names.push(node.importClause.name.getText(sourceFile));
-        }
-
-        if (node.importClause.namedBindings) {
-          if (ts.isNamedImports(node.importClause.namedBindings)) {
-            for (const element of node.importClause.namedBindings.elements) {
-              names.push(element.name.getText(sourceFile));
-            }
-          } else if (ts.isNamespaceImport(node.importClause.namedBindings)) {
-            names.push(node.importClause.namedBindings.name.getText(sourceFile));
-          }
-        }
-      }
+      const names = node.importClause
+        ? [
+          node.importClause.name?.getText(sourceFile),
+          ...(node.importClause.namedBindings ? extractNamedImports(node.importClause.namedBindings) : []),
+        ].filter((n): n is string => n !== undefined)
+        : [];
 
       imports.push({
-        source: moduleSpecifier,
+        source: (node.moduleSpecifier as ts.StringLiteral).text,
         names,
         line: getLineNumber(node.getStart()),
       });
+      ts.forEachChild(node, visit);
+      return;
     }
 
-    // 2. Function Declarations
-    else if (ts.isFunctionDeclaration(node) && node.name) {
-      const name = node.name.getText(sourceFile);
-      const startLine = getLineNumber(node.getStart());
-      const endLine = getLineNumber(node.getEnd());
-
-      functions.push({
-        name,
-        startLine,
-        endLine,
-        content: getNodeContent(node),
-      });
+    if (ts.isFunctionDeclaration(node) && node.name) {
+      pushFunction(node, node.name.getText(sourceFile));
+      ts.forEachChild(node, visit);
+      return;
     }
 
-    // 3. Arrow Function / Function Expression Variable Declarations
-    else if (ts.isVariableDeclaration(node) && node.name && node.initializer) {
-      if (
-        ts.isArrowFunction(node.initializer) ||
-        ts.isFunctionExpression(node.initializer)
-      ) {
-        const name = node.name.getText(sourceFile);
-        const startLine = getLineNumber(node.getStart());
-        const endLine = getLineNumber(node.getEnd());
-
-        functions.push({
-          name,
-          startLine,
-          endLine,
-          content: getNodeContent(node.parent?.parent ?? node),
-        });
-      }
+    if (ts.isVariableDeclaration(node) && node.name) {
+      const isFuncExpr = node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer));
+      if (isFuncExpr) pushFunction(node, node.name.getText(sourceFile), node.parent?.parent ?? node);
+      ts.forEachChild(node, visit);
+      return;
     }
 
-    // 4. Class Declarations & Methods
-    else if (ts.isClassDeclaration(node) && node.name) {
+    if (ts.isClassDeclaration(node) && node.name) {
       const className = node.name.getText(sourceFile);
-      const classStartLine = getLineNumber(node.getStart());
-      const classEndLine = getLineNumber(node.getEnd());
-
       classes.push({
         name: className,
-        startLine: classStartLine,
-        endLine: classEndLine,
+        startLine: getLineNumber(node.getStart()),
+        endLine: getLineNumber(node.getEnd()),
         content: getNodeContent(node),
       });
 
-      // Extract class methods as functions
-      for (const member of node.members) {
-        if (ts.isMethodDeclaration(member) && member.name) {
-          const methodName = member.name.getText(sourceFile);
-          const methodStartLine = getLineNumber(member.getStart());
-          const methodEndLine = getLineNumber(member.getEnd());
-
-          functions.push({
-            name: `${className}.${methodName}`,
-            startLine: methodStartLine,
-            endLine: methodEndLine,
-            content: getNodeContent(member),
-          });
-        }
-      }
+      node.members
+        .filter((m): m is ts.MethodDeclaration => ts.isMethodDeclaration(m) && m.name !== undefined)
+        .forEach((member) => pushFunction(member, `${className}.${member.name.getText(sourceFile)}`));
     }
 
     ts.forEachChild(node, visit);
-  }
+  };
 
   visit(sourceFile);
-
-  return {
-    imports,
-    functions,
-    classes,
-  };
-}
+  return { imports, functions, classes };
+};

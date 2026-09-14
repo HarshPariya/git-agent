@@ -1,22 +1,18 @@
 import type { Request, Response } from "express";
 import { env } from "../config/env.js";
-import { getDatabaseHealth } from "../db/postgres.js";
+import { getDatabaseHealth } from "../db/mongodb.js";
 import { getRetrievalRuntimeStatus } from "../retrieval/runtime-status.js";
 
 export const healthHandler = async (_request: Request, response: Response): Promise<void> => {
   const dbHealth = await getDatabaseHealth();
   const retrieval = getRetrievalRuntimeStatus();
-  const retrievalState = retrieval.graph === "ready"
-    ? (retrieval.vector === "ready" ? "ready" : "degraded")
-    : retrieval.graph;
+  const retrievalState = retrieval.graph === "ready" ? (retrieval.vector === "ready" ? "ready" : "degraded") : retrieval.graph;
+  const status = dbHealth.status === "healthy" || process.env.NODE_ENV !== "production" ? "ok" : "degraded";
 
   response.status(200).json({
-    status: (dbHealth.status === "healthy" || process.env.NODE_ENV !== "production") ? "ok" : "degraded",
+    status,
     environment: env.nodeEnv,
-    modules: {
-      retrieval: retrievalState,
-      agent: "ready",
-    },
+    modules: { retrieval: retrievalState, agent: "ready" },
     database: {
       status: dbHealth.status,
       latencyMs: dbHealth.latencyMs,
@@ -28,11 +24,8 @@ export const healthHandler = async (_request: Request, response: Response): Prom
   });
 };
 
-export const readinessHandler = async (_request: Request, response: Response): Promise<void> => {
+export const readinessHandler = (_request: Request, response: Response): void => {
   const retrieval = getRetrievalRuntimeStatus();
   const ready = retrieval.graph === "ready";
-  response.status(ready ? 200 : 503).json({
-    status: ready ? "ready" : "not-ready",
-    retrieval,
-  });
+  response.status(ready ? 200 : 503).json({ status: ready ? "ready" : "not-ready", retrieval });
 };

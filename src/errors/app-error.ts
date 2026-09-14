@@ -8,6 +8,8 @@ export type ErrorCode =
   | "EXTRACTION_FAILED"
   | "PERSISTENCE_UNAVAILABLE"
   | "SERVICE_UNAVAILABLE"
+  | "GITHUB_ERROR"
+  | "GIT_ERROR"
   | "INTERNAL_ERROR";
 
 export class AppError extends Error {

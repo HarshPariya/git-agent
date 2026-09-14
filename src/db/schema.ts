@@ -1,7 +1,7 @@
-import { runMigrations } from "./migrate.js";
-
 export const EMBEDDING_DIMENSION = 384;
 
-export async function initializeSchema(): Promise<void> {
-  await runMigrations();
-}
+export const initializeSchema = (): void => {
+    // MongoDB uses schemaless collections — no migration needed.
+    // Collections are created automatically on first write.
+    console.warn("MongoDB: schema initialization (no-op for schemaless database).");
+};
