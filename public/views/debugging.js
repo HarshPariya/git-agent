@@ -657,19 +657,46 @@ function renderRootCauseCard(result) {
   if (!card) return;
 
   const { fixPlan } = result;
+  const isClean =
+    !fixPlan ||
+    !fixPlan.filesToChange ||
+    fixPlan.filesToChange.length === 0 ||
+    (fixPlan.riskLevel === "LOW" &&
+      (fixPlan.rootCause?.toLowerCase().includes("clean") || fixPlan.rootCause?.toLowerCase().includes("healthy")));
 
   const riskBadge = byId("rc-risk");
-  if (riskBadge && fixPlan) {
-    riskBadge.textContent = `${fixPlan.riskLevel} RISK`;
-    riskBadge.className = `badge risk-${fixPlan.riskLevel.toLowerCase()}`;
+  if (riskBadge) {
+    if (isClean) {
+      riskBadge.textContent = "CLEAN · 0 RISKS";
+      riskBadge.className = "badge badge-success";
+    } else if (fixPlan) {
+      riskBadge.textContent = `${fixPlan.riskLevel} RISK`;
+      riskBadge.className = `badge risk-${fixPlan.riskLevel.toLowerCase()}`;
+    }
   }
 
-  byId("rc-symptom").textContent = result.summary || "No issues detected during investigation.";
-  byId("rc-rootcause").textContent = fixPlan?.rootCause || result.summary || "All checks passed. No root cause identified.";
-  byId("rc-evidence").textContent = fixPlan?.evidence?.join("; ") || result.findings?.[0]?.title || "Investigation steps completed successfully.";
-  byId("rc-fix").textContent = fixPlan
-    ? `Files to update: ${fixPlan.filesToChange.map((f) => f.filePath).join(", ")}. ${fixPlan.estimatedImpact}`
-    : "No changes needed — repository is in good health.";
+  byId("rc-symptom").textContent = isClean
+    ? "All verification checks passed cleanly."
+    : result.summary || "No issues detected during investigation.";
+  byId("rc-rootcause").textContent = isClean
+    ? fixPlan?.rootCause || "Codebase is clean and healthy. No syntax, runtime, or regression errors found."
+    : fixPlan?.rootCause || result.summary || "All checks passed. No root cause identified.";
+  byId("rc-evidence").textContent =
+    fixPlan?.evidence?.join("; ") || result.findings?.[0]?.title || "Verified code graph, AST symbols, and git history.";
+  byId("rc-fix").textContent = isClean
+    ? "No changes needed — codebase is 100% healthy and verified."
+    : fixPlan
+      ? `Files to update: ${fixPlan.filesToChange.map((f) => f.filePath).join(", ")}. ${fixPlan.estimatedImpact || ""}`
+      : "No changes needed — repository is in good health.";
+
+  const applyBtn = byId("btn-apply-patch");
+  if (applyBtn) {
+    applyBtn.style.display = isClean ? "none" : "inline-flex";
+  }
+  const commitBtn = byId("btn-safe-commit");
+  if (commitBtn) {
+    commitBtn.style.display = isClean ? "none" : "inline-flex";
+  }
 
   card.style.display = "block";
 }

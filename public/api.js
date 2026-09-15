@@ -307,6 +307,12 @@ class ApiClient {
       body: JSON.stringify({ repositoryId }),
     });
   }
+  async discardGitChanges(repositoryId, filePath = null) {
+    return this.request("/api/git/discard", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, ...(filePath ? { filePath } : {}) }),
+    });
+  }
   // Alias used by the debug view's "Commit & Push Fix" (returns {success, commitHash, message})
   async commitChanges(repositoryId, message) {
     return this.request("/api/git/commit", {

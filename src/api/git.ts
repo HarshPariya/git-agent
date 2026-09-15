@@ -397,6 +397,28 @@ export async function gitUnstageAllHandler(request: Request, response: Response,
   }
 }
 
+export async function gitDiscardHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    const filePath = optionalString(body, "filePath");
+    const repoPath = getExecutionPath(repoId);
+
+    if (filePath) {
+      await execAsync(`git checkout -- "${filePath}"`, { cwd: repoPath }).catch(noop);
+      await execAsync(`git clean -fd -- "${filePath}"`, { cwd: repoPath }).catch(noop);
+    } else {
+      await execAsync("git checkout -- .", { cwd: repoPath }).catch(noop);
+      await execAsync("git clean -fd", { cwd: repoPath }).catch(noop);
+    }
+
+    const status = await executeGitStatus(repoId);
+    response.status(200).json({ success: true, status });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function gitPushHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
   try {
     const body = getGitRequestData(request);

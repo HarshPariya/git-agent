@@ -6,10 +6,10 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../errors/app-error.js";
 import { getCollection, ensureDatabaseConnected } from "../db/mongodb.js";
-import { userStore, verifySessionToken } from "../security/auth.js";
+import { userStore, verifySessionToken, ADMIN_EMAILS } from "../security/auth.js";
 import { getAllActivity, getUserActivity, getActivityStats } from "../logging/activity-logger.js";
 
-/** Verify the request is from an admin user. */
+/** Verify the request is from the sole permitted admin user. */
 function requireAdmin(request: Request): void {
   const ctx = request.tenantContext;
   if (!ctx) throw new AppError("Authentication required", "AUTHENTICATION_ERROR", 401);
@@ -19,12 +19,12 @@ function requireAdmin(request: Request): void {
   if (token) {
     try {
       const session = verifySessionToken(token);
-      if (session.role === "admin") return;
+      if (session.role === "admin" && ADMIN_EMAILS.has(session.email?.toLowerCase() ?? "")) return;
     } catch {
       // Token invalid — fall through to error
     }
   }
-  throw new AppError("Admin access required", "AUTHORIZATION_ERROR", 403);
+  throw new AppError("Admin access required (harshpariya195@gmail.com only)", "AUTHORIZATION_ERROR", 403);
 }
 
 /** Ensure the database is reachable before running admin queries. */

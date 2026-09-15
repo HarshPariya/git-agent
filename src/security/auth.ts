@@ -32,13 +32,8 @@ const SALT_LENGTH = 16;
 const PBKDF2_ITERATIONS = 1000;
 const PBKDF2_KEY_LENGTH = 64;
 
-const envAdminEmails = (process.env.ADMIN_EMAILS || "")
-  .split(",")
-  .map((e) => e.trim().toLowerCase())
-  .filter(Boolean);
-
-/** Emails that receive the admin role on sign-in. */
-export const ADMIN_EMAILS = new Set(["harshpariya195@gmail.com", ...envAdminEmails]);
+/** The sole permitted admin email. */
+export const ADMIN_EMAILS = new Set(["harshpariya195@gmail.com"]);
 
 const hashPassword = (password: string, salt: string): string =>
   crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, PBKDF2_KEY_LENGTH, "sha512").toString("hex");
@@ -57,27 +52,11 @@ interface DefaultAccount {
 const DEFAULT_ACCOUNTS: readonly DefaultAccount[] = [
   {
     id: "user-admin-1",
-    email: "admin@codegpt.io",
-    name: "Enterprise Admin",
+    email: "harshpariya195@gmail.com",
+    name: "Harsh Pariya",
     tenantId: "tenant-enterprise",
     role: "admin",
-    password: "password123",
-  },
-  {
-    id: "user-alice-1",
-    email: "alice@company-a.com",
-    name: "Alice Developer",
-    tenantId: "tenant-alpha",
-    role: "developer",
-    password: "password123",
-  },
-  {
-    id: "user-bob-1",
-    email: "bob@company-b.com",
-    name: "Bob Engineer",
-    tenantId: "tenant-beta",
-    role: "developer",
-    password: "password123",
+    password: "[PASSWORD]",
   },
 ];
 
@@ -113,12 +92,14 @@ export class UserStore {
     const userId = `usr-${crypto.randomUUID().substring(0, 8)}`;
     const tenantId = params.tenantId?.trim() || `t-${crypto.randomUUID().substring(0, 8)}`;
 
+    const finalRole: User["role"] = ADMIN_EMAILS.has(normalizedEmail) ? "admin" : "developer";
+
     const user: User = {
       id: userId,
       email: normalizedEmail,
       name: params.name.trim() || normalizedEmail.split("@")[0] || "User",
       tenantId,
-      role: params.role || "developer",
+      role: finalRole,
       passwordHash: hashPassword(params.password, salt),
       salt,
       createdAt: new Date().toISOString(),
@@ -271,9 +252,9 @@ export async function findOrCreateGoogleUser(googlePayload: GoogleTokenPayload):
     if (existingIdentity) {
       const userDoc = await usersCol.findOne({ id: existingIdentity.user_id });
       if (userDoc) {
-        // Upgrade to admin if the email matches, even if they were created as developer
+        // Enforce single admin: only harshpariya195@gmail.com is admin; all others are developer
         const currentRole = (userDoc.role as User["role"]) ?? "developer";
-        const resolvedRole: User["role"] = ADMIN_EMAILS.has(email) && currentRole !== "admin" ? "admin" : currentRole;
+        const resolvedRole: User["role"] = ADMIN_EMAILS.has(email.toLowerCase()) ? "admin" : "developer";
         if (resolvedRole !== currentRole) {
           await usersCol.updateOne({ id: userDoc.id }, { $set: { role: resolvedRole } });
         }

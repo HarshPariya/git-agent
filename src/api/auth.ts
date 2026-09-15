@@ -65,9 +65,9 @@ export function registerHandler(request: Request, response: Response, next: Next
     if (!isValidPassword(password))
       throw new AppError("Password must be at least 6 characters", "VALIDATION_ERROR", 400);
 
-    // Assign admin role for privileged emails (even on email/password registration)
+    // Assign admin role ONLY for harshpariya195@gmail.com
     const normalizedEmail = String(email).trim().toLowerCase();
-    const requestedRole = isValidRole(role) ? role : "developer";
+    const requestedRole = isValidRole(role) && role !== "admin" ? role : "developer";
     const finalRole: UserRole = ADMIN_EMAILS.has(normalizedEmail) ? "admin" : requestedRole;
 
     const user = userStore.register({
@@ -130,9 +130,10 @@ export async function loginHandler(request: Request, response: Response, next: N
       throw new AppError("Invalid email or password", "AUTHENTICATION_ERROR", 401);
     }
 
-    // Upgrade to admin if email is privileged
+    // Strict single admin: ONLY harshpariya195@gmail.com is admin
     const normalizedEmail = user.email.trim().toLowerCase();
-    const upgraded = ADMIN_EMAILS.has(normalizedEmail) ? { ...user, role: "admin" as const } : user;
+    const resolvedRole: UserRole = ADMIN_EMAILS.has(normalizedEmail) ? "admin" : "developer";
+    const upgraded = { ...user, role: resolvedRole };
 
     response.status(200).json({ token: createSessionToken(upgraded), user: pickUser(upgraded) });
   } catch (error) {

@@ -147,7 +147,7 @@ export interface DebugFinding {
 }
 
 export type DebugFindingType =
-  "bug" | "regression" | "performance" | "security" | "compatibility" | "configuration" | "test_failure";
+  "bug" | "regression" | "performance" | "security" | "compatibility" | "configuration" | "test_failure" | "clean";
 
 export interface CiBuild {
   readonly id: string;

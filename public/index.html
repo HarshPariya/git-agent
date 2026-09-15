@@ -441,11 +441,20 @@
           </div>
 
           <!-- Git Desktop Main Actions Toolbar -->
-          <div class="git-desktop-actions">
+          <div class="git-desktop-actions" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" id="gd-btn-link-local" data-action="linkLocalFolderToGitDesktop" title="Link a local folder on your computer to watch & sync file changes in real-time">
+              📂 Link Local Folder
+            </button>
+            <span id="gd-local-folder-badge" class="badge badge-accent" style="display:none;font-size:11px;padding:3px 9px;align-items:center;gap:5px;cursor:pointer" title="Click to switch or re-sync folder" data-action="linkLocalFolderToGitDesktop">
+              🟢 <span id="gd-local-folder-name">Local Synced</span>
+            </span>
+            <button class="btn btn-secondary btn-sm" id="gd-btn-edit-file" data-action="openGitDesktopFileEditor" title="Create or edit a file directly in this repository">
+              ✏️ New / Edit File
+            </button>
             <button class="btn btn-secondary btn-sm" id="gd-btn-refresh" data-action="refreshGitDesktop" title="Refresh Git status and working tree">
               🔄 Refresh
             </button>
-            <button class="btn btn-primary btn-sm" id="gd-btn-analyze" data-action="triggerAIAnalyzeChanges">
+            <button class="btn btn-secondary btn-sm" id="gd-btn-analyze" data-action="triggerAIAnalyzeChanges">
               ⚡ AI Analyze Changes
             </button>
             <button class="btn btn-secondary btn-sm" id="gd-btn-fetch" data-action="triggerGitFetch">
@@ -462,6 +471,9 @@
             </button>
             <button class="btn btn-secondary btn-sm" id="gd-btn-ship" data-action="triggerAIShip">
               🚀 AI Ship
+            </button>
+            <button class="btn btn-ghost btn-sm" id="gd-btn-discard-all" data-action="discardAllGitChanges" title="Discard all uncommitted changes in working tree">
+              🗑️ Discard All
             </button>
           </div>
         </div>
@@ -1597,6 +1609,32 @@
 
       <div class="modal-actions" style="margin-top:16px">
         <button class="btn btn-secondary" data-action="closeModal" data-value="modal-branch-switcher">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Git Desktop File Editor Modal (Edit & Create files directly from browser) -->
+  <div id="modal-git-file-editor" class="modal-overlay" style="display:none">
+    <div class="modal" style="max-width:720px;width:96vw">
+      <div class="modal-close" data-action="closeModal" data-value="modal-git-file-editor">×</div>
+      <div class="modal-title">✏️ File Editor (Live Working Tree)</div>
+      <div class="modal-desc">Create or edit any file in this repository. Changes are immediately saved, diffed, and staged.</div>
+
+      <div class="form-group" style="margin-bottom:10px">
+        <label class="form-label" style="font-weight:600;font-size:12px">File Relative Path</label>
+        <input class="form-input" id="git-editor-filepath" placeholder="e.g. src/api/audit.ts or README.md" style="font-family:var(--font-mono);font-size:13px" />
+      </div>
+
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label" style="font-weight:600;font-size:12px">File Content</label>
+        <textarea class="form-input" id="git-editor-content" rows="14" placeholder="// Write code or paste file content here..." style="font-family:var(--font-mono);font-size:12px;line-height:1.5;resize:vertical;white-space:pre"></textarea>
+      </div>
+
+      <div class="modal-actions" style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">
+        <button class="btn btn-secondary" data-action="closeModal" data-value="modal-git-file-editor">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-git-file" data-action="saveGitDesktopFile">
+          💾 Save &amp; Live Sync
+        </button>
       </div>
     </div>
   </div>

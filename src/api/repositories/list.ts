@@ -9,19 +9,20 @@ const getTenantContext = (request: Request) => {
   return context;
 };
 
+import { ADMIN_EMAILS } from "../../security/auth.js";
+
 const isRequestAdmin = (request: Request): boolean => {
   const authHeader = request.header("authorization")?.trim();
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : undefined;
   if (token) {
     try {
       const session = verifySessionToken(token);
-      if (session.role === "admin") return true;
+      if (session.role === "admin" && ADMIN_EMAILS.has(session.email?.toLowerCase() ?? "")) return true;
     } catch {
       // Invalid token
     }
   }
-  const roleHeader = request.header("x-user-role")?.trim().toLowerCase();
-  return roleHeader === "admin";
+  return false;
 };
 
 export const listRepositoriesHandler = async (

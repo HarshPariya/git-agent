@@ -9,7 +9,7 @@ import { classifyTask, generateInvestigationPlan } from "../agent/planner.js";
 import { fixPlanner } from "../agent/fix-planner.js";
 import { applyPatch, revertPatch, applyDiffHunk, type PatchFileChange } from "../agent/patch-engine.js";
 import { getExecutionPath } from "../git/engine.js";
-import { verifySessionToken } from "../security/auth.js";
+import { verifySessionToken, ADMIN_EMAILS } from "../security/auth.js";
 import { loadDebugSessionsFromDb, loadDebugSessionByIdFromDb, persistDebugSession } from "../db/persistence.js";
 
 const getTenantContext = (request: Request) => {
@@ -169,13 +169,12 @@ const isRequestAdmin = (request: Request): boolean => {
   if (token) {
     try {
       const session = verifySessionToken(token);
-      if (session.role === "admin") return true;
+      if (session.role === "admin" && ADMIN_EMAILS.has(session.email?.toLowerCase() ?? "")) return true;
     } catch {
       // Invalid token
     }
   }
-  const roleHeader = request.header("x-user-role")?.trim().toLowerCase();
-  return roleHeader === "admin";
+  return false;
 };
 
 export async function getDebugSessionHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
