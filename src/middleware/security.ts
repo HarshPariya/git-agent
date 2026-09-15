@@ -107,10 +107,7 @@ export const createSecurityMiddleware =
 
       const reqPath = request.path ?? "";
       const isExemptFromRateLimit =
-        reqPath.includes("/stream") ||
-        reqPath.endsWith("/status") ||
-        reqPath === "/health" ||
-        reqPath === "/ready";
+        reqPath.includes("/stream") || reqPath.endsWith("/status") || reqPath === "/health" || reqPath === "/ready";
 
       if (!isExemptFromRateLimit) {
         const rateLimitKey = `${context.tenantId}:${context.userId}`;

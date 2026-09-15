@@ -226,7 +226,9 @@ export class RepositoryStore {
           }
           if (params.url) {
             await execFileAsync("git", ["remote", "add", "origin", params.url], { cwd: localPath }).catch(() => {});
-            await execFileAsync("git", ["pull", "origin", "main", "--allow-unrelated-histories"], { cwd: localPath }).catch(() => {});
+            await execFileAsync("git", ["pull", "origin", "main", "--allow-unrelated-histories"], {
+              cwd: localPath,
+            }).catch(() => {});
           }
         }
       } catch (gitErr) {
