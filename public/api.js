@@ -3,7 +3,10 @@
  * Clean HTTP client for all backend endpoints
  */
 
-const API_BASE = window.location.origin;
+const API_BASE =
+  (typeof window !== "undefined" && window.__API_BASE__) ||
+  (typeof window !== "undefined" && localStorage.getItem("gda_api_base")) ||
+  "";
 
 class ApiClient {
   constructor() {

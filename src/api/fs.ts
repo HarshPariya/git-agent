@@ -237,7 +237,7 @@ export async function browseFilesystemHandler(request: Request, response: Respon
     files.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
     const shortcuts: { name: string; path: string }[] = [];
-    if (process.env.VERCEL) {
+    if (process.env.VERCEL || process.env.RENDER) {
       const tmpRepos = "/tmp/repositories";
       if (!fs.existsSync(tmpRepos)) {
         try {
@@ -362,7 +362,7 @@ export async function pickNativeDialogHandler(
   next: NextFunction,
 ): Promise<void> {
   try {
-    if (process.env.VERCEL) {
+    if (process.env.VERCEL || process.env.RENDER) {
       response.status(200).json({ cancelled: true, isCloud: true });
       return;
     }

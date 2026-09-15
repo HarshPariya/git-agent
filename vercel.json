@@ -1,23 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
+  "outputDirectory": "public",
+  "cleanUrls": true,
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api"
-    },
-    {
-      "source": "/health",
-      "destination": "/api"
-    },
-    {
-      "source": "/ready",
-      "destination": "/api"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
-  ],
-  "installCommand": "npm ci --ignore-scripts",
-  "buildCommand": "npm run build",
-  "regions": [
-    "iad1"
   ]
 }

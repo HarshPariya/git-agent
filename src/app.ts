@@ -118,14 +118,25 @@ app.disable("x-powered-by");
 // activityMiddleware runs AFTER securityMiddleware so tenantContext is available
 const protectedRoute = [securityMiddleware, activityMiddleware] as const;
 
+const allowedCorsOrigins = (process.env.CORS_ORIGIN || "*")
+  .split(",")
+  .map((origin) => origin.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin:
-      env.nodeEnv === "production"
-        ? (process.env.CORS_ORIGIN?.split(",")
-            .map((origin) => origin.trim())
-            .filter(Boolean) ?? [])
-        : true,
+    origin: (origin, callback) => {
+      // In non-production or for server-to-server / curl / same-origin without Origin header
+      if (!origin || env.nodeEnv !== "production") {
+        return callback(null, true);
+      }
+      const normalized = origin.replace(/\/$/, "");
+      if (allowedCorsOrigins.includes("*") || allowedCorsOrigins.includes(normalized)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS blocked: Origin ${origin} is not in CORS_ORIGIN allowlist`));
+    },
+    credentials: true,
   }),
 );
 app.use(requestIdMiddleware);
