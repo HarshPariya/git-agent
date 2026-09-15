@@ -10,4 +10,4 @@
  *   - Local development uses http://localhost:3000
  *   - Vercel deployments can use Vercel Rewrites in vercel.json
  */
-window.__API_BASE__ = window.__API_BASE__ || "";
+window.__API_BASE__ = window.__API_BASE__ || "https://git-agent-backend-jsog.onrender.com";
