@@ -200,24 +200,39 @@ export class RepositoryStore {
     if (!fs.existsSync(gitDir)) {
       try {
         const { execFileAsync } = await import("../git/utils.js");
-        await execFileAsync("git", ["init", "-b", "main"], { cwd: localPath });
-        const readmePath = path.join(localPath, "README.md");
-        if (!fs.existsSync(readmePath)) {
-          fs.writeFileSync(
-            readmePath,
-            `# ${params.name}\n\nWorkspace repository managed by Git Debug Agent.\n\nCreated: ${new Date().toISOString()}\n`,
-          );
-          await execFileAsync("git", ["config", "user.name", "Git Agent"], { cwd: localPath });
-          await execFileAsync("git", ["config", "user.email", "agent@git-agent.local"], { cwd: localPath });
-          await execFileAsync("git", ["add", "README.md"], { cwd: localPath });
-          await execFileAsync("git", ["commit", "-m", "Initial commit from Git Agent"], { cwd: localPath });
+        let cloned = false;
+        if (params.url) {
+          try {
+            await execFileAsync("git", ["clone", "--depth", "100", params.url, localPath]);
+            cloned = true;
+          } catch (cloneErr) {
+            logger.warn("Direct clone failed, falling back to init and remote add", {
+              metadata: { url: params.url, error: String(cloneErr) },
+            });
+          }
+        }
+        if (!cloned) {
+          await execFileAsync("git", ["init", "-b", "main"], { cwd: localPath });
+          const readmePath = path.join(localPath, "README.md");
+          if (!fs.existsSync(readmePath)) {
+            fs.writeFileSync(
+              readmePath,
+              `# ${params.name}\n\nWorkspace repository managed by Git Debug Agent.\n\nCreated: ${new Date().toISOString()}\n`,
+            );
+            await execFileAsync("git", ["config", "user.name", "Git Agent"], { cwd: localPath });
+            await execFileAsync("git", ["config", "user.email", "agent@git-agent.local"], { cwd: localPath });
+            await execFileAsync("git", ["add", "README.md"], { cwd: localPath });
+            await execFileAsync("git", ["commit", "-m", "Initial commit from Git Agent"], { cwd: localPath });
+          }
+          if (params.url) {
+            await execFileAsync("git", ["remote", "add", "origin", params.url], { cwd: localPath }).catch(() => {});
+            await execFileAsync("git", ["pull", "origin", "main", "--allow-unrelated-histories"], { cwd: localPath }).catch(() => {});
+          }
         }
       } catch (gitErr) {
         logger.warn("Could not auto-initialize git in workspace", { metadata: { localPath, error: String(gitErr) } });
       }
-    }
-
-    if (params.url) {
+    } else if (params.url) {
       try {
         const { execFileAsync } = await import("../git/utils.js");
         await execFileAsync("git", ["remote", "add", "origin", params.url], { cwd: localPath }).catch(() => {});

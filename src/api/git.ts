@@ -234,6 +234,21 @@ export async function gitSyncWorkspaceHandler(request: Request, response: Respon
       written++;
     }
 
+    // If repository was freshly auto-initialized with only the default README,
+    // commit this initial batch as the clean baseline so future edits generate real diffs!
+    if (written > 0) {
+      try {
+        const { stdout: logOut } = await execAsync("git rev-list --count HEAD", { cwd: execPath });
+        const commitCount = parseInt(logOut.trim(), 10) || 0;
+        if (commitCount <= 1) {
+          await execAsync("git add -A", { cwd: execPath });
+          await execAsync('git commit -m "Baseline project files"', { cwd: execPath });
+        }
+      } catch {
+        // Non-fatal if git commit fails
+      }
+    }
+
     const latest = await executeGitStatus(repoId);
     response.status(200).json({ success: true, count: written, status: latest });
   } catch (error) {
@@ -479,6 +494,15 @@ export async function gitDiffHandler(request: Request, response: Response, next:
             operation: "git-diff",
             metadata: { cmd, error: err instanceof Error ? err.message : String(err) },
           });
+        }
+      }
+      if (!diffText) {
+        try {
+          await execAsync(`git add -N -- "${filePath}"`, { cwd: repoPath });
+          const { stdout: intentDiff } = await execAsync(`git diff -- "${filePath}"`, { cwd: repoPath });
+          if (intentDiff.trim()) diffText = intentDiff.trim();
+        } catch {
+          // Ignore
         }
       }
       if (!diffText) {

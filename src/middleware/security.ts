@@ -6,7 +6,7 @@ import { createTenantContext } from "../security/tenant-context.js";
 import { verifySessionToken } from "../security/auth.js";
 import { getPermissionFromPath } from "./permission.js";
 
-const DEFAULT_RATE_LIMIT_MAX = 100;
+const DEFAULT_RATE_LIMIT_MAX = 600;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 
 const WORKSPACE_ALLOWLIST: readonly string[] = (process.env.WORKSPACE_ALLOWLIST?.trim() || "")
@@ -105,12 +105,22 @@ export const createSecurityMiddleware =
         return;
       }
 
-      const rateLimit = rateLimiter.check(context.tenantId);
-      if (!rateLimit.allowed) {
-        response
-          .status(429)
-          .json({ error: { code: "RATE_LIMITED", message: "Too many requests." }, retryAt: rateLimit.resetAt });
-        return;
+      const reqPath = request.path ?? "";
+      const isExemptFromRateLimit =
+        reqPath.includes("/stream") ||
+        reqPath.endsWith("/status") ||
+        reqPath === "/health" ||
+        reqPath === "/ready";
+
+      if (!isExemptFromRateLimit) {
+        const rateLimitKey = `${context.tenantId}:${context.userId}`;
+        const rateLimit = rateLimiter.check(rateLimitKey);
+        if (!rateLimit.allowed) {
+          response
+            .status(429)
+            .json({ error: { code: "RATE_LIMITED", message: "Too many requests." }, retryAt: rateLimit.resetAt });
+          return;
+        }
       }
 
       request.tenantContext = context;

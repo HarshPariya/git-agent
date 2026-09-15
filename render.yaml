@@ -30,6 +30,6 @@ services:
       - key: WORKSPACE_ROOT
         value: /tmp/repositories
       - key: RATE_LIMIT_MAX
-        value: "60"
+        value: "600"
       - key: RATE_LIMIT_WINDOW_MS
         value: "60000"

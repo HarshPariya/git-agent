@@ -21,7 +21,7 @@ export interface AuthSession {
   readonly email: string;
   readonly exp: number;
 }
-
+// bdbdbdb
 const JWT_SECRET = process.env.AUTH_SECRET?.trim();
 if (!JWT_SECRET && process.env.NODE_ENV === "production") {
   throw new Error("AUTH_SECRET must be configured in production");
