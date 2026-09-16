@@ -6,7 +6,8 @@ import { listGitHubIssues, getGitHubIssue, listGitHubIssueComments } from "../gi
 import { listGitHubPRs, getGitHubPR, createGitHubPR, getPRFiles } from "../github/pull-requests.js";
 import { logger } from "../logging/logger.js";
 
-const getUserId = (req: Request): string => (req as unknown as { user?: { id?: string } }).user?.id ?? "anonymous";
+const getUserId = (req: Request): string =>
+  req.tenantContext?.userId ?? (req as unknown as { user?: { id?: string } }).user?.id ?? "anonymous";
 
 const requireToken = (body: unknown): string => {
   const token = (body as { token?: string })?.token;
@@ -19,7 +20,12 @@ export async function connectGitHubHandler(req: Request, res: Response, next: Ne
     const token = requireToken(req.body);
     const userId = getUserId(req);
     const info = await validateGitHubToken(token);
-    storeGitHubConnection(userId, token);
+    storeGitHubConnection(userId, token, {
+      login: info.login,
+      name: info.name,
+      email: info.email,
+      avatarUrl: info.avatarUrl,
+    });
     logger.info("GitHub connected", { operation: "github-connect", metadata: { userId, login: info.login } });
     res
       .status(200)

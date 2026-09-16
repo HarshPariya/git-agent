@@ -919,7 +919,8 @@ async function performGitHubConnect(token) {
   try {
     showToast("Connecting to GitHub...", "info");
     const res = await api.connectGitHub(token);
-    showToast(`Connected as @${res.username}!`, "success");
+    localStorage.setItem("gda_github_pat", token);
+    showToast(`Connected as @${res.login || res.username || "user"}!`, "success");
     await loadGitHubStatus();
   } catch (err) {
     showToast(`GitHub connection failed: ${err.message}`, "error");
@@ -929,6 +930,7 @@ async function performGitHubConnect(token) {
 async function disconnectGitHub() {
   try {
     await api.disconnectGitHub();
+    localStorage.removeItem("gda_github_pat");
     showToast("GitHub disconnected", "info");
     await loadGitHubStatus();
   } catch (err) {

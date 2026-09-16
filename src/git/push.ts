@@ -8,6 +8,7 @@ export interface PushOptions {
   readonly forceWithLease?: boolean;
   readonly force?: boolean;
   readonly allowForce?: boolean;
+  readonly gitHubToken?: string;
 }
 
 export interface PrePushCheckResult {
@@ -104,7 +105,26 @@ export async function executeSafePush(repoPath: string, options: PushOptions = {
   const remote = options.remote?.trim() ? validateRemoteName(options.remote) : "origin";
   const branch = options.branch?.trim() ? validateBranchName(options.branch) : preCheck.currentBranch;
   const refSpec = branch === preCheck.currentBranch ? branch : `${preCheck.currentBranch}:${branch}`;
-  const escapedRemote = escapeShellArg(remote);
+  let pushDestination = escapeShellArg(remote);
+
+  // Authenticate remote with GitHub PAT if available and remote points to github.com
+  if (options.gitHubToken) {
+    try {
+      const { safeExec } = await import("./utils.js");
+      const { stdout: originUrl } = await safeExec(`git config --get remote.${remote}.url`, repoPath);
+      const trimmedUrl = originUrl.trim();
+      if (trimmedUrl.includes("github.com")) {
+        const authedUrl = trimmedUrl.replace(
+          /https:\/\/(?:[^@]+@)?github\.com\//,
+          `https://${encodeURIComponent(options.gitHubToken)}@github.com/`,
+        );
+        pushDestination = escapeShellArg(authedUrl);
+      }
+    } catch {
+      // Fallback to configured remote name
+    }
+  }
+
   const escapedRefSpec = escapeShellArg(refSpec);
 
   const flags = [
@@ -114,7 +134,7 @@ export async function executeSafePush(repoPath: string, options: PushOptions = {
     .filter(Boolean)
     .join(" ");
 
-  const cmd = `git push ${flags} ${escapedRemote} ${escapedRefSpec}`.replace(/\s+/g, " ").trim();
+  const cmd = `git push ${flags} ${pushDestination} ${escapedRefSpec}`.replace(/\s+/g, " ").trim();
 
   try {
     const { stdout, stderr } = await safeExec(cmd, repoPath);

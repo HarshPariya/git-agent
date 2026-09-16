@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { Groq } from "groq-sdk";
 import { env } from "../config/env.js";
 import { mockProvider } from "./mock-client.js";
+import { AppError } from "../errors/app-error.js";
 import type { LlmProvider, LlmRequest, LlmResponse, LlmTool, ToolCall, ToolLlmResponse } from "../types/llm.js";
 
 type Response = Groq.Chat.Completions.ChatCompletion;
@@ -15,7 +16,7 @@ export interface LlmMessage {
 }
 
 const MAX_COMPLETION_TOKENS = 4096;
-const client = new Groq({ apiKey: env.groqApiKey });
+const client = new Groq({ apiKey: env.groqApiKey || "not-configured" });
 
 const FALLBACK_MODELS = [
   "qwen/qwen3.8-27b",
@@ -229,8 +230,16 @@ const buildRecoveredResponse = (
 const handleToolCallResponse = async (
   messages: readonly Groq.Chat.Completions.ChatCompletionMessageParam[],
   tools: readonly LlmTool[],
-): Promise<ToolLlmResponse> =>
-  callGroqWithFallback(async (selectedModel) => {
+): Promise<ToolLlmResponse> => {
+  if (process.env.NODE_ENV !== "test" && env.nodeEnv !== "test" && !isLlmAvailable()) {
+    throw new AppError(
+      "AI provider unavailable: GROQ_API_KEY is not configured on this server. Please provide a valid Groq API key in your server environment variables.",
+      "LLM_ERROR",
+      503,
+    );
+  }
+
+  return callGroqWithFallback(async (selectedModel) => {
     try {
       const response = await client.chat.completions.create({
         model: selectedModel,
@@ -261,10 +270,19 @@ const handleToolCallResponse = async (
       throw err;
     }
   });
+};
 
 export const generateText = async ({ instructions, input }: LlmRequest): Promise<LlmResponse> => {
   if (process.env.NODE_ENV === "test" || env.nodeEnv === "test") {
     return mockProvider.generate({ instructions, input });
+  }
+
+  if (!isLlmAvailable()) {
+    throw new AppError(
+      "AI provider unavailable: GROQ_API_KEY is not configured on this server. Please provide a valid Groq API key in your server environment variables.",
+      "LLM_ERROR",
+      503,
+    );
   }
 
   try {
@@ -291,7 +309,13 @@ export const generateText = async ({ instructions, input }: LlmRequest): Promise
 
 export const groqProvider: LlmProvider = { generate: generateText };
 
-export const isLlmAvailable = (): boolean => Boolean(env.groqApiKey);
+export const isLlmAvailable = (): boolean =>
+  Boolean(
+    env.groqApiKey &&
+    env.groqApiKey.length > 5 &&
+    env.groqApiKey !== "mock-key-for-test" &&
+    !env.groqApiKey.includes("placeholder"),
+  );
 
 export const callLlm = async (
   messages: readonly LlmMessage[],

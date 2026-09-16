@@ -11,12 +11,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <title>Git Debug Agent</title>
-  <!-- Inline SVG favicon — works on all deployments including serverless/Vercel without a physical file -->
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f2937'/%3E%3Cpolyline points='6 22 13 14 6 7' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cline x1='17' y1='24' x2='27' y2='24' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E" />
-  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f2937'/%3E%3Cpolyline points='6 22 13 14 6 7' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cline x1='17' y1='24' x2='27' y2='24' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <!-- Favicons — compatible with all browsers, Vercel static serving, and data-URI fallbacks -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="alternate icon" href="/favicon.ico" />
+  <link rel="apple-touch-icon" href="/favicon.svg" />
   <link rel="stylesheet" href="/styles.css" />
   <!-- Google Sign-In GSI Client -->
-  <script src="https://accounts.google.com/gsi/client" async defer onload="if(typeof window._pendingGoogleInit === 'function') { window._pendingGoogleInit(); }"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer onload="window._googleScriptLoaded = true; if(typeof window._pendingGoogleInit === 'function') { window._pendingGoogleInit(); }"></script>
 </head>
 
 <body>
@@ -1141,6 +1142,29 @@
               </div>
               <button class="btn btn-primary btn-sm" data-action="saveAgentConfig" style="width:fit-content">Save
                 Settings</button>
+            </div>
+          </div>
+
+          <!-- Backend API Connection -->
+          <div class="card" style="padding:14px">
+            <div class="card-header" style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between">
+              <div class="card-title" style="font-size:14px">Backend API Runtime</div>
+              <span id="backend-status-badge" class="badge badge-success" style="font-size:11px">Connected</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div class="form-group" style="margin-bottom:0">
+                <label class="form-label" for="backend-url-input" style="font-size:12px;margin-bottom:4px">API Server URL</label>
+                <input class="form-input" type="text" id="backend-url-input" placeholder="https://git-agent-backend-jsog.onrender.com"
+                  style="padding:7px 10px;font-size:12px" />
+                <div style="font-size:11px;color:var(--c-text-muted);margin-top:3px">
+                  Default: <code>https://git-agent-backend-jsog.onrender.com</code> (or empty for localhost).
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-primary btn-sm" data-action="saveBackendConfig">Save URL</button>
+                <button class="btn btn-secondary btn-sm" data-action="testBackendConnection">Test Connection</button>
+                <span id="backend-test-result" style="font-size:12px;color:var(--c-text-muted)"></span>
+              </div>
             </div>
           </div>
 

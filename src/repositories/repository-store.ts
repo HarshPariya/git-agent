@@ -18,16 +18,20 @@ const generateId = (prefix: string, stableKey?: string): string => {
   return `${prefix}${Math.abs(hash).toString(16).padStart(8, "0").slice(0, 8)}`;
 };
 
-const resolveLocalPath = (name: string): string => {
+const resolveLocalPath = (name: string, tenantId?: string): string => {
   const sanitizedName = name
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, "-")
     .replace(/^-+|-+$/g, "");
   const baseDir = process.env.VERCEL ? "/tmp" : (process.env.WORKSPACE_ROOT ?? process.cwd());
+  if (tenantId && tenantId !== "tenant-default") {
+    const sanitizedTenant = tenantId.replace(/[^a-z0-9-]/g, "-");
+    return path.join(baseDir, "repositories", sanitizedTenant, sanitizedName || "repo");
+  }
   return path.join(baseDir, "repositories", sanitizedName || "repo");
 };
 
-const validateLocalPath = (candidate: string, repoName?: string): string => {
+const validateLocalPath = (candidate: string, repoName?: string, tenantId?: string): string => {
   if (!candidate?.trim()) throw new Error("Repository path must be a non-empty string");
   const cleaned = candidate.replace(/^["']|["']$/g, "").trim();
 
@@ -38,12 +42,12 @@ const validateLocalPath = (candidate: string, repoName?: string): string => {
 
   if (cleaned === "." || cleaned === "./") {
     if (isThisProject) return cwd;
-    if (repoName) return resolveLocalPath(repoName);
+    if (repoName) return resolveLocalPath(repoName, tenantId);
     return cwd;
   }
   if (cleaned.toLowerCase() === cwdBase) {
     if (isThisProject) return cwd;
-    if (repoName) return resolveLocalPath(repoName);
+    if (repoName) return resolveLocalPath(repoName, tenantId);
   }
 
   // If candidate already exists on the local machine
@@ -182,36 +186,50 @@ export class RepositoryStore {
     if (repositories.size === 0 || process.env.VERCEL) {
       await this.hydrateFromDb();
     }
-    const list = [...repositories.values()].filter(
+    return [...repositories.values()].filter(
       (r) =>
-        (!tenantId || r.tenantId === tenantId || r.tenantId === "tenant-default" || (userId && r.userId === userId)) &&
+        (!tenantId || r.tenantId === tenantId || (userId && r.userId === userId)) &&
         r.status !== "disconnected" &&
         r.name !== "tmp" &&
         r.localPath !== "/tmp/repositories/tmp",
     );
-
-    // If tenant has no repos configured yet, check if workspace repository (process.cwd()) exists and surface it
-    if (list.length === 0 && tenantId) {
-      const workspaceRepo = [...repositories.values()].find(
-        (r) =>
-          r.status !== "disconnected" &&
-          r.name !== "tmp" &&
-          r.localPath &&
-          path.resolve(r.localPath).toLowerCase() === path.resolve(process.cwd()).toLowerCase(),
-      );
-      if (workspaceRepo) {
-        return [workspaceRepo];
-      }
-    }
-
-    return list;
   }
 
   getRepository(repositoryId: string, tenantId?: string): Repository | undefined {
     const repo = repositories.get(repositoryId);
     if (!repo) return undefined;
-    if (!tenantId || repo.tenantId === tenantId || repo.tenantId === "tenant-default") return repo;
+    if (tenantId && repo.tenantId !== tenantId && repo.tenantId !== "tenant-default") {
+      return undefined;
+    }
     return repo;
+  }
+
+  /**
+   * Guarantees that the repository workspace directory and git structure exist on disk.
+   * Auto-recovers if the Render container restarted and /tmp was wiped.
+   */
+  async ensureWorkspace(repositoryId: string, tenantId?: string): Promise<string> {
+    const repo = this.getRepository(repositoryId, tenantId);
+    if (!repo) throw new Error(`Repository ${repositoryId} not found`);
+
+    if (!fs.existsSync(repo.localPath) || !fs.existsSync(path.join(repo.localPath, ".git"))) {
+      fs.mkdirSync(repo.localPath, { recursive: true });
+      const { execFileAsync } = await import("../git/utils.js");
+      if (repo.url) {
+        try {
+          await execFileAsync("git", ["clone", "--depth", "50", repo.url, repo.localPath]);
+          logger.info("Restored repository workspace from remote origin", {
+            operation: "repo-ensure",
+            metadata: { id: repo.id, url: repo.url, path: repo.localPath },
+          });
+        } catch {
+          await execFileAsync("git", ["init", "-b", repo.defaultBranch || "main"], { cwd: repo.localPath });
+        }
+      } else {
+        await execFileAsync("git", ["init", "-b", repo.defaultBranch || "main"], { cwd: repo.localPath });
+      }
+    }
+    return repo.localPath;
   }
 
   async connectRepository(params: {
@@ -229,13 +247,15 @@ export class RepositoryStore {
       if (isThisRepo) {
         params.localPath = process.cwd();
       } else {
-        params.localPath = resolveLocalPath(params.name);
+        params.localPath = resolveLocalPath(params.name, params.tenantId);
       }
     }
     if (isThisRepo && (!params.localPath || !fs.existsSync(params.localPath))) {
       params.localPath = process.cwd();
     }
-    let localPath = params.localPath ? validateLocalPath(params.localPath, params.name) : resolveLocalPath(params.name);
+    let localPath = params.localPath
+      ? validateLocalPath(params.localPath, params.name, params.tenantId)
+      : resolveLocalPath(params.name, params.tenantId);
 
     // Auto-provision directory if running on Vercel or if path doesn't exist yet
     if (!fs.existsSync(localPath)) {

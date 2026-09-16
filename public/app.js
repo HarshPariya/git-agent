@@ -79,13 +79,13 @@ function showAuth() {
 // because `google` is undefined yet and the button would never render.
 function waitForGoogleScript(timeoutMs) {
   return new Promise((resolve) => {
-    if (typeof google !== "undefined" && google.accounts && google.accounts.id) {
+    if (typeof google !== "undefined" && google.accounts?.id) {
       resolve(true);
       return;
     }
     const deadline = Date.now() + timeoutMs;
     const check = () => {
-      if (typeof google !== "undefined" && google.accounts && google.accounts.id) {
+      if (typeof google !== "undefined" && google.accounts?.id) {
         resolve(true);
         return;
       }
@@ -93,29 +93,36 @@ function waitForGoogleScript(timeoutMs) {
         resolve(false);
         return;
       }
-      setTimeout(check, 100);
+      setTimeout(check, 50);
     };
     check();
   });
 }
 
+function _startGoogleFlow(clientId) {
+  if (typeof google === "undefined" || !google.accounts || !google.accounts.id) {
+    window._pendingGoogleInit = () => _doInitGoogleSignIn(clientId);
+    waitForGoogleScript(10000).then((ok) => {
+      if (ok && !googleSignInReady) _doInitGoogleSignIn(clientId);
+    });
+    return;
+  }
+  _doInitGoogleSignIn(clientId);
+}
+
 async function initGoogleSignIn() {
+  const cached = localStorage.getItem("gda_google_client_id");
+  if (cached) {
+    _startGoogleFlow(cached);
+  }
+
   try {
     const { clientId } = await api.getGoogleClientId();
     if (!clientId) return;
-
-    // If Google library isn't loaded yet, register a pending init
-    // that will be called by window.onGoogleLibraryLoad (set in <head>)
-    if (typeof google === "undefined" || !google.accounts || !google.accounts.id) {
-      window._pendingGoogleInit = () => _doInitGoogleSignIn(clientId);
-      // Also start a background wait as fallback (in case onGoogleLibraryLoad missed)
-      waitForGoogleScript(10000).then((ok) => {
-        if (ok && !googleSignInReady) _doInitGoogleSignIn(clientId);
-      });
-      return;
+    localStorage.setItem("gda_google_client_id", clientId);
+    if (!cached || cached !== clientId) {
+      _startGoogleFlow(clientId);
     }
-
-    _doInitGoogleSignIn(clientId);
   } catch {
     // Google Sign-In not configured or unavailable — silently skip
   }
@@ -437,6 +444,7 @@ const PAGE_LOADERS = {
   history: () => typeof loadHistory === "function" && loadHistory(),
   settings: () => {
     if (typeof loadGitHubStatus === "function") loadGitHubStatus();
+    if (typeof initSettingsView === "function") initSettingsView();
   },
   admin: () => typeof loadAdminPanel === "function" && loadAdminPanel(),
   "user-panel": () => typeof loadUserPanel === "function" && loadUserPanel(),
@@ -719,6 +727,8 @@ document.addEventListener("click", (e) => {
     loadPRs: () => typeof loadPRs === "function" && loadPRs(),
     submitCreatePR: () => typeof submitCreatePR === "function" && submitCreatePR(),
     saveAgentConfig: () => typeof saveAgentConfig === "function" && saveAgentConfig(),
+    saveBackendConfig: () => typeof saveBackendConfig === "function" && saveBackendConfig(),
+    testBackendConnection: () => typeof testBackendConnection === "function" && testBackendConnection(),
     commitAndPushFix: () => typeof commitAndPushFix === "function" && commitAndPushFix(),
     quickDebugRepo: () => typeof quickDebugRepo === "function" && quickDebugRepo(value),
     editGroupCommitMessage: () => typeof editGroupCommitMessage === "function" && editGroupCommitMessage(value),

@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { AppError } from "../errors/app-error.js";
+import { persistGitHubConnection, deleteGitHubConnection, loadGitHubConnectionsFromDb } from "../db/persistence.js";
 
 interface GitHubTokenInfo {
   readonly token: string;
@@ -13,9 +14,14 @@ const tokenStore = new Map<string, { githubToken: string; userId: string; connec
 
 export const generateConnectionId = (): string => crypto.randomUUID();
 
-export const storeGitHubConnection = (userId: string, githubToken: string): string => {
+export const storeGitHubConnection = (
+  userId: string,
+  githubToken: string,
+  metadata?: { login?: string; name?: string; email?: string; avatarUrl?: string },
+): string => {
   const connectionId = generateConnectionId();
   tokenStore.set(connectionId, { githubToken, userId, connectedAt: new Date().toISOString() });
+  void persistGitHubConnection(userId, githubToken, connectionId, metadata);
   return connectionId;
 };
 
@@ -27,6 +33,24 @@ export const getGitHubToken = (userId: string): string | undefined => {
 export const revokeGitHubConnection = (userId: string): void => {
   for (const [id, conn] of tokenStore.entries()) {
     if (conn.userId === userId) tokenStore.delete(id);
+  }
+  void deleteGitHubConnection(userId);
+};
+
+export const hydrateGitHubTokensFromDb = async (): Promise<void> => {
+  try {
+    const connections = await loadGitHubConnectionsFromDb();
+    for (const conn of connections) {
+      if (conn.userId && conn.githubToken) {
+        tokenStore.set(conn.connectionId, {
+          githubToken: conn.githubToken,
+          userId: conn.userId,
+          connectedAt: conn.connectedAt,
+        });
+      }
+    }
+  } catch {
+    // Non-fatal
   }
 };
 

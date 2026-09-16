@@ -115,7 +115,6 @@ export async function loadRepositoriesFromDb(): Promise<Repository[]> {
       })
       .toArray();
 
-    const isVercel = Boolean(process.env.VERCEL);
     const cwd = process.cwd();
     const isCwdGit = fs.existsSync(path.join(cwd, ".git"));
     const cwdName = path.basename(cwd).toLowerCase();
@@ -126,15 +125,28 @@ export async function loadRepositoriesFromDb(): Promise<Repository[]> {
       const status = (d.status as Repository["status"]) ?? "connected";
       const branch = (d.current_branch as string) || "main";
 
-      if (!isVercel && localPath.startsWith("/tmp/")) {
-        if (!fs.existsSync(localPath)) {
-          const nameLower = (d.name as string)?.toLowerCase() || "";
-          if (isCwdGit && (nameLower === cwdName || nameLower === "git-agent")) {
-            localPath = cwd;
-            await col.updateOne({ id: d.id }, { $set: { local_path: cwd } }).catch(() => {});
-          } else {
-            await col.updateOne({ id: d.id }, { $set: { status: "disconnected" } }).catch(() => {});
-            continue;
+      // If localPath does not exist on disk (e.g. Render restart or ephemeral /tmp wiped),
+      // auto-recover the workspace instead of marking it disconnected!
+      if (!fs.existsSync(localPath)) {
+        const nameLower = (d.name as string)?.toLowerCase() || "";
+        if (isCwdGit && (nameLower === cwdName || nameLower === "git-agent")) {
+          localPath = cwd;
+          await col.updateOne({ id: d.id }, { $set: { local_path: cwd } }).catch(() => {});
+        } else {
+          try {
+            fs.mkdirSync(localPath, { recursive: true });
+            const { execFileAsync } = await import("../git/utils.js");
+            if (d.url) {
+              await execFileAsync("git", ["clone", "--depth", "50", d.url as string, localPath]);
+              logger.info("Auto-restored repository from remote origin on startup", {
+                operation: "persistence-restore",
+                metadata: { id: d.id, url: d.url, path: localPath },
+              });
+            } else {
+              await execFileAsync("git", ["init", "-b", (d.default_branch as string) || "main"], { cwd: localPath });
+            }
+          } catch {
+            // Workspace will lazily provision on first user request
           }
         }
       }
@@ -271,5 +283,79 @@ export async function loadDebugSessionByIdFromDb(sessionId: string): Promise<Deb
       metadata: { sessionId, error: err instanceof Error ? err.message : String(err) },
     });
     return undefined;
+  }
+}
+
+// --- GitHub Connections Persistence ---
+
+export async function persistGitHubConnection(
+  userId: string,
+  githubToken: string,
+  connectionId: string,
+  metadata?: { login?: string; name?: string; email?: string; avatarUrl?: string },
+): Promise<void> {
+  const isConnected = await ensureDatabaseConnected();
+  if (!isConnected) return;
+  try {
+    const col: Collection<Document> = getCollection("github_connections");
+    await col.updateOne(
+      { user_id: userId },
+      {
+        $set: {
+          connection_id: connectionId,
+          user_id: userId,
+          github_token: githubToken,
+          login: metadata?.login ?? null,
+          name: metadata?.name ?? null,
+          email: metadata?.email ?? null,
+          avatar_url: metadata?.avatarUrl ?? null,
+          connected_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      },
+      { upsert: true },
+    );
+  } catch (err) {
+    logger.warn("Failed to persist GitHub connection", {
+      operation: "persistence",
+      metadata: { userId, error: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
+export async function deleteGitHubConnection(userId: string): Promise<void> {
+  const isConnected = await ensureDatabaseConnected();
+  if (!isConnected) return;
+  try {
+    const col: Collection<Document> = getCollection("github_connections");
+    await col.deleteOne({ user_id: userId });
+  } catch (err) {
+    logger.warn("Failed to delete GitHub connection", {
+      operation: "persistence",
+      metadata: { userId, error: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
+export async function loadGitHubConnectionsFromDb(): Promise<
+  Array<{ connectionId: string; userId: string; githubToken: string; connectedAt: string }>
+> {
+  const isConnected = await ensureDatabaseConnected();
+  if (!isConnected) return [];
+  try {
+    const col: Collection<Document> = getCollection("github_connections");
+    const docs = await col.find({}).toArray();
+    return docs.map((d) => ({
+      connectionId: (d.connection_id as string) || (d._id?.toString() ?? ""),
+      userId: (d.user_id as string) || "",
+      githubToken: (d.github_token as string) || "",
+      connectedAt: (d.connected_at as string) || new Date().toISOString(),
+    }));
+  } catch (err) {
+    logger.warn("Failed to load GitHub connections from database", {
+      operation: "persistence",
+      metadata: { error: err instanceof Error ? err.message : String(err) },
+    });
+    return [];
   }
 }

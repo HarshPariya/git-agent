@@ -217,7 +217,9 @@ export function getProtectedBranchNames(): readonly string[] {
 }
 
 export async function executeGitStatus(repoPath: string): Promise<GitStatusOutput> {
-  const output = await runGit(getExecutionPath(repoPath), ["status", "--porcelain=v1", "-b", "-u"]);
+  const execPath = getExecutionPath(repoPath);
+  await runGit(execPath, ["update-index", "-q", "--refresh"]).catch(() => "");
+  const output = await runGit(execPath, ["status", "--porcelain=v1", "-b", "-u"]);
   const lines = output.replace(/\r/g, "").trim().split("\n").filter(Boolean);
   const branchLine = lines[0] ?? "";
   const branchMatch = branchLine.match(/^## (?:(.+?)(?:\.\.\.(.+?))?(?:\s*\[(.+?)\])?)$/);

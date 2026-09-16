@@ -137,7 +137,11 @@ app.use(
         return callback(null, true);
       }
       const normalized = origin.replace(/\/$/, "");
-      if (allowedCorsOrigins.includes("*") || allowedCorsOrigins.includes(normalized)) {
+      if (
+        allowedCorsOrigins.includes("*") ||
+        allowedCorsOrigins.includes(normalized) ||
+        normalized.endsWith(".vercel.app")
+      ) {
         return callback(null, true);
       }
       return callback(new Error(`CORS blocked: Origin ${origin} is not in CORS_ORIGIN allowlist`));
@@ -429,6 +433,10 @@ export const startServer = async (): Promise<void> => {
     const { repositoryStore }: { repositoryStore: { hydrateFromDb(): Promise<void> } } =
       await import("./repositories/repository-store.js");
     await repositoryStore.hydrateFromDb();
+    // Rehydrate GitHub connections across restarts
+    const { hydrateGitHubTokensFromDb }: { hydrateGitHubTokensFromDb: () => Promise<void> } =
+      await import("./github/auth.js");
+    await hydrateGitHubTokensFromDb();
     // Backfill created_at for users who signed up before the field existed
     const { backfillUserCreatedAt }: { backfillUserCreatedAt: () => Promise<void> } =
       await import("./db/persistence.js");

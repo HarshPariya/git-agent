@@ -8,7 +8,12 @@ export type ExecResult = { readonly stdout: string; readonly stderr: string };
 
 export async function safeExec(cmd: string, cwd: string, timeout = 30_000): Promise<ExecResult> {
   try {
-    const result = await execAsync(cmd, { cwd, timeout, maxBuffer: 10 * 1024 * 1024 });
+    const result = await execAsync(cmd, {
+      cwd,
+      timeout,
+      maxBuffer: 10 * 1024 * 1024,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    });
     return { stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
   } catch (err: unknown) {
     const e = err as { stdout?: string; stderr?: string; message?: string };

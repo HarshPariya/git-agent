@@ -46,28 +46,20 @@ const noop = (): void => {
   /* no-op fallback */
 };
 
-const validateRepositoryAccess = async (repoId: string): Promise<void> => {
+const validateRepositoryAccess = async (repoId: string, tenantId?: string): Promise<void> => {
   try {
-    const execPath = getExecutionPath(repoId);
-    if (!syncFs.existsSync(path.join(execPath, ".git"))) {
-      if (syncFs.existsSync(execPath)) {
-        const { execFileAsync } = await import("../git/utils.js");
-        await execFileAsync("git", ["init", "-b", "main"], { cwd: execPath }).catch(noop);
-      }
+    const { repositoryStore } = await import("../repositories/repository-store.js");
+    const repo = repositoryStore.getRepository(repoId, tenantId);
+    if (!repo) {
+      throw new AppError(`Repository "${repoId}" not found or unauthorized`, "NOT_FOUND", 404);
     }
+    const execPath = await repositoryStore.ensureWorkspace(repoId, tenantId);
+    registerRepositoryPath(repoId, execPath);
     await executeGitStatus(repoId);
-  } catch {
-    const cwdGit = path.join(process.cwd(), ".git");
-    if (syncFs.existsSync(cwdGit)) {
-      registerRepositoryPath(repoId, process.cwd());
-      try {
-        await executeGitStatus(repoId);
-        return;
-      } catch {
-        // Fall through
-      }
-    }
-    throw new AppError("Repository not accessible", "VALIDATION_ERROR", 400);
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new AppError(`Repository workspace inaccessible: ${msg}`, "VALIDATION_ERROR", 400);
   }
 };
 
@@ -197,24 +189,26 @@ export async function gitSyncFileHandler(request: Request, response: Response, n
       throw new AppError("Invalid file path for sync", "AUTHORIZATION_ERROR", 403);
     }
 
+    const posixPath = filePath.replace(/\\/g, "/");
+
     if (action === "delete") {
       if (syncFs.existsSync(targetFile)) {
         await syncFs.promises.unlink(targetFile);
       }
-      await execAsync(`git clean -fd -- "${filePath}"`, { cwd: execPath }).catch(noop);
+      await execAsync(`git clean -fd -- "${posixPath}"`, { cwd: execPath }).catch(noop);
     } else {
       await syncFs.promises.mkdir(path.dirname(targetFile), { recursive: true });
 
       // Check if file exists in HEAD and compare normalized content
       let restoredToHead = false;
       try {
-        const { stdout: headContent } = await execAsync(`git show HEAD:"${filePath}"`, { cwd: execPath });
+        const { stdout: headContent } = await execAsync(`git show HEAD:"${posixPath}"`, { cwd: execPath });
         const normHead = headContent.replace(/\r\n/g, "\n");
         const normIncoming = (content ?? "").replace(/\r\n/g, "\n");
         if (normHead === normIncoming) {
           restoredToHead = true;
           // Checkout clean version directly from HEAD to keep git index and timestamps in perfect sync
-          await execAsync(`git checkout HEAD -- "${filePath}"`, { cwd: execPath });
+          await execAsync(`git checkout HEAD -- "${posixPath}"`, { cwd: execPath });
         }
       } catch {
         // File may not exist in HEAD yet
@@ -222,11 +216,19 @@ export async function gitSyncFileHandler(request: Request, response: Response, n
 
       if (!restoredToHead) {
         await syncFs.promises.writeFile(targetFile, content ?? "", "utf8");
+        // Verify if writing caused any actual diff from HEAD
+        try {
+          await execAsync(`git diff --quiet -- "${posixPath}"`, { cwd: execPath });
+          // Exit 0 means working file is identical to index/HEAD
+          await execAsync(`git checkout HEAD -- "${posixPath}"`, { cwd: execPath }).catch(noop);
+        } catch {
+          // Has actual diff, legitimate modification
+        }
       }
     }
 
     // Refresh index so git immediately detects if file is restored back to clean HEAD
-    await execAsync("git update-index --refresh", { cwd: execPath }).catch(noop);
+    await execAsync("git update-index -q --refresh", { cwd: execPath }).catch(noop);
 
     const latest = await executeGitStatus(repoId);
     response.status(200).json({ success: true, filePath, status: latest });
@@ -493,15 +495,38 @@ export async function gitDiscardHandler(request: Request, response: Response, ne
   }
 }
 
+async function getAuthedRemoteUrl(repoPath: string, remote: string, token?: string): Promise<string> {
+  if (!token) return escapeShellArg(remote);
+  try {
+    const { stdout: originUrl } = await execAsync(`git config --get remote.${remote}.url`, { cwd: repoPath });
+    const trimmedUrl = originUrl.trim();
+    if (trimmedUrl.includes("github.com")) {
+      const authedUrl = trimmedUrl.replace(
+        /https:\/\/(?:[^@]+@)?github\.com\//,
+        `https://${encodeURIComponent(token)}@github.com/`,
+      );
+      return escapeShellArg(authedUrl);
+    }
+  } catch {
+    // Fallback to remote name
+  }
+  return escapeShellArg(remote);
+}
+
 export async function gitPushHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
   try {
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
     const remote = optionalString(body, "remote");
     const branch = optionalString(body, "branch");
+    const userId =
+      request.tenantContext?.userId ?? (request as unknown as { user?: { id?: string } }).user?.id ?? "user-default";
+    const explicitToken = optionalString(body, "gitHubToken");
+    const gitHubToken = explicitToken ?? getGitHubToken(userId);
     const result = await executeSafePush(getExecutionPath(repoId), {
       ...(remote !== undefined ? { remote } : {}),
       ...(branch !== undefined ? { branch } : {}),
+      ...(gitHubToken ? { gitHubToken } : {}),
       setUpstream: body.setUpstream === true,
       forceWithLease: body.forceWithLease === true,
       allowForce: body.allowForce === true,
@@ -516,15 +541,21 @@ export async function gitPullHandler(request: Request, response: Response, next:
   try {
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
+    const repoPath = getExecutionPath(repoId);
     const remote = optionalString(body, "remote") ? validateRemoteName(body.remote as string) : "origin";
     const branch = optionalString(body, "branch") ? validateBranchName(body.branch as string) : "";
+    const userId =
+      request.tenantContext?.userId ?? (request as unknown as { user?: { id?: string } }).user?.id ?? "user-default";
+    const explicitToken = optionalString(body, "gitHubToken");
+    const gitHubToken = explicitToken ?? getGitHubToken(userId);
+    const authedRemote = await getAuthedRemoteUrl(repoPath, remote, gitHubToken);
     const rebase = body.rebase === true ? "--rebase" : "";
-    const parts = ["git pull", escapeShellArg(remote)];
+    const parts = ["git pull", authedRemote];
     if (branch) parts.push(escapeShellArg(branch));
     if (rebase) parts.push(rebase);
     const cmd = parts.join(" ");
 
-    const result = await executeGitCommand(cmd, getExecutionPath(repoId));
+    const result = await executeGitCommand(cmd, repoPath);
     response.status(200).json({ ...result, remote });
   } catch (error) {
     next(error);
@@ -535,11 +566,17 @@ export async function gitFetchHandler(request: Request, response: Response, next
   try {
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
+    const repoPath = getExecutionPath(repoId);
     const remote = optionalString(body, "remote") ? validateRemoteName(body.remote as string) : "origin";
+    const userId =
+      request.tenantContext?.userId ?? (request as unknown as { user?: { id?: string } }).user?.id ?? "user-default";
+    const explicitToken = optionalString(body, "gitHubToken");
+    const gitHubToken = explicitToken ?? getGitHubToken(userId);
+    const authedRemote = await getAuthedRemoteUrl(repoPath, remote, gitHubToken);
     const pruneFlag = body.prune !== false ? "--prune" : "";
-    const cmd = ["git fetch", escapeShellArg(remote), pruneFlag].filter(Boolean).join(" ");
+    const cmd = ["git fetch", authedRemote, pruneFlag].filter(Boolean).join(" ");
 
-    const result = await executeGitCommand(cmd, getExecutionPath(repoId));
+    const result = await executeGitCommand(cmd, repoPath);
     response.status(200).json({ ...result, remote });
   } catch (error) {
     next(error);
@@ -920,7 +957,15 @@ export async function gitShipHandler(request: Request, response: Response, next:
       commitResult = execRes;
     }
 
-    const pushResult = await executeSafePush(repoPath, { setUpstream: true });
+    const userId =
+      request.tenantContext?.userId ?? (request as unknown as { user?: { id?: string } }).user?.id ?? "user-default";
+    const explicitToken = optionalString(body, "gitHubToken");
+    const token = explicitToken ?? getGitHubToken(userId);
+
+    const pushResult = await executeSafePush(repoPath, {
+      setUpstream: true,
+      ...(token ? { gitHubToken: token } : {}),
+    });
     if (!pushResult.success) {
       response.status(400).json({
         success: false,
@@ -952,9 +997,6 @@ export async function gitShipHandler(request: Request, response: Response, next:
         });
       }
     }
-
-    const userId = (request as unknown as { user?: { id?: string } }).user?.id ?? "anonymous";
-    const token = getGitHubToken(userId);
 
     if (token && owner && repoName && sourceBranch !== targetBranch) {
       try {

@@ -351,21 +351,40 @@ class ApiClient {
     });
   }
   async gitFetch(repositoryId, remote = "origin") {
+    const gitHubToken = localStorage.getItem("gda_github_pat") || undefined;
     return this.request("/api/git/fetch", {
       method: "POST",
-      body: JSON.stringify({ repositoryId, remote }),
+      body: JSON.stringify({
+        repositoryId,
+        remote,
+        ...(gitHubToken ? { gitHubToken } : {}),
+      }),
     });
   }
   async gitPull(repositoryId, remote = "origin", branch = "") {
+    const gitHubToken = localStorage.getItem("gda_github_pat") || undefined;
     return this.request("/api/git/pull", {
       method: "POST",
-      body: JSON.stringify({ repositoryId, remote, branch }),
+      body: JSON.stringify({
+        repositoryId,
+        remote,
+        branch,
+        ...(gitHubToken ? { gitHubToken } : {}),
+      }),
     });
   }
   async gitPush(repositoryId, remote = "origin", branch = "", setUpstream = true, forceWithLease = false) {
+    const gitHubToken = localStorage.getItem("gda_github_pat") || undefined;
     return this.request("/api/git/push", {
       method: "POST",
-      body: JSON.stringify({ repositoryId, remote, branch, setUpstream, forceWithLease }),
+      body: JSON.stringify({
+        repositoryId,
+        remote,
+        branch,
+        setUpstream,
+        forceWithLease,
+        ...(gitHubToken ? { gitHubToken } : {}),
+      }),
     });
   }
   async gitSync(repositoryId, remote = "origin") {
@@ -375,9 +394,15 @@ class ApiClient {
     });
   }
   async gitShip(repositoryId, targetBranch = "main", prTitle = "") {
+    const gitHubToken = localStorage.getItem("gda_github_pat") || undefined;
     return this.request("/api/git/ship", {
       method: "POST",
-      body: JSON.stringify({ repositoryId, targetBranch, prTitle }),
+      body: JSON.stringify({
+        repositoryId,
+        targetBranch,
+        prTitle,
+        ...(gitHubToken ? { gitHubToken } : {}),
+      }),
     });
   }
   async resolveConflicts(repositoryId) {
