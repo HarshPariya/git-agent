@@ -148,7 +148,7 @@ async function runSmokeTests(): Promise<void> {
     const sessionId = debugSession.id ?? "";
     assert(Boolean(sessionId), "Debug session assigned unique session ID");
 
-    const stepRes = await fetch(`${baseUrl}/api/debug/sessions/${sessionId}/step`, {
+    const stepRes = await fetch(`${baseUrl}/api/debug/${sessionId}/step`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

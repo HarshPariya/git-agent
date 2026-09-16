@@ -11,7 +11,12 @@ const INJECTION_PATTERNS = [
   /show\s+(your\s+)?hidden\s+instructions/i,
   /disclose\s+(your\s+)?api\s+key/i,
   /bypass\s+(the\s+)?(security|guardrails?)/i,
-] as const;
+];
+
+// matchAll requires global regexes; create global copies from the base patterns
+const INJECTION_PATTERNS_GLOBAL = INJECTION_PATTERNS.map(
+  (p) => new RegExp(p.source, "gi"),
+);
 
 const NEGATION_PATTERN = /\b(do\s+not|don'?t|never|must\s+not|should\s+not|avoid|prohibit|prevent|without)\b/i;
 const SECURITY_EVAL_PATTERN = /\b(evaluat\w+|refuses?|blocks?|security\s+test|classify|deny|allow)\b/i;
@@ -27,7 +32,7 @@ const isSecurityEvaluation = (msg: string, _matchIndex: number): boolean => {
 };
 
 const isMaliciousInjection = (msg: string): boolean =>
-  INJECTION_PATTERNS.some((pattern) => {
+  INJECTION_PATTERNS_GLOBAL.some((pattern) => {
     const matches = [...msg.matchAll(pattern)];
     return matches.some((match) => {
       const idx = match.index;
