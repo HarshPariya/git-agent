@@ -45,3 +45,29 @@ window.setState = function (key, value) {
   window.state[key] = value;
   window.notifyStateChange(key, value);
 };
+
+// Automatic LocalStorage State Persistence
+try {
+  const savedRepo = localStorage.getItem("gda_active_repo");
+  if (savedRepo) window.state.activeRepository = JSON.parse(savedRepo);
+  const savedSession = localStorage.getItem("gda_current_session");
+  if (savedSession) window.state.currentSession = JSON.parse(savedSession);
+} catch {
+  // ignore storage error
+}
+
+window.subscribeState((key, val) => {
+  try {
+    if (key === "activeRepository") {
+      if (val) localStorage.setItem("gda_active_repo", JSON.stringify(val));
+      else localStorage.removeItem("gda_active_repo");
+    }
+    if (key === "currentSession") {
+      if (val) localStorage.setItem("gda_current_session", JSON.stringify(val));
+      else localStorage.removeItem("gda_current_session");
+    }
+  } catch {
+    // storage limit or private browsing
+  }
+});
+

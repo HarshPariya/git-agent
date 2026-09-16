@@ -1,5 +1,7 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { AppError } from "../errors/app-error.js";
 import type {
   GitOperation,
@@ -10,6 +12,9 @@ import type {
   GitLogEntry,
   GitDiffEntry,
   GitBranch,
+  GitStashEntry,
+  GitAuthorConfig,
+  GitGraphNode,
 } from "../types/git.js";
 import { execFileAsync } from "./utils.js";
 
@@ -466,6 +471,225 @@ export function validateGitUrl(url: string): boolean {
 
 export function getRiskLabel(risk: GitOperationRisk): string {
   return RISK_LABELS[risk];
+}
+
+export async function executeGitStashList(repoIdOrPath: string): Promise<GitStashEntry[]> {
+  const raw = await runGit(getExecutionPath(repoIdOrPath), ["stash", "list", "--pretty=format:%gd|%cr|%gs"]);
+  if (!raw.trim()) return [];
+  return raw
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line, idx) => {
+      const parts = line.split("|");
+      const date = parts[1]?.trim() || "";
+      const message = parts.slice(2).join("|").trim() || "WIP";
+      const branchMatch = /^(?:WIP\s+on|On)\s+([^:]+)/i.exec(message);
+      const branch = branchMatch?.[1]?.trim() || "HEAD";
+      return {
+        index: idx,
+        branch,
+        message,
+        date,
+      };
+    });
+}
+
+export async function executeGitStashPush(
+  repoIdOrPath: string,
+  message?: string,
+): Promise<{ success: boolean; output: string }> {
+  const args = ["stash", "push"];
+  if (message && message.trim()) {
+    args.push("-m", message.trim());
+  }
+  const output = await runGit(getExecutionPath(repoIdOrPath), args);
+  return { success: true, output };
+}
+
+export async function executeGitStashPop(
+  repoIdOrPath: string,
+  index = 0,
+): Promise<{ success: boolean; output: string }> {
+  const output = await runGit(getExecutionPath(repoIdOrPath), ["stash", "pop", `stash@{${index}}`]);
+  return { success: true, output };
+}
+
+export async function executeGitStashDrop(
+  repoIdOrPath: string,
+  index = 0,
+): Promise<{ success: boolean; output: string }> {
+  const output = await runGit(getExecutionPath(repoIdOrPath), ["stash", "drop", `stash@{${index}}`]);
+  return { success: true, output };
+}
+
+export async function executeGitStashShow(repoIdOrPath: string, index = 0): Promise<string> {
+  return await runGit(getExecutionPath(repoIdOrPath), ["stash", "show", "-p", `stash@{${index}}`]);
+}
+
+export async function executeGitApplyHunk(
+  repoIdOrPath: string,
+  patchContent: string,
+  reverse = false,
+): Promise<{ success: boolean; output: string }> {
+  const repoPath = getExecutionPath(repoIdOrPath);
+  const tempFile = path.join(os.tmpdir(), `git-hunk-${crypto.randomBytes(6).toString("hex")}.patch`);
+  try {
+    await fs.promises.writeFile(tempFile, patchContent, "utf8");
+    const args = ["apply", "--whitespace=nowarn"];
+    if (reverse) {
+      args.push("--reverse");
+    } else {
+      args.push("--cached");
+    }
+    args.push(tempFile);
+    const output = await runGit(repoPath, args);
+    return { success: true, output: output || "Hunk applied successfully" };
+  } finally {
+    if (fs.existsSync(tempFile)) {
+      await fs.promises.unlink(tempFile).catch(() => {});
+    }
+  }
+}
+
+export async function executeGitDiscardFile(
+  repoIdOrPath: string,
+  filePath: string,
+  staged = false,
+): Promise<{ success: boolean; output: string }> {
+  const repoPath = getExecutionPath(repoIdOrPath);
+  if (staged) {
+    const output = await runGit(repoPath, ["restore", "--staged", filePath]);
+    return { success: true, output: output || `Unstaged ${filePath}` };
+  }
+  try {
+    const output = await runGit(repoPath, ["restore", filePath]);
+    return { success: true, output: output || `Discarded changes in ${filePath}` };
+  } catch {
+    const output = await runGit(repoPath, ["checkout", "--", filePath]);
+    return { success: true, output: output || `Discarded changes in ${filePath}` };
+  }
+}
+
+export async function executeGitUndoCommit(
+  repoIdOrPath: string,
+  force = false,
+): Promise<{ success: boolean; undoneMessage: string; shortHash: string }> {
+  const repoPath = getExecutionPath(repoIdOrPath);
+  const shortHash = (await runGit(repoPath, ["rev-parse", "--short", "HEAD"])).trim();
+  const undoneMessage = (await runGit(repoPath, ["log", "-1", "--pretty=format:%B"])).trim();
+
+  if (!force) {
+    try {
+      const upstreamHash = (await runGit(repoPath, ["rev-parse", "@{u}"])).trim();
+      const headHash = (await runGit(repoPath, ["rev-parse", "HEAD"])).trim();
+      if (upstreamHash === headHash) {
+        throw new AppError(
+          "Cannot safely undo commit: This commit has already been pushed to the remote branch. Undoing it locally would cause branch divergence.",
+          "GIT_ERROR",
+          409,
+        );
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      // No upstream configured, safe to proceed
+    }
+  }
+
+  await runGit(repoPath, ["reset", "--soft", "HEAD~1"]);
+  return { success: true, undoneMessage, shortHash };
+}
+
+export async function executeGitGetAuthor(repoIdOrPath: string): Promise<GitAuthorConfig> {
+  const repoPath = getExecutionPath(repoIdOrPath);
+  let localName = "";
+  let localEmail = "";
+  try {
+    localName = (await runGit(repoPath, ["config", "--local", "user.name"])).trim();
+    localEmail = (await runGit(repoPath, ["config", "--local", "user.email"])).trim();
+  } catch {
+    // not configured locally
+  }
+
+  if (localName && localEmail) {
+    return { name: localName, email: localEmail, isRepoLocal: true };
+  }
+
+  let globalName = "";
+  let globalEmail = "";
+  try {
+    globalName = (await runGit(repoPath, ["config", "user.name"])).trim();
+    globalEmail = (await runGit(repoPath, ["config", "user.email"])).trim();
+  } catch {
+    // not set
+  }
+
+  return {
+    name: globalName || localName || "Developer",
+    email: globalEmail || localEmail || "developer@local",
+    isRepoLocal: Boolean(localName && localEmail),
+  };
+}
+
+export async function executeGitSetAuthor(
+  repoIdOrPath: string,
+  name: string,
+  email: string,
+): Promise<{ success: boolean }> {
+  const repoPath = getExecutionPath(repoIdOrPath);
+  await runGit(repoPath, ["config", "user.name", name.trim()]);
+  await runGit(repoPath, ["config", "user.email", email.trim()]);
+  return { success: true };
+}
+
+export async function executeGitLogGraph(repoIdOrPath: string, limit = 50): Promise<GitGraphNode[]> {
+  const repoPath = getExecutionPath(repoIdOrPath);
+  const raw = await runGit(repoPath, [
+    "log",
+    "--graph",
+    `--pretty=format:GRAPH_COMMIT|%h|%p|%an|%ad|%s|%d`,
+    "--date=relative",
+    `-n`,
+    String(Math.min(limit, 100)),
+  ]);
+
+  const lines = raw.split(/\r?\n/);
+  const nodes: GitGraphNode[] = [];
+
+  for (const line of lines) {
+    const commitIdx = line.indexOf("GRAPH_COMMIT|");
+    if (commitIdx === -1) continue;
+
+    const graphSymbols = line.slice(0, commitIdx).trimEnd();
+    const parts = line.slice(commitIdx + "GRAPH_COMMIT|".length).split("|");
+    const hash = parts[0]?.trim() || "";
+    const parentStr = parts[1]?.trim() || "";
+    const parents = parentStr ? parentStr.split(/\s+/) : [];
+    const author = parts[2]?.trim() || "";
+    const date = parts[3]?.trim() || "";
+    const message = parts[4]?.trim() || "";
+    const rawRefs = parts[5]?.trim() || "";
+    const refs = rawRefs
+      ? rawRefs
+          .replace(/[()]/g, "")
+          .split(",")
+          .map((r) => r.trim())
+          .filter(Boolean)
+      : [];
+
+    if (hash) {
+      nodes.push({
+        hash,
+        parents,
+        author,
+        date,
+        message,
+        refs,
+        graphSymbols: graphSymbols || "*",
+      });
+    }
+  }
+
+  return nodes;
 }
 
 export function buildGitCommand(type: GitOperationType, ...args: string[]): string {

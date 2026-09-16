@@ -37,6 +37,16 @@ import {
   gitStashHandler,
   gitStashPopHandler,
   gitStashListHandler,
+  gitStashDropHandler,
+  gitStashDiffHandler,
+  gitStageHunkHandler,
+  gitDiscardHunkHandler,
+  gitDiscardFileHandler,
+  gitUndoCommitHandler,
+  gitGetAuthorHandler,
+  gitSetAuthorHandler,
+  gitLogGraphHandler,
+  gitScanSecretsHandler,
   gitDeleteBranchHandler,
 } from "./api/git.js";
 import {
@@ -55,6 +65,8 @@ import {
   planTaskHandler,
   approveFixHandler,
   revertFixHandler,
+  steerSessionHandler,
+  exportMarkdownReportHandler,
 } from "./api/debug.js";
 import {
   indexRepositoryHandler,
@@ -291,9 +303,20 @@ app.post("/api/git/sync", ...protectedRoute, gitSyncHandler);
 app.post("/api/git/ship", ...protectedRoute, gitShipHandler);
 app.post("/api/git/generate-commit-message", ...protectedRoute, generateCommitMessageHandler);
 app.post("/api/git/stash", ...protectedRoute, gitStashHandler);
-app.post("/api/git/stash/pop", ...protectedRoute, gitStashPopHandler);
+app.get("/api/git/stash", ...protectedRoute, gitStashListHandler);
 app.get("/api/git/stash/list", ...protectedRoute, gitStashListHandler);
 app.post("/api/git/stash/list", ...protectedRoute, gitStashListHandler);
+app.post("/api/git/stash/pop", ...protectedRoute, gitStashPopHandler);
+app.post("/api/git/stash/drop", ...protectedRoute, gitStashDropHandler);
+app.get("/api/git/stash/diff", ...protectedRoute, gitStashDiffHandler);
+app.post("/api/git/stage-hunk", ...protectedRoute, gitStageHunkHandler);
+app.post("/api/git/discard-hunk", ...protectedRoute, gitDiscardHunkHandler);
+app.post("/api/git/discard-file", ...protectedRoute, gitDiscardFileHandler);
+app.post("/api/git/commit/undo", ...protectedRoute, gitUndoCommitHandler);
+app.get("/api/git/author", ...protectedRoute, gitGetAuthorHandler);
+app.post("/api/git/author", ...protectedRoute, gitSetAuthorHandler);
+app.get("/api/git/graph", ...protectedRoute, gitLogGraphHandler);
+app.post("/api/git/scan-secrets", ...protectedRoute, gitScanSecretsHandler);
 app.post("/api/git/branch/delete", ...protectedRoute, gitDeleteBranchHandler);
 app.delete("/api/git/branch", ...protectedRoute, gitDeleteBranchHandler);
 
@@ -316,6 +339,8 @@ app.post("/api/debug/:sessionId/fix/approve", ...protectedRoute, approveFixHandl
 app.post("/api/debug/:sessionId/approve", ...protectedRoute, approveFixHandler);
 app.post("/api/debug/:sessionId/fix/revert", ...protectedRoute, revertFixHandler);
 app.post("/api/debug/:sessionId/revert", ...protectedRoute, revertFixHandler);
+app.post("/api/debug/:sessionId/steer", ...protectedRoute, steerSessionHandler);
+app.get("/api/debug/:sessionId/export/markdown", ...protectedRoute, exportMarkdownReportHandler);
 app.post("/api/debug/:sessionId/complete", ...protectedRoute, completeDebugSessionHandler);
 app.post("/api/debug/:sessionId/abort", ...protectedRoute, abortDebugSessionHandler);
 

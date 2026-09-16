@@ -743,8 +743,12 @@ document.addEventListener("click", (e) => {
     userRefreshActivity: () => typeof loadUserPanel === "function" && loadUserPanel(),
   };
 
-  // Delegate to view-specific handlers first, fall back to centralized handlers
-  HANDLERS[action]?.();
+  // Delegate to view-specific handlers first, fall back to centralized handlers or window methods
+  if (typeof HANDLERS[action] === "function") {
+    HANDLERS[action]();
+  } else if (typeof window[action] === "function") {
+    window[action](value, target);
+  }
 });
 
 // ── Centralized data-action change delegation (select elements) ──────────────

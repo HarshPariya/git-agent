@@ -201,30 +201,63 @@ async function loadGitDesktopHistory() {
   `).join("");
 
   try {
-    const logData = await api.getGitLog(repo.id, 25);
-    const commits = logData.commits || logData.entries || [];
+    let nodes = [];
+    try {
+      const graphData = await api.gitLogGraph(repo.id, 40);
+      nodes = Array.isArray(graphData) ? graphData : (graphData.nodes || []);
+    } catch (_) {
+      const logData = await api.getGitLog(repo.id, 25);
+      const commits = logData.commits || logData.entries || [];
+      nodes = commits.map((c) => ({
+        hash: c.shortHash || c.hash?.slice(0, 7) || "",
+        parents: [],
+        author: c.authorName || c.author || "Author",
+        date: c.relativeDate || c.authorDate || "",
+        message: c.subject || c.message?.split("\n")[0] || "Commit",
+        refs: [],
+        graphSymbols: "*",
+      }));
+    }
 
-    if (!commits.length) {
+    if (!nodes.length) {
       container.innerHTML = `<div class="empty-state" style="padding:24px"><div class="empty-title">No commits found</div></div>`;
       return;
     }
 
-    container.innerHTML = commits.map((c) => {
-      const hash = c.shortHash || c.hash?.slice(0, 7) || "";
-      const subject = c.subject || c.message?.split("\n")[0] || "Commit";
-      const author = c.authorName || c.author || "Author";
-      const date = c.relativeDate || c.authorDate || "";
+    container.innerHTML = nodes.map((node) => {
+      const hash = node.hash?.slice(0, 7) || "";
+      const subject = node.message?.split("\n")[0] || "Commit";
+      const author = node.author || "Author";
+      const date = node.date || "";
+      const symbols = node.graphSymbols || "*";
+
+      const refBadges = (node.refs || []).map((ref) => {
+        let badgeClass = "badge-secondary";
+        if (ref.includes("HEAD")) badgeClass = "badge-accent";
+        else if (ref.includes("origin/")) badgeClass = "badge-info";
+        else if (ref.includes("tag:")) badgeClass = "badge-warning";
+        return `<span class="badge ${badgeClass}" style="font-size:10px;padding:1px 5px;font-family:var(--font-mono)">${escapeHtml(ref)}</span>`;
+      }).join(" ");
 
       return `
-        <div class="branch-list-item" style="flex-direction:column;align-items:flex-start;gap:4px">
-          <div style="display:flex;align-items:center;justify-content:space-between;width:100%">
-            <strong style="font-size:12px;color:var(--c-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${escapeHtml(subject)}</strong>
-            <code style="font-weight:700;color:var(--c-accent);font-size:11px;background:var(--c-bg-alt);padding:1px 6px;border-radius:4px">${escapeHtml(hash)}</code>
+        <div class="branch-list-item" style="flex-direction:row;align-items:flex-start;gap:10px;padding:8px 10px;border-bottom:1px solid var(--c-border-subtle);cursor:default">
+          <!-- Graph Lane Indicator -->
+          <div style="font-family:monospace;font-size:12px;font-weight:700;color:var(--c-accent);white-space:pre;line-height:1.2;padding-top:2px;user-select:none;flex-shrink:0" title="Branch topology">
+            ${escapeHtml(symbols)}
           </div>
-          <div style="font-size:11px;color:var(--c-text-muted);display:flex;gap:8px">
-            <span>👤 ${escapeHtml(author)}</span>
-            <span>·</span>
-            <span>${escapeHtml(date)}</span>
+          <!-- Commit Content -->
+          <div style="flex:1;min-width:0;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px">
+              <strong style="font-size:12.5px;color:var(--c-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(subject)}</strong>
+              ${refBadges}
+            </div>
+            <div style="font-size:11px;color:var(--c-text-muted);display:flex;gap:8px;align-items:center">
+              <span>👤 ${escapeHtml(author)}</span>
+              <span>·</span>
+              <span>🕒 ${escapeHtml(date)}</span>
+              <span>·</span>
+              <code style="font-weight:700;color:var(--c-accent);font-size:10.5px;background:#f1f5f9;padding:1px 5px;border-radius:4px;cursor:pointer" title="Click to copy hash" onclick="navigator.clipboard.writeText('${escapeHtml(node.hash)}').then(()=>showToast('Hash copied!','info'))">${escapeHtml(hash)}</code>
+            </div>
           </div>
         </div>`;
     }).join("");

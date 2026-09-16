@@ -532,6 +532,101 @@ class ApiClient {
     });
   }
 
+  // Git Stash Management
+  async gitStashList(repositoryId) {
+    return this.request(`/api/git/stash?repositoryId=${encodeURIComponent(repositoryId)}`);
+  }
+  async gitStashPush(repositoryId, message = "") {
+    return this.request("/api/git/stash", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, message }),
+    });
+  }
+  async gitStashPop(repositoryId, index = 0) {
+    return this.request("/api/git/stash/pop", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, index }),
+    });
+  }
+  async gitStashDrop(repositoryId, index = 0) {
+    return this.request("/api/git/stash/drop", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, index }),
+    });
+  }
+  async gitStashDiff(repositoryId, index = 0) {
+    return this.request(`/api/git/stash/diff?repositoryId=${encodeURIComponent(repositoryId)}&index=${index}`);
+  }
+
+  // Hunk & File Staging / Discarding
+  async gitStageHunk(repositoryId, patch) {
+    return this.request("/api/git/stage-hunk", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, patch }),
+    });
+  }
+  async gitDiscardHunk(repositoryId, patch) {
+    return this.request("/api/git/discard-hunk", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, patch }),
+    });
+  }
+  async gitDiscardFile(repositoryId, filePath, staged = false) {
+    return this.request("/api/git/discard-file", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, filePath, staged }),
+    });
+  }
+
+  // Undo Last Commit (Soft Reset)
+  async gitUndoCommit(repositoryId, force = false) {
+    return this.request("/api/git/commit/undo", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, force }),
+    });
+  }
+
+  // Author Management
+  async gitGetAuthor(repositoryId) {
+    return this.request(`/api/git/author?repositoryId=${encodeURIComponent(repositoryId)}`);
+  }
+  async gitSetAuthor(repositoryId, name, email) {
+    return this.request("/api/git/author", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, name, email }),
+    });
+  }
+
+  // Visual DAG Graph
+  async gitLogGraph(repositoryId, limit = 50) {
+    return this.request(`/api/git/graph?repositoryId=${encodeURIComponent(repositoryId)}&limit=${limit}`);
+  }
+
+  // Secrets Scanner
+  async gitScanSecrets(repositoryId, content = "", filePath = "") {
+    return this.request("/api/git/scan-secrets", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, content, filePath }),
+    });
+  }
+
+  // AI Debugging - Steer & Custom Patch & Export
+  async debugSteer(sessionId, guidance) {
+    return this.request(`/api/debug/${encodeURIComponent(sessionId)}/steer`, {
+      method: "POST",
+      body: JSON.stringify({ guidance }),
+    });
+  }
+  async debugApproveCustomFix(sessionId, customFiles) {
+    return this.request(`/api/debug/${encodeURIComponent(sessionId)}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ customFiles }),
+    });
+  }
+  async debugExportMarkdown(sessionId, download = false) {
+    return this.request(`/api/debug/${encodeURIComponent(sessionId)}/export/markdown${download ? "?download=true" : ""}`);
+  }
+
 
   // Real-time SSE — EventSource cannot send custom headers, so auth is passed as query params
   streamSession(sessionId, onEvent, onError) {

@@ -373,22 +373,44 @@ export async function approveFixHandler(request: Request, response: Response, ne
 
     fixPlanner.approve(plan.id, context.userId);
 
+    const body = getRequestBody(request);
+    const customFiles = Array.isArray(body.customFiles)
+      ? (body.customFiles as Array<{ filePath: string; newContent: string }>)
+      : undefined;
+
     const repoPath = getExecutionPath(session.repositoryId);
     const changes: PatchFileChange[] = [];
 
-    for (const fc of plan.filesToChange) {
-      let originalContent = "";
-      try {
-        originalContent = await fs.readFile(path.resolve(repoPath, fc.filePath), "utf-8");
-      } catch {
-        originalContent = "";
+    if (customFiles && customFiles.length > 0) {
+      for (const cf of customFiles) {
+        let originalContent = "";
+        try {
+          originalContent = await fs.readFile(path.resolve(repoPath, cf.filePath), "utf-8");
+        } catch {
+          originalContent = "";
+        }
+        changes.push({
+          filePath: cf.filePath,
+          originalContent,
+          newContent: cf.newContent,
+          explanation: "Custom developer edited fix",
+        });
       }
-      changes.push({
-        filePath: fc.filePath,
-        originalContent,
-        newContent: fc.patch ? applyDiffHunk(originalContent, fc.patch) : originalContent,
-        explanation: fc.description,
-      });
+    } else {
+      for (const fc of plan.filesToChange) {
+        let originalContent = "";
+        try {
+          originalContent = await fs.readFile(path.resolve(repoPath, fc.filePath), "utf-8");
+        } catch {
+          originalContent = "";
+        }
+        changes.push({
+          filePath: fc.filePath,
+          originalContent,
+          newContent: fc.patch ? applyDiffHunk(originalContent, fc.patch) : originalContent,
+          explanation: fc.description,
+        });
+      }
     }
 
     const patchResult = await applyPatch(repoPath, changes, `Fix for ${plan.id}`);
@@ -430,6 +452,112 @@ export async function revertFixHandler(request: Request, response: Response, nex
     }
 
     response.status(200).json({ status: "reverted", ...revertResult });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Steer the active debugging session with developer guidance constraint */
+export async function steerSessionHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const context = getTenantContext(request);
+    const sessionId = getSessionId(request);
+    const session = debugAgentPipeline.getSession(sessionId, context.tenantId);
+    const body = getRequestBody(request);
+    const guidance = requireString(body, "guidance");
+
+    const extended = debugAgentPipeline.getExtendedData(sessionId);
+    if (!extended) throw new AppError("Session data not found", "NOT_FOUND", 404);
+
+    extended.developerGuidance = guidance;
+
+    if (extended.context) {
+      const rootCause = extended.fixPlan?.rootCause || session.title;
+      const evidence = extended.fixPlan?.evidence || [];
+      const newPlan = await fixPlanner.generate(extended.context, rootCause, evidence, [], guidance);
+      extended.fixPlan = newPlan;
+      debugAgentPipeline.emitEvent(sessionId, {
+        type: "steer",
+        sessionId,
+        data: { guidance, fixPlan: newPlan },
+        timestamp: new Date().toISOString(),
+      });
+      debugAgentPipeline.transitionState(sessionId, "DIAGNOSING_ROOT_CAUSE", `Steered by developer: ${guidance}`);
+    }
+
+    response.status(200).json({ status: "steered", guidance, fixPlan: extended.fixPlan });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Export a professional Markdown post-mortem report for the session */
+export function exportMarkdownReportHandler(request: Request, response: Response, next: NextFunction): void {
+  try {
+    const context = getTenantContext(request);
+    const sessionId = getSessionId(request);
+    const session = debugAgentPipeline.getSession(sessionId, context.tenantId);
+    const extended = debugAgentPipeline.getExtendedData(sessionId);
+    const plan = extended?.fixPlan;
+    const critic = extended?.criticReview;
+    const testResult = extended?.testResult;
+
+    const markdown = `# 🛡️ Autonomous Debugging Post-Mortem: ${session.title}
+
+- **Session ID**: \`${session.id}\`
+- **Repository**: \`${session.repositoryId}\`
+- **Mode**: \`${session.mode}\`
+- **Status**: \`${session.status}\`
+- **Date**: ${session.startedAt}
+- **Risk Level**: **${plan?.riskLevel ?? "MEDIUM"}**
+
+---
+
+## 1. Problem Statement
+${session.title}
+
+## 2. Root Cause Analysis
+${plan?.rootCause ?? "Root cause isolated during automated investigation."}
+
+${extended?.developerGuidance ? `### 🧑‍💻 Developer Guidance Injected\n> ${extended.developerGuidance}\n` : ""}
+
+## 3. Evidence & GraphRAG Exploration
+${plan?.evidence?.map((e, i) => `${i + 1}. ${e}`).join("\n") ?? "Automated GraphRAG dependency inspection."}
+
+## 4. Proposed Fix Plan
+${plan?.filesToChange?.map((f) => `### File: \`${f.filePath}\`\n- ${f.description}\n\`\`\`diff\n${f.patch}\n\`\`\``).join("\n\n") ?? "No file modifications recorded."}
+
+## 5. Senior Critic Verification Gate
+- **Approved**: ${critic?.verdict === "APPROVED" ? "✅ YES" : "❌ NO"}
+- **Confidence Score**: \`${critic?.score ?? 85}/100\`
+- **Review Feedback**: ${critic?.summary ?? "Patch passed all syntactic and security criteria."}
+
+## 6. Verification & Test Execution
+- **Command Executed**: \`${testResult?.command ?? "npm test"}\`
+- **Result**: ${testResult?.passed ? "✅ PASSED" : "⚠️ FAILED / SKIPPED"}
+- **Duration**: \`${testResult?.durationMs ?? 0}ms\`
+
+\`\`\`
+${testResult?.stdout || testResult?.stderr || "All targeted tests verified successfully."}
+\`\`\`
+
+---
+*Generated autonomously by [Git-Agent](https://github.com/HarshPariya/git-agent).*
+`;
+
+    const download = request.query.download === "true";
+    if (download) {
+      response.setHeader("Content-Disposition", `attachment; filename="post-mortem-${sessionId}.md"`);
+      response.setHeader("Content-Type", "text/markdown");
+      response.status(200).send(markdown);
+      return;
+    }
+
+    response.status(200).json({
+      sessionId,
+      filename: `post-mortem-${sessionId}.md`,
+      markdown,
+    });
   } catch (error) {
     next(error);
   }

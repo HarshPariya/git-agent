@@ -13,8 +13,20 @@ import {
   registerRepositoryPath,
   getRiskLabel,
   GIT_OPERATION_CATALOG,
+  executeGitStashList,
+  executeGitStashPush,
+  executeGitStashPop,
+  executeGitStashDrop,
+  executeGitStashShow,
+  executeGitApplyHunk,
+  executeGitDiscardFile,
+  executeGitUndoCommit,
+  executeGitGetAuthor,
+  executeGitSetAuthor,
+  executeGitLogGraph,
   type GitOperationType,
 } from "../git/engine.js";
+import { scanContentForSecrets } from "../guardrails/secrets-scanner.js";
 import { AppError } from "../errors/app-error.js";
 import { conflictAnalyzer } from "../git/conflicts.js";
 import { executeSafeCommit } from "../git/commit.js";
@@ -1202,9 +1214,9 @@ export async function gitStashHandler(request: Request, response: Response, next
   try {
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
-    const message = optionalString(body, "message") ?? "WIP stash from Git Agent";
-    const repoPath = getExecutionPath(repoId);
-    const result = await executeGitCommand(`git stash push -m "${message.replace(/"/g, '\\"')}"`, repoPath);
+    await validateRepositoryAccess(repoId);
+    const message = optionalString(body, "message");
+    const result = await executeGitStashPush(repoId, message);
     const latest = await executeGitStatus(repoId).catch(() => null);
     response.status(200).json({ ...result, status: latest });
   } catch (error) {
@@ -1212,15 +1224,31 @@ export async function gitStashHandler(request: Request, response: Response, next
   }
 }
 
-/** Pop the most recent stash (git stash pop) */
+/** Pop a stash (git stash pop stash@{idx}) */
 export async function gitStashPopHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
   try {
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
-    const repoPath = getExecutionPath(repoId);
-    const result = await executeGitCommand("git stash pop", repoPath);
+    await validateRepositoryAccess(repoId);
+    const index = typeof body.index === "number" ? body.index : 0;
+    const result = await executeGitStashPop(repoId, index);
     const latest = await executeGitStatus(repoId).catch(() => null);
     response.status(200).json({ ...result, status: latest });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Drop a stash (git stash drop stash@{idx}) */
+export async function gitStashDropHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    await validateRepositoryAccess(repoId);
+    const index = typeof body.index === "number" ? body.index : 0;
+    const result = await executeGitStashDrop(repoId, index);
+    const stashes = await executeGitStashList(repoId);
+    response.status(200).json({ ...result, stashes });
   } catch (error) {
     next(error);
   }
@@ -1231,13 +1259,164 @@ export async function gitStashListHandler(request: Request, response: Response, 
   try {
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
-    const repoPath = getExecutionPath(repoId);
-    const result = await executeGitCommand("git stash list", repoPath);
-    const stashes = (result.output || "")
-      .split("\n")
-      .filter(Boolean)
-      .map((line, i) => ({ index: i, description: line.trim() }));
+    await validateRepositoryAccess(repoId);
+    const stashes = await executeGitStashList(repoId);
     response.status(200).json({ stashes, count: stashes.length });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Show stash diff (git stash show -p stash@{idx}) */
+export async function gitStashDiffHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    await validateRepositoryAccess(repoId);
+    const index = typeof body.index === "number" ? body.index : 0;
+    const diff = await executeGitStashShow(repoId, index);
+    response.status(200).json({ diff, index });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Stage a single diff hunk via git apply --cached */
+export async function gitStageHunkHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    const patch = requireString(body, "patch");
+    await validateRepositoryAccess(repoId);
+    const result = await executeGitApplyHunk(repoId, patch, false);
+    const latest = await executeGitStatus(repoId).catch(() => null);
+    response.status(200).json({ ...result, status: latest });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Discard a single diff hunk via git apply --reverse */
+export async function gitDiscardHunkHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    const patch = requireString(body, "patch");
+    await validateRepositoryAccess(repoId);
+    const result = await executeGitApplyHunk(repoId, patch, true);
+    const latest = await executeGitStatus(repoId).catch(() => null);
+    response.status(200).json({ ...result, status: latest });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Discard changes in a file (git restore <file>) */
+export async function gitDiscardFileHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    const filePath = requireString(body, "filePath");
+    const staged = body.staged === true;
+    await validateRepositoryAccess(repoId);
+    const result = await executeGitDiscardFile(repoId, filePath, staged);
+    const latest = await executeGitStatus(repoId).catch(() => null);
+    response.status(200).json({ ...result, status: latest });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Undo the last commit (git reset --soft HEAD~1) */
+export async function gitUndoCommitHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    const force = body.force === true;
+    await validateRepositoryAccess(repoId);
+    const result = await executeGitUndoCommit(repoId, force);
+    const latest = await executeGitStatus(repoId).catch(() => null);
+    response.status(200).json({ ...result, status: latest });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Get configured Git author for repository */
+export async function gitGetAuthorHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    await validateRepositoryAccess(repoId);
+    const author = await executeGitGetAuthor(repoId);
+    response.status(200).json(author);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Set configured Git author for repository */
+export async function gitSetAuthorHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    const name = requireString(body, "name");
+    const email = requireString(body, "email");
+    await validateRepositoryAccess(repoId);
+    const result = await executeGitSetAuthor(repoId, name, email);
+    response.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Visual DAG graph nodes (git log --graph) */
+export async function gitLogGraphHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    await validateRepositoryAccess(repoId);
+    const parsedLimit =
+      typeof body.limit === "number" ? body.limit : typeof body.limit === "string" ? parseInt(body.limit, 10) : 50;
+    const limit = isNaN(parsedLimit) ? 50 : parsedLimit;
+    const nodes = await executeGitLogGraph(repoId, limit);
+    response.status(200).json({ nodes, count: nodes.length });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Scan changed files or text for leaked secrets */
+export async function gitScanSecretsHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const content = optionalString(body, "content");
+    const filePath = optionalString(body, "filePath");
+    const repoId = optionalString(body, "repositoryId");
+
+    if (content) {
+      const scan = scanContentForSecrets(content, filePath);
+      response.status(200).json(scan);
+      return;
+    }
+
+    if (repoId) {
+      await validateRepositoryAccess(repoId);
+      const diff = await executeGitDiff(repoId);
+      const allMatches = [];
+      for (const entry of diff) {
+        if (entry.patch) {
+          const scan = scanContentForSecrets(entry.patch, entry.filePath);
+          if (!scan.clean) {
+            allMatches.push(...scan.matches);
+          }
+        }
+      }
+      response.status(200).json({ clean: allMatches.length === 0, matches: allMatches });
+      return;
+    }
+
+    throw new AppError("Either content or repositoryId is required for secret scanning", "VALIDATION_ERROR", 400);
   } catch (error) {
     next(error);
   }

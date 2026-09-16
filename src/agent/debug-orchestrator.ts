@@ -340,6 +340,12 @@ const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
       data: testResult,
       timestamp: new Date().toISOString(),
     });
+    debugAgentPipeline.emitEvent(session.id, {
+      type: "test_output",
+      sessionId: session.id,
+      data: testResult,
+      timestamp: new Date().toISOString(),
+    });
 
     debugAgentPipeline.transitionState(session.id, "VALIDATING_PATCH_SAFETY", "Critic evaluation of proposed fix");
     const criticReview = await criticAgent.review(fixPlan, multiContext, testResult?.passed ?? false);

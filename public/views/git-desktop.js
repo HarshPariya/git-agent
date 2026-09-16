@@ -75,6 +75,18 @@ const ACTION_DISPATCH = {
   discardAllGitChanges: () => discardAllGitChanges(),
   triggerGitStash: () => triggerGitStash(),
   triggerGitStashPop: () => triggerGitStashPop(),
+  openGitStashModal: () => openGitStashModal(),
+  saveNewGitStash: () => saveNewGitStash(),
+  refreshGitStashes: () => refreshGitStashes(),
+  popStashEntry: (value, target) => popStashEntry(value || target?.dataset?.index),
+  dropStashEntry: (value, target) => dropStashEntry(value || target?.dataset?.index),
+  viewStashDiff: (value, target) => viewStashDiff(value || target?.dataset?.index),
+  hideStashDiff: () => hideStashDiff(),
+  openGitAuthorModal: () => openGitAuthorModal(),
+  saveGitAuthor: () => saveGitAuthor(),
+  triggerGitUndoCommit: () => triggerGitUndoCommit(),
+  stageGitHunk: (value, target) => stageGitHunk(value || target?.dataset?.hunkkey),
+  discardGitHunk: (value, target) => discardGitHunk(value || target?.dataset?.hunkkey),
   deleteLocalBranch: (value) => deleteLocalBranch(value),
   filterBranchList: () => filterBranchList(),
   createAndCheckoutBranch: () => createAndCheckoutBranch(),
@@ -357,6 +369,8 @@ async function loadGitDesktop(manual = false) {
 
     const status = await api.getGitStatus(repo.id);
     applyGitStatusUpdate(status, repo, !manual);
+    loadGitAuthor(repo);
+    loadGitStashCount(repo);
   } catch (err) {
     console.error("Failed to load Git Desktop status:", err);
     if (manual) showToast(`Git Desktop error: ${err.message}`, "error");
@@ -875,6 +889,8 @@ function renderMultiFileDiff(containerId, diffText) {
   el.innerHTML = html;
 }
 
+const _activeHunkPatches = new Map();
+
 function renderFormattedDiff(containerId, diffText, filePath = "") {
   const el = document.getElementById(containerId);
   if (!el) return;
@@ -904,9 +920,33 @@ function renderFormattedDiff(containerId, diffText, filePath = "") {
 
   let lineNumOld = 0;
   let lineNumNew = 0;
+  let currentHunkIndex = -1;
+  let currentHunkLines = [];
+  let activeKey = null;
+
+  const flushHunk = (key, hunkLines) => {
+    if (!key || !hunkLines.length || !filePath) return;
+    const patchHeader = `--- a/${filePath}\n+++ b/${filePath}\n`;
+    _activeHunkPatches.set(key, {
+      filePath,
+      patch: patchHeader + hunkLines.join("\n") + "\n",
+    });
+  };
 
   const renderDiffLine = {
-    chunk: (escaped) => `<div class="diff-file-row diff-line-chunk"><div class="diff-line-number" style="background:#f1f5f9;color:#64748b">...</div><div class="diff-line-content">${escaped}</div></div>`,
+    chunk: (escaped, hunkKey) => `
+      <div class="diff-hunk-bar" style="display:flex;justify-content:space-between;align-items:center;padding:5px 12px;background:#f1f5f9;border-top:1px solid var(--c-border);border-bottom:1px solid var(--c-border);font-family:var(--font-mono);font-size:11px">
+        <span style="color:#0284c7;font-weight:600">${escaped}</span>
+        ${filePath ? `
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:10px;color:var(--c-primary);background:#e0f2fe;border:1px solid #bae6fd" data-action="stageGitHunk" data-hunkkey="${hunkKey}" title="Stage only this hunk">
+            + Stage Hunk
+          </button>
+          <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:10px;color:var(--c-danger);background:#fee2e2;border:1px solid #fecaca" data-action="discardGitHunk" data-hunkkey="${hunkKey}" title="Discard changes in this hunk">
+            ✕ Discard Hunk
+          </button>
+        </div>` : ""}
+      </div>`,
     add: (escaped, num) => `<div class="diff-file-row diff-line-add"><div class="diff-line-number" style="background:#dcfce7;color:#15803d">${num}</div><div class="diff-line-content">${escaped}</div></div>`,
     del: (escaped, num) => `<div class="diff-file-row diff-line-del"><div class="diff-line-number" style="background:#fee2e2;color:#b91c1c">${num}</div><div class="diff-line-content">${escaped}</div></div>`,
     context: (escaped, num) => `<div class="diff-file-row diff-line-context"><div class="diff-line-number">${num}</div><div class="diff-line-content">${escaped}</div></div>`,
@@ -917,25 +957,89 @@ function renderFormattedDiff(containerId, diffText, filePath = "") {
     const escaped = escapeHtml(line);
 
     if (line.startsWith("@@")) {
+      if (activeKey) {
+        flushHunk(activeKey, currentHunkLines);
+      }
+      currentHunkIndex++;
+      activeKey = `${filePath}::hunk_${currentHunkIndex}`;
+      currentHunkLines = [line];
+
       const match = /@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
       if (match) {
         lineNumOld = parseInt(match[1], 10);
         lineNumNew = parseInt(match[2], 10);
       }
-      html += renderDiffLine.chunk(escaped);
+      html += renderDiffLine.chunk(escaped, activeKey);
     } else if (line.startsWith("+") && !line.startsWith("+++")) {
+      if (activeKey) currentHunkLines.push(line);
       html += renderDiffLine.add(escaped, lineNumNew > 0 ? lineNumNew++ : "+");
     } else if (line.startsWith("-") && !line.startsWith("---")) {
+      if (activeKey) currentHunkLines.push(line);
       html += renderDiffLine.del(escaped, lineNumOld > 0 ? lineNumOld++ : "-");
     } else {
+      if (activeKey && !line.startsWith("diff --git") && !line.startsWith("index ")) {
+        currentHunkLines.push(line);
+      }
       if (lineNumOld > 0) lineNumOld++;
       if (lineNumNew > 0) lineNumNew++;
       html += renderDiffLine.context(escaped, lineNumNew > 0 ? (lineNumNew - 1) : "");
     }
   }
 
+  if (activeKey) {
+    flushHunk(activeKey, currentHunkLines);
+  }
+
   html += `</div>`;
   el.innerHTML = html;
+}
+
+async function stageGitHunk(hunkKey) {
+  const repo = window.state.activeRepository;
+  if (!repo) return;
+  const hunkInfo = _activeHunkPatches.get(hunkKey);
+  if (!hunkInfo || !hunkInfo.patch) {
+    showToast("Hunk patch data not found", "warning");
+    return;
+  }
+
+  showToast("Staging hunk...", "info");
+  try {
+    await api.gitStageHunk(repo.id, hunkInfo.patch);
+    showToast("Hunk staged successfully!", "success");
+    await loadGitDesktop(false);
+    if (hunkInfo.filePath) {
+      await viewGitDesktopDiff(hunkInfo.filePath, false);
+    }
+  } catch (err) {
+    showToast(`Failed to stage hunk: ${err.message}`, "error");
+  }
+}
+
+async function discardGitHunk(hunkKey) {
+  const repo = window.state.activeRepository;
+  if (!repo) return;
+  const hunkInfo = _activeHunkPatches.get(hunkKey);
+  if (!hunkInfo || !hunkInfo.patch) {
+    showToast("Hunk patch data not found", "warning");
+    return;
+  }
+
+  if (!confirm("Are you sure you want to discard this hunk? This cannot be undone.")) {
+    return;
+  }
+
+  showToast("Discarding hunk...", "info");
+  try {
+    await api.gitDiscardHunk(repo.id, hunkInfo.patch);
+    showToast("Hunk discarded successfully!", "success");
+    await loadGitDesktop(false);
+    if (hunkInfo.filePath) {
+      await viewGitDesktopDiff(hunkInfo.filePath, false);
+    }
+  } catch (err) {
+    showToast(`Failed to discard hunk: ${err.message}`, "error");
+  }
 }
 
 function switchGitDesktopTab(tabName) {
@@ -1021,6 +1125,23 @@ async function commitFromGitDesktop() {
     setGitDesktopState({ isActionRunning: true });
     const stageAll = selectedFiles.length === allFiles.length;
     const filesToCommit = stageAll ? null : selectedFiles.map((f) => f.filePath);
+
+    // Pre-commit secret scanning guardrail
+    try {
+      const scanRes = await api.gitScanSecrets(repo.id);
+      if (scanRes && scanRes.secrets && scanRes.secrets.length > 0) {
+        const preview = scanRes.secrets.slice(0, 3).map((s) => `${s.filePath}:${s.lineNumber} (${s.rule})`).join("\n");
+        const extra = scanRes.secrets.length > 3 ? `\n...and ${scanRes.secrets.length - 3} more` : "";
+        if (!confirm(`⚠️ SECRET SCANNER ALERT:\nDetected ${scanRes.secrets.length} potential secret(s) or API key(s) in repository:\n\n${preview}${extra}\n\nAre you sure you want to commit these changes?`)) {
+          showToast("Commit aborted due to potential secrets", "warning");
+          btn.disabled = false;
+          setGitDesktopState({ isActionRunning: false });
+          return;
+        }
+      }
+    } catch (_) {
+      // Secret scan failed non-fatally
+    }
 
     try {
       const res = await api.gitCommit(
@@ -1237,6 +1358,214 @@ async function triggerGitSync() {
   }
 }
 
+async function loadGitAuthor(repo = window.state.activeRepository) {
+  if (!repo) return;
+  try {
+    const author = await api.gitGetAuthor(repo.id);
+    const authorNameEl = document.getElementById("gd-author-name");
+    const authorBadgeEl = document.getElementById("gd-author-badge");
+    if (authorNameEl) {
+      authorNameEl.textContent = author.name || "Configure Author";
+    }
+    if (authorBadgeEl) {
+      authorBadgeEl.title = author.name ? `${author.name} <${author.email}> (${author.scope})` : "Click to configure Git author name & email";
+    }
+  } catch (err) {
+    console.debug("Failed to load git author:", err);
+  }
+}
+
+async function openGitAuthorModal() {
+  const repo = window.state.activeRepository;
+  if (!repo) {
+    showToast("Select a repository first", "warning");
+    return;
+  }
+  try {
+    const author = await api.gitGetAuthor(repo.id);
+    const nameInput = document.getElementById("git-author-name-input");
+    const emailInput = document.getElementById("git-author-email-input");
+    const globalCheck = document.getElementById("git-author-global-check");
+    if (nameInput) nameInput.value = author.name || "";
+    if (emailInput) emailInput.value = author.email || "";
+    if (globalCheck) globalCheck.checked = author.scope === "global";
+    const modal = document.getElementById("modal-git-author");
+    if (modal) modal.style.display = "flex";
+  } catch (err) {
+    showToast(`Failed to load author: ${err.message}`, "error");
+  }
+}
+
+async function saveGitAuthor() {
+  const repo = window.state.activeRepository;
+  if (!repo) return;
+  const name = document.getElementById("git-author-name-input")?.value?.trim() || "";
+  const email = document.getElementById("git-author-email-input")?.value?.trim() || "";
+  const isGlobal = document.getElementById("git-author-global-check")?.checked === true;
+
+  if (!name || !email) {
+    showToast("Please provide both name and email", "warning");
+    return;
+  }
+
+  try {
+    await api.gitSetAuthor(repo.id, name, email, isGlobal);
+    showToast(`Git author configured as ${name} <${email}>`, "success");
+    closeModal("modal-git-author");
+    await loadGitAuthor(repo);
+  } catch (err) {
+    showToast(`Failed to save author: ${err.message}`, "error");
+  }
+}
+
+async function loadGitStashCount(repo = window.state.activeRepository) {
+  if (!repo) return;
+  try {
+    const res = await api.gitStashList(repo.id);
+    const count = Array.isArray(res) ? res.length : (res.stashes?.length || 0);
+    const badge = document.getElementById("gd-stash-count");
+    if (badge) badge.textContent = String(count);
+  } catch (err) {
+    console.debug("Failed to load stash count:", err);
+  }
+}
+
+async function openGitStashModal() {
+  const repo = window.state.activeRepository;
+  if (!repo) {
+    showToast("Select a repository first", "warning");
+    return;
+  }
+  const modal = document.getElementById("modal-git-stash");
+  if (modal) modal.style.display = "flex";
+  await refreshGitStashes();
+}
+
+async function refreshGitStashes() {
+  const repo = window.state.activeRepository;
+  if (!repo) return;
+  const container = document.getElementById("stash-list-container");
+  const countEl = document.getElementById("stash-modal-count");
+  if (!container) return;
+
+  container.innerHTML = `<div class="text-muted" style="text-align:center;padding:16px;font-size:12px">Loading stashes...</div>`;
+
+  try {
+    const res = await api.gitStashList(repo.id);
+    const stashes = Array.isArray(res) ? res : (res.stashes || []);
+    if (countEl) countEl.textContent = String(stashes.length);
+    const badge = document.getElementById("gd-stash-count");
+    if (badge) badge.textContent = String(stashes.length);
+
+    if (!stashes.length) {
+      container.innerHTML = `<div class="text-muted" style="text-align:center;padding:24px;font-size:12px">No stashed changes found.</div>`;
+      return;
+    }
+
+    container.innerHTML = stashes.map((s) => `
+      <div style="padding:10px 14px;border-bottom:1px solid var(--c-border-subtle);display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <div style="overflow:hidden;flex:1">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="badge badge-accent" style="font-size:10px;font-family:var(--font-mono)">stash@{${s.index}}</span>
+            <span style="font-weight:600;font-size:12.5px;color:var(--c-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(s.message)}</span>
+          </div>
+          <div style="font-size:11px;color:var(--c-text-muted);margin-top:3px;display:flex;gap:8px">
+            <span>🌿 ${escapeHtml(s.branch || "working-tree")}</span>
+            <span>·</span>
+            <span>🕒 ${escapeHtml(s.date || "")}</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" data-action="viewStashDiff" data-index="${s.index}">
+            🔍 Diff
+          </button>
+          <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" data-action="popStashEntry" data-index="${s.index}">
+            📤 Pop
+          </button>
+          <button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:11px;color:var(--c-danger)" data-action="dropStashEntry" data-index="${s.index}">
+            🗑️
+          </button>
+        </div>
+      </div>
+    `).join("");
+  } catch (err) {
+    container.innerHTML = `<div class="text-danger" style="padding:14px;font-size:12px">Error loading stashes: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function saveNewGitStash() {
+  const repo = window.state.activeRepository;
+  if (!repo) return;
+  const input = document.getElementById("new-stash-msg-input");
+  const msg = input?.value?.trim() || "WIP stash from Git Desktop";
+  showToast("Stashing changes...", "info");
+  try {
+    await api.gitStash(repo.id, msg);
+    showToast("Changes stashed!", "success");
+    if (input) input.value = "";
+    await refreshGitStashes();
+    await loadGitDesktop(false);
+  } catch (err) {
+    showToast(`Stash failed: ${err.message}`, "error");
+  }
+}
+
+async function popStashEntry(index) {
+  const repo = window.state.activeRepository;
+  if (!repo) return;
+  const idx = parseInt(index, 10);
+  showToast(`Popping stash@{${isNaN(idx) ? 0 : idx}}...`, "info");
+  try {
+    await api.gitStashPop(repo.id, isNaN(idx) ? undefined : idx);
+    showToast("Stash applied and popped!", "success");
+    await refreshGitStashes();
+    await loadGitDesktop(false);
+  } catch (err) {
+    showToast(`Failed to pop stash: ${err.message}`, "error");
+  }
+}
+
+async function dropStashEntry(index) {
+  const repo = window.state.activeRepository;
+  if (!repo) return;
+  const idx = parseInt(index, 10);
+  if (!confirm(`Are you sure you want to permanently delete stash@{${idx}}?`)) return;
+  try {
+    await api.gitStashDrop(repo.id, idx);
+    showToast(`Stash@{${idx}} dropped`, "success");
+    await refreshGitStashes();
+    await loadGitStashCount(repo);
+  } catch (err) {
+    showToast(`Failed to drop stash: ${err.message}`, "error");
+  }
+}
+
+async function viewStashDiff(index) {
+  const repo = window.state.activeRepository;
+  if (!repo) return;
+  const idx = parseInt(index, 10);
+  const container = document.getElementById("stash-diff-container");
+  const contentEl = document.getElementById("stash-diff-content");
+  const titleEl = document.getElementById("stash-diff-title");
+  if (!container || !contentEl) return;
+
+  container.style.display = "block";
+  contentEl.textContent = "Loading stash diff...";
+  if (titleEl) titleEl.textContent = `Diff for stash@{${idx}}`;
+
+  try {
+    const diff = await api.gitStashDiff(repo.id, idx);
+    contentEl.textContent = diff || "(No diff content for this stash)";
+  } catch (err) {
+    contentEl.textContent = `Error loading stash diff: ${err.message}`;
+  }
+}
+
+function hideStashDiff() {
+  const container = document.getElementById("stash-diff-container");
+  if (container) container.style.display = "none";
+}
+
 async function triggerGitStash() {
   const repo = window.state.activeRepository;
   if (!repo) {
@@ -1245,11 +1574,11 @@ async function triggerGitStash() {
   }
 
   const msg = prompt("Enter stash message (optional):", "WIP stash from Git Desktop");
-  if (msg === null) return; // User cancelled prompt
+  if (msg === null) return;
 
   showToast("Stashing changes...", "info");
   try {
-    const res = await api.gitStash(repo.id, msg || "WIP stash");
+    await api.gitStash(repo.id, msg || "WIP stash");
     showToast("Changes stashed successfully!", "success");
     await loadGitDesktop(false);
   } catch (err) {
@@ -1266,11 +1595,36 @@ async function triggerGitStashPop() {
 
   showToast("Restoring stashed changes...", "info");
   try {
-    const res = await api.gitStashPop(repo.id);
+    await api.gitStashPop(repo.id);
     showToast("Stash applied and popped successfully!", "success");
     await loadGitDesktop(false);
   } catch (err) {
     showToast(`Stash pop failed: ${err.message}`, "error");
+  }
+}
+
+async function triggerGitUndoCommit() {
+  const repo = window.state.activeRepository;
+  if (!repo) {
+    showToast("Select a repository first", "warning");
+    return;
+  }
+
+  if (!confirm("Undo the most recent commit? The commit will be soft-reset, and all changes will remain preserved in your working tree.")) {
+    return;
+  }
+
+  showToast("Undoing last commit...", "info");
+  try {
+    const res = await api.gitUndoCommit(repo.id, false);
+    showToast(`Undone commit [${res.shortHash}]: ${res.undoneMessage || "Commit reset"}`, "success");
+    await loadGitDesktop(false);
+  } catch (err) {
+    if (err.message && err.message.includes("already been pushed")) {
+      showToast(`⚠️ Remote Safeguard: ${err.message}`, "error");
+    } else {
+      showToast(`Undo failed: ${err.message}`, "error");
+    }
   }
 }
 
@@ -2142,8 +2496,20 @@ window.checkoutSelectedBranch = checkoutSelectedBranch;
 window.createAndCheckoutBranch = createAndCheckoutBranch;
 window.triggerAIShip = triggerAIShip;
 window.toggleFileStaging = toggleFileStaging;
-window.toggleAllStaging = toggleAllStaging;
 window.updateCommitButtonText = updateCommitButtonText;
+window.stageGitHunk = stageGitHunk;
+window.discardGitHunk = discardGitHunk;
+window.loadGitAuthor = loadGitAuthor;
+window.openGitAuthorModal = openGitAuthorModal;
+window.saveGitAuthor = saveGitAuthor;
+window.openGitStashModal = openGitStashModal;
+window.refreshGitStashes = refreshGitStashes;
+window.saveNewGitStash = saveNewGitStash;
+window.popStashEntry = popStashEntry;
+window.dropStashEntry = dropStashEntry;
+window.viewStashDiff = viewStashDiff;
+window.hideStashDiff = hideStashDiff;
+window.triggerGitUndoCommit = triggerGitUndoCommit;
 
 document.addEventListener("change", (e) => {
   const target = e.target.closest("[data-action]");

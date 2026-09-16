@@ -380,8 +380,41 @@ async function executeDebugPipeline(repoId, query, mode) {
       }
     },
     critic: ({ data }) => appendLog(logsView, `[CRITIC] Verdict: ${data?.verdict || "evaluating"} `),
-    test: ({ data }) => appendLog(logsView, `[TEST] ${data?.script || "test"}: ${data?.passed ? "PASS" : "FAIL"} (exit ${data?.exitCode}) `),
+    test: ({ data }) => {
+      appendLog(logsView, `[TEST] ${data?.script || "test"}: ${data?.passed ? "PASS" : "FAIL"} (exit ${data?.exitCode}) `);
+      const pill = byId("test-status-pill");
+      if (pill) {
+        pill.textContent = data?.passed ? "Passed" : "Failed";
+        pill.className = data?.passed ? "badge badge-success" : "badge badge-danger";
+      }
+    },
     test_result: ({ data }) => appendLog(logsView, `[TEST] ${data?.name || "Test"}: ${data?.passed ? "PASS" : "FAIL"} `),
+    test_output: ({ data }) => {
+      const terminal = byId("tests-terminal");
+      if (terminal) {
+        if (terminal.dataset.started !== "1") {
+          terminal.innerHTML = "";
+          terminal.dataset.started = "1";
+        }
+        const lineEl = document.createElement("div");
+        lineEl.style.fontFamily = "var(--font-mono)";
+        lineEl.style.fontSize = "11.5px";
+        lineEl.style.lineHeight = "1.4";
+        lineEl.style.color = data?.type === "stderr" ? "#f87171" : "#38bdf8";
+        lineEl.textContent = data?.output || "";
+        terminal.appendChild(lineEl);
+        terminal.scrollTop = terminal.scrollHeight;
+      }
+      const pill = byId("test-status-pill");
+      if (pill) {
+        pill.textContent = "Running tests...";
+        pill.className = "badge badge-accent";
+      }
+    },
+    steer: ({ data }) => {
+      appendLog(logsView, `[STEER] Developer guidance acknowledged: "${data?.guidance || ""}"`);
+      showToast("Agent acknowledged your guidance! Recalibrating...", "info");
+    },
     root_cause: ({ data }) => appendLog(logsView, `[ROOT CAUSE] ${data?.cause || "Root cause identified"} `),
     fix: ({ data }) => appendLog(logsView, `[FIX] ${data?.summary || "Fix generated"} `),
   };
@@ -985,11 +1018,146 @@ async function commitAndPushFix() {
 // ────────────────────────────────────────────────────────────────────────────
 // Miscellaneous public actions
 // ────────────────────────────────────────────────────────────────────────────
+async function submitAgentSteer() {
+  const session = window.state.currentSession;
+  if (!session || !session.id) {
+    showToast("No active debugging session to steer", "warning");
+    return;
+  }
+  const input = document.getElementById("steer-guidance-input");
+  const guidance = input?.value?.trim();
+  if (!guidance) {
+    showToast("Please enter guidance for the agent", "warning");
+    input?.focus();
+    return;
+  }
+
+  const btn = document.getElementById("steer-guidance-btn");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Steering...";
+  }
+
+  try {
+    await api.debugSteer(session.id, guidance);
+    showToast("Guidance sent to AI Debugging Agent!", "success");
+    if (input) input.value = "";
+    appendLog(byId("logs-view"), `[STEER SENT] ${guidance}`);
+  } catch (err) {
+    showToast(`Failed to steer agent: ${err.message}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "🎯 Send Guidance";
+    }
+  }
+}
+
+async function exportPostMortemMarkdown() {
+  const session = window.state.currentSession;
+  if (!session || !session.id) {
+    showToast("No debug session available to export", "warning");
+    return;
+  }
+
+  showToast("Generating Post-Mortem Report (.md)...", "info");
+  try {
+    const res = await api.debugExportMarkdown(session.id);
+    const markdown = res.markdown || (typeof res === "string" ? res : JSON.stringify(res, null, 2));
+
+    // Download as file
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `post-mortem-${session.id.slice(0, 8)}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    // Also copy to clipboard for convenience
+    try {
+      await navigator.clipboard.writeText(markdown);
+      showToast("Report downloaded & copied to clipboard!", "success");
+    } catch (_) {
+      showToast("Report downloaded successfully!", "success");
+    }
+  } catch (err) {
+    showToast(`Export failed: ${err.message}`, "error");
+  }
+}
+
+function openPatchEditorModal() {
+  const fixPlan = window.state.currentFixPlan || window.state.currentSession?.fixPlan;
+  if (!fixPlan || !fixPlan.filesToChange || !fixPlan.filesToChange.length) {
+    showToast("No proposed patch to edit", "warning");
+    return;
+  }
+
+  const firstFile = fixPlan.filesToChange[0];
+  const filePath = typeof firstFile === "string" ? firstFile : firstFile.filePath;
+  const content = typeof firstFile === "object" ? (firstFile.modifiedContent || firstFile.content || "") : "";
+
+  const badge = document.getElementById("patch-editor-file-badge");
+  const textarea = document.getElementById("patch-editor-textarea");
+  if (badge) badge.textContent = filePath || "Modified File";
+  if (textarea) {
+    textarea.value = content;
+    textarea.dataset.filePath = filePath;
+  }
+
+  const modal = document.getElementById("modal-patch-editor");
+  if (modal) modal.style.display = "flex";
+}
+
+async function submitCustomPatchApproval() {
+  const session = window.state.currentSession;
+  if (!session || !session.id) return;
+  const textarea = document.getElementById("patch-editor-textarea");
+  const filePath = textarea?.dataset?.filePath;
+  const modifiedContent = textarea?.value;
+
+  if (!filePath) {
+    showToast("No target file specified", "warning");
+    return;
+  }
+
+  const btn = document.getElementById("btn-apply-custom-patch");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Applying...";
+  }
+
+  try {
+    const customFiles = [{ filePath, modifiedContent }];
+    const res = await api.debugApproveCustomFix(session.id, customFiles);
+    showToast("Custom patch approved and applied!", "success");
+    closeModal("modal-patch-editor");
+
+    // Refresh diff view with updated fix
+    if (res.session?.fixPlan) {
+      window.setState("currentFixPlan", res.session.fixPlan);
+      renderDiff(res.session.fixPlan, res.session.findings || []);
+    }
+  } catch (err) {
+    showToast(`Failed to apply custom patch: ${err.message}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "✅ Apply Verified Custom Patch";
+    }
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Miscellaneous public actions
+// ────────────────────────────────────────────────────────────────────────────
 function requestDetails() { switchTab("evidence"); }
 function rejectFix() { showToast("Patch rejected. Agent ready for refined diagnosis.", "info"); }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Window exports — public API surface (all 21 preserved)
+// Window exports — public API surface
 // ────────────────────────────────────────────────────────────────────────────
 window.setDebugExample = setDebugExample;
 window.setInvestigationMode = setInvestigationMode;
@@ -1012,3 +1180,7 @@ window.revertFix = revertFix;
 window.commitAndPushFix = commitAndPushFix;
 window.requestDetails = requestDetails;
 window.rejectFix = rejectFix;
+window.submitAgentSteer = submitAgentSteer;
+window.exportPostMortemMarkdown = exportPostMortemMarkdown;
+window.openPatchEditorModal = openPatchEditorModal;
+window.submitCustomPatchApproval = submitCustomPatchApproval;

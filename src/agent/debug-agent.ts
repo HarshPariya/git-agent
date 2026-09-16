@@ -37,7 +37,18 @@ export interface CriticResult {
 }
 
 export interface SessionStreamEvent {
-  readonly type: "state" | "step" | "finding" | "hypothesis" | "fix_plan" | "critic" | "test" | "complete" | "error";
+  readonly type:
+    | "state"
+    | "step"
+    | "finding"
+    | "hypothesis"
+    | "fix_plan"
+    | "critic"
+    | "test"
+    | "complete"
+    | "error"
+    | "test_output"
+    | "steer";
   readonly sessionId: string;
   readonly state?: AgentState;
   readonly data: unknown;
@@ -64,6 +75,8 @@ export interface ExtendedSessionData {
   backupId?: string;
   criticReview?: CriticReview;
   testResult?: TestResultInfo;
+  developerGuidance?: string;
+  overridePatch?: string;
 }
 
 const STEP_TIMEOUTS_MS: Record<DebugStepType, number> = {

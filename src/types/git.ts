@@ -304,3 +304,26 @@ export interface SyncResult {
   readonly mergedBranches: readonly string[];
   readonly conflicts: readonly MergeConflictFile[];
 }
+
+export interface GitStashEntry {
+  readonly index: number;
+  readonly branch: string;
+  readonly message: string;
+  readonly date: string;
+}
+
+export interface GitAuthorConfig {
+  readonly name: string;
+  readonly email: string;
+  readonly isRepoLocal: boolean;
+}
+
+export interface GitGraphNode {
+  readonly hash: string;
+  readonly parents: readonly string[];
+  readonly author: string;
+  readonly date: string;
+  readonly message: string;
+  readonly refs: readonly string[];
+  readonly graphSymbols: string;
+}

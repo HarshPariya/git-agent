@@ -22,6 +22,7 @@ export interface FixPlan {
   readonly autoApprovePolicy: boolean;
   readonly estimatedImpact: string;
   readonly rollbackStrategy: string;
+  readonly developerGuidance?: string | undefined;
   readonly createdAt: string;
 }
 
@@ -37,12 +38,18 @@ const fixPlanStore = new Map<string, FixPlan>();
 const fixPlanStatus = new Map<string, FixPlanStatus>();
 
 export class FixPlanner {
-  async generate(ctx: DebugContext, rootCause: string, evidence: string[], hypotheses?: string[]): Promise<FixPlan> {
+  async generate(
+    ctx: DebugContext,
+    rootCause: string,
+    evidence: string[],
+    hypotheses?: string[],
+    guidance?: string,
+  ): Promise<FixPlan> {
     const id = `fix-${crypto.randomUUID().slice(0, 8)}`;
     const useLlm = isLlmAvailable();
     const plan = useLlm
-      ? await this.generateWithLlm(id, ctx, rootCause, evidence, hypotheses ?? [])
-      : this.generateFallback(id, ctx, rootCause, evidence);
+      ? await this.generateWithLlm(id, ctx, rootCause, evidence, hypotheses ?? [], guidance)
+      : this.generateFallback(id, ctx, rootCause, evidence, guidance);
 
     fixPlanStore.set(id, plan);
     fixPlanStatus.set(id, {
@@ -59,9 +66,10 @@ export class FixPlanner {
     rootCause: string,
     evidence: string[],
     hypotheses: string[],
+    guidance?: string,
   ): Promise<FixPlan> {
     try {
-      const prompt = this.buildLlmPrompt(ctx, rootCause, evidence, hypotheses);
+      const prompt = this.buildLlmPrompt(ctx, rootCause, evidence, hypotheses, guidance);
       const response = await callLlm([
         {
           role: "system",
@@ -70,22 +78,31 @@ export class FixPlanner {
         { role: "user", content: prompt },
       ]);
 
-      return this.parseLlmResponse(response.content, id, ctx, rootCause, evidence);
+      return this.parseLlmResponse(response.content, id, ctx, rootCause, evidence, guidance);
     } catch {
-      return this.generateFallback(id, ctx, rootCause, evidence);
+      return this.generateFallback(id, ctx, rootCause, evidence, guidance);
     }
   }
 
-  private buildLlmPrompt(ctx: DebugContext, rootCause: string, evidence: string[], hypotheses: string[]): string {
+  private buildLlmPrompt(
+    ctx: DebugContext,
+    rootCause: string,
+    evidence: string[],
+    hypotheses: string[],
+    guidance?: string,
+  ): string {
     const evidenceList = evidence.map((e, i) => `${i + 1}. ${e}`).join("\n");
     const hypothesisList = hypotheses.map((h, i) => `${i + 1}. ${h}`).join("\n") || "None";
+    const guidanceSection = guidance
+      ? `\nDEVELOPER GUIDANCE & CONSTRAINTS:\n"${guidance}"\nSTRICT INSTRUCTION: You must strictly adhere to the developer's guidance above.\n`
+      : "";
 
     return `You are an expert software engineer generating a precise fix plan.
 
 REPOSITORY: ${ctx.repositoryName}
 BRANCH: ${ctx.git.branch}
 ROOT CAUSE: ${rootCause}
-
+${guidanceSection}
 EVIDENCE:
 ${evidenceList}
 
@@ -114,6 +131,7 @@ RULES:
     ctx: DebugContext,
     rootCause: string,
     evidence: string[],
+    guidance?: string,
   ): FixPlan {
     const jsonMatch = /\{[\s\S]*\}/.exec(content);
     if (!jsonMatch) {
@@ -145,11 +163,18 @@ RULES:
       autoApprovePolicy: !requiresApproval,
       estimatedImpact: parsed.estimatedImpact ?? "Unknown",
       rollbackStrategy: parsed.rollbackStrategy ?? "git revert HEAD",
+      developerGuidance: guidance,
       createdAt: new Date().toISOString(),
     };
   }
 
-  private generateFallback(id: string, ctx: DebugContext, rootCause: string, evidence: string[]): FixPlan {
+  private generateFallback(
+    id: string,
+    ctx: DebugContext,
+    rootCause: string,
+    evidence: string[],
+    guidance?: string,
+  ): FixPlan {
     const defaultChanges: FileChange[] = ctx.git.changedFiles.slice(0, 3).map((f) => ({
       filePath: f,
       description: `Review and fix issue in ${f}`,
@@ -169,6 +194,7 @@ RULES:
       autoApprovePolicy: true,
       estimatedImpact: "Resolves reported bug",
       rollbackStrategy: "git revert HEAD",
+      developerGuidance: guidance,
       createdAt: new Date().toISOString(),
     };
   }
