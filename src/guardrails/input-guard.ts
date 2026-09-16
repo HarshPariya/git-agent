@@ -14,9 +14,7 @@ const INJECTION_PATTERNS = [
 ];
 
 // matchAll requires global regexes; create global copies from the base patterns
-const INJECTION_PATTERNS_GLOBAL = INJECTION_PATTERNS.map(
-  (p) => new RegExp(p.source, "gi"),
-);
+const INJECTION_PATTERNS_GLOBAL = INJECTION_PATTERNS.map((p) => new RegExp(p.source, "gi"));
 
 const NEGATION_PATTERN = /\b(do\s+not|don'?t|never|must\s+not|should\s+not|avoid|prohibit|prevent|without)\b/i;
 const SECURITY_EVAL_PATTERN = /\b(evaluat\w+|refuses?|blocks?|security\s+test|classify|deny|allow)\b/i;
