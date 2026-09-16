@@ -13,7 +13,6 @@ import type {
   GitDiffEntry,
   GitBranch,
   GitStashEntry,
-  GitAuthorConfig,
   GitGraphNode,
 } from "../types/git.js";
 import { execFileAsync } from "./utils.js";
@@ -597,48 +596,6 @@ export async function executeGitUndoCommit(
 
   await runGit(repoPath, ["reset", "--soft", "HEAD~1"]);
   return { success: true, undoneMessage, shortHash };
-}
-
-export async function executeGitGetAuthor(repoIdOrPath: string): Promise<GitAuthorConfig> {
-  const repoPath = getExecutionPath(repoIdOrPath);
-  let localName = "";
-  let localEmail = "";
-  try {
-    localName = (await runGit(repoPath, ["config", "--local", "user.name"])).trim();
-    localEmail = (await runGit(repoPath, ["config", "--local", "user.email"])).trim();
-  } catch {
-    // not configured locally
-  }
-
-  if (localName && localEmail) {
-    return { name: localName, email: localEmail, isRepoLocal: true };
-  }
-
-  let globalName = "";
-  let globalEmail = "";
-  try {
-    globalName = (await runGit(repoPath, ["config", "user.name"])).trim();
-    globalEmail = (await runGit(repoPath, ["config", "user.email"])).trim();
-  } catch {
-    // not set
-  }
-
-  return {
-    name: globalName || localName || "Developer",
-    email: globalEmail || localEmail || "developer@local",
-    isRepoLocal: Boolean(localName && localEmail),
-  };
-}
-
-export async function executeGitSetAuthor(
-  repoIdOrPath: string,
-  name: string,
-  email: string,
-): Promise<{ success: boolean }> {
-  const repoPath = getExecutionPath(repoIdOrPath);
-  await runGit(repoPath, ["config", "user.name", name.trim()]);
-  await runGit(repoPath, ["config", "user.email", email.trim()]);
-  return { success: true };
 }
 
 export async function executeGitLogGraph(repoIdOrPath: string, limit = 50): Promise<GitGraphNode[]> {

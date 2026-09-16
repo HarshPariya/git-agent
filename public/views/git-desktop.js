@@ -82,8 +82,6 @@ const ACTION_DISPATCH = {
   dropStashEntry: (value, target) => dropStashEntry(value || target?.dataset?.index),
   viewStashDiff: (value, target) => viewStashDiff(value || target?.dataset?.index),
   hideStashDiff: () => hideStashDiff(),
-  openGitAuthorModal: () => openGitAuthorModal(),
-  saveGitAuthor: () => saveGitAuthor(),
   triggerGitUndoCommit: () => triggerGitUndoCommit(),
   stageGitHunk: (value, target) => stageGitHunk(value || target?.dataset?.hunkkey),
   discardGitHunk: (value, target) => discardGitHunk(value || target?.dataset?.hunkkey),
@@ -369,7 +367,6 @@ async function loadGitDesktop(manual = false) {
 
     const status = await api.getGitStatus(repo.id);
     applyGitStatusUpdate(status, repo, !manual);
-    loadGitAuthor(repo);
     loadGitStashCount(repo);
   } catch (err) {
     console.error("Failed to load Git Desktop status:", err);
@@ -1355,66 +1352,6 @@ async function triggerGitSync() {
     }
   } catch (err) {
     showToast(`Sync error: ${err.message}`, "error");
-  }
-}
-
-async function loadGitAuthor(repo = window.state.activeRepository) {
-  if (!repo) return;
-  try {
-    const author = await api.gitGetAuthor(repo.id);
-    const authorNameEl = document.getElementById("gd-author-name");
-    const authorBadgeEl = document.getElementById("gd-author-badge");
-    if (authorNameEl) {
-      authorNameEl.textContent = author.name || "Configure Author";
-    }
-    if (authorBadgeEl) {
-      authorBadgeEl.title = author.name ? `${author.name} <${author.email}> (${author.scope})` : "Click to configure Git author name & email";
-    }
-  } catch (err) {
-    console.debug("Failed to load git author:", err);
-  }
-}
-
-async function openGitAuthorModal() {
-  const repo = window.state.activeRepository;
-  if (!repo) {
-    showToast("Select a repository first", "warning");
-    return;
-  }
-  try {
-    const author = await api.gitGetAuthor(repo.id);
-    const nameInput = document.getElementById("git-author-name-input");
-    const emailInput = document.getElementById("git-author-email-input");
-    const globalCheck = document.getElementById("git-author-global-check");
-    if (nameInput) nameInput.value = author.name || "";
-    if (emailInput) emailInput.value = author.email || "";
-    if (globalCheck) globalCheck.checked = author.scope === "global";
-    const modal = document.getElementById("modal-git-author");
-    if (modal) modal.style.display = "flex";
-  } catch (err) {
-    showToast(`Failed to load author: ${err.message}`, "error");
-  }
-}
-
-async function saveGitAuthor() {
-  const repo = window.state.activeRepository;
-  if (!repo) return;
-  const name = document.getElementById("git-author-name-input")?.value?.trim() || "";
-  const email = document.getElementById("git-author-email-input")?.value?.trim() || "";
-  const isGlobal = document.getElementById("git-author-global-check")?.checked === true;
-
-  if (!name || !email) {
-    showToast("Please provide both name and email", "warning");
-    return;
-  }
-
-  try {
-    await api.gitSetAuthor(repo.id, name, email, isGlobal);
-    showToast(`Git author configured as ${name} <${email}>`, "success");
-    closeModal("modal-git-author");
-    await loadGitAuthor(repo);
-  } catch (err) {
-    showToast(`Failed to save author: ${err.message}`, "error");
   }
 }
 
@@ -2499,9 +2436,6 @@ window.toggleFileStaging = toggleFileStaging;
 window.updateCommitButtonText = updateCommitButtonText;
 window.stageGitHunk = stageGitHunk;
 window.discardGitHunk = discardGitHunk;
-window.loadGitAuthor = loadGitAuthor;
-window.openGitAuthorModal = openGitAuthorModal;
-window.saveGitAuthor = saveGitAuthor;
 window.openGitStashModal = openGitStashModal;
 window.refreshGitStashes = refreshGitStashes;
 window.saveNewGitStash = saveNewGitStash;

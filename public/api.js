@@ -586,17 +586,6 @@ class ApiClient {
     });
   }
 
-  // Author Management
-  async gitGetAuthor(repositoryId) {
-    return this.request(`/api/git/author?repositoryId=${encodeURIComponent(repositoryId)}`);
-  }
-  async gitSetAuthor(repositoryId, name, email) {
-    return this.request("/api/git/author", {
-      method: "POST",
-      body: JSON.stringify({ repositoryId, name, email }),
-    });
-  }
-
   // Visual DAG Graph
   async gitLogGraph(repositoryId, limit = 50) {
     return this.request(`/api/git/graph?repositoryId=${encodeURIComponent(repositoryId)}&limit=${limit}`);

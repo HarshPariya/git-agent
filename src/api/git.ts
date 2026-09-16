@@ -21,8 +21,6 @@ import {
   executeGitApplyHunk,
   executeGitDiscardFile,
   executeGitUndoCommit,
-  executeGitGetAuthor,
-  executeGitSetAuthor,
   executeGitLogGraph,
   type GitOperationType,
 } from "../git/engine.js";
@@ -1337,34 +1335,6 @@ export async function gitUndoCommitHandler(request: Request, response: Response,
     const result = await executeGitUndoCommit(repoId, force);
     const latest = await executeGitStatus(repoId).catch(() => null);
     response.status(200).json({ ...result, status: latest });
-  } catch (error) {
-    next(error);
-  }
-}
-
-/** Get configured Git author for repository */
-export async function gitGetAuthorHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
-  try {
-    const body = getGitRequestData(request);
-    const repoId = requireString(body, "repositoryId");
-    await validateRepositoryAccess(repoId);
-    const author = await executeGitGetAuthor(repoId);
-    response.status(200).json(author);
-  } catch (error) {
-    next(error);
-  }
-}
-
-/** Set configured Git author for repository */
-export async function gitSetAuthorHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
-  try {
-    const body = getGitRequestData(request);
-    const repoId = requireString(body, "repositoryId");
-    const name = requireString(body, "name");
-    const email = requireString(body, "email");
-    await validateRepositoryAccess(repoId);
-    const result = await executeGitSetAuthor(repoId, name, email);
-    response.status(200).json(result);
   } catch (error) {
     next(error);
   }

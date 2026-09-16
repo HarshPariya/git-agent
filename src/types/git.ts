@@ -312,12 +312,6 @@ export interface GitStashEntry {
   readonly date: string;
 }
 
-export interface GitAuthorConfig {
-  readonly name: string;
-  readonly email: string;
-  readonly isRepoLocal: boolean;
-}
-
 export interface GitGraphNode {
   readonly hash: string;
   readonly parents: readonly string[];

@@ -43,8 +43,6 @@ import {
   gitDiscardHunkHandler,
   gitDiscardFileHandler,
   gitUndoCommitHandler,
-  gitGetAuthorHandler,
-  gitSetAuthorHandler,
   gitLogGraphHandler,
   gitScanSecretsHandler,
   gitDeleteBranchHandler,
@@ -313,8 +311,6 @@ app.post("/api/git/stage-hunk", ...protectedRoute, gitStageHunkHandler);
 app.post("/api/git/discard-hunk", ...protectedRoute, gitDiscardHunkHandler);
 app.post("/api/git/discard-file", ...protectedRoute, gitDiscardFileHandler);
 app.post("/api/git/commit/undo", ...protectedRoute, gitUndoCommitHandler);
-app.get("/api/git/author", ...protectedRoute, gitGetAuthorHandler);
-app.post("/api/git/author", ...protectedRoute, gitSetAuthorHandler);
 app.get("/api/git/graph", ...protectedRoute, gitLogGraphHandler);
 app.post("/api/git/scan-secrets", ...protectedRoute, gitScanSecretsHandler);
 app.post("/api/git/branch/delete", ...protectedRoute, gitDeleteBranchHandler);

@@ -446,12 +446,6 @@
               <span class="git-meta-label">Working Tree:</span>
               <span id="gd-working-status" class="badge badge-success">Clean</span>
             </div>
-            <div class="git-meta-item" id="gd-author-meta-item" data-action="openGitAuthorModal" style="cursor:pointer" title="Click to view or edit Git Author (User & Email)">
-              <span class="git-meta-label">Author:</span>
-              <span id="gd-author-badge" class="badge" style="background:#f1f5f9;color:#334155;display:inline-flex;align-items:center;gap:4px">
-                👤 <span id="gd-author-name">Git Author</span> <span style="font-size:9px">▾</span>
-              </span>
-            </div>
           </div>
 
           <!-- Git Desktop Main Actions Toolbar -->
@@ -1737,37 +1731,6 @@
 
       <div class="modal-actions" style="margin-top:16px">
         <button class="btn btn-secondary" data-action="closeModal" data-value="modal-git-stash">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Git Author Configuration Modal -->
-  <div id="modal-git-author" class="modal-overlay" style="display:none">
-    <div class="modal" style="max-width:480px;width:96vw">
-      <div class="modal-close" data-action="closeModal" data-value="modal-git-author">×</div>
-      <div class="modal-title">👤 Git Commit Author</div>
-      <div class="modal-desc">Configure the author name and email used for commits in this repository.</div>
-
-      <div class="form-group" style="margin-bottom:12px">
-        <label class="form-label" style="font-weight:600;font-size:12px">Author Name</label>
-        <input class="form-input" id="git-author-name-input" placeholder="e.g. John Doe" style="font-size:13px" />
-      </div>
-
-      <div class="form-group" style="margin-bottom:12px">
-        <label class="form-label" style="font-weight:600;font-size:12px">Author Email</label>
-        <input class="form-input" id="git-author-email-input" type="email" placeholder="e.g. john@example.com" style="font-size:13px" />
-      </div>
-
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;padding:10px;background:#f8fafc;border-radius:var(--r-md);border:1px solid var(--c-border)">
-        <input type="checkbox" id="git-author-global-check" style="cursor:pointer" />
-        <label for="git-author-global-check" style="font-size:12px;color:var(--c-text);cursor:pointer">
-          Set globally for all repositories (<code style="font-size:11px">git config --global</code>)
-        </label>
-      </div>
-
-      <div class="modal-actions" style="display:flex;justify-content:space-between;align-items:center">
-        <button class="btn btn-secondary" data-action="closeModal" data-value="modal-git-author">Cancel</button>
-        <button class="btn btn-primary" data-action="saveGitAuthor">💾 Save Author</button>
       </div>
     </div>
   </div>
