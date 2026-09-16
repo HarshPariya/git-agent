@@ -28,9 +28,10 @@ export const errorHandler = (error: unknown, request: Request, response: Respons
   } else if (error instanceof Error) {
     status = 500;
     code = "INTERNAL_ERROR";
-    message = process.env.NODE_ENV === "production"
-      ? "An unexpected error occurred."
-      : error.message || "An unexpected error occurred.";
+    message =
+      process.env.NODE_ENV === "production"
+        ? "An unexpected error occurred."
+        : error.message || "An unexpected error occurred.";
   } else {
     status = 500;
     code = "INTERNAL_ERROR";
