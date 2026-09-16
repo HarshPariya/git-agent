@@ -4,6 +4,7 @@ import type { Repository, ProtectedBranch, SyncResult } from "../types/git.js";
 import { executeGitStatus, registerRepositoryPath } from "../git/engine.js";
 import { logger } from "../logging/logger.js";
 import { persistRepository, markRepositoryDisconnected, loadRepositoriesFromDb } from "../db/persistence.js";
+import { AppError } from "../errors/app-error.js";
 
 const repositories = new Map<string, Repository>();
 const protectedBranches = new Map<string, ProtectedBranch[]>();
@@ -32,7 +33,7 @@ const resolveLocalPath = (name: string, tenantId?: string): string => {
 };
 
 const validateLocalPath = (candidate: string, repoName?: string, tenantId?: string): string => {
-  if (!candidate?.trim()) throw new Error("Repository path must be a non-empty string");
+  if (!candidate?.trim()) throw new AppError("Repository path must be a non-empty string", "VALIDATION_ERROR", 400);
   const cleaned = candidate.replace(/^["']|["']$/g, "").trim();
 
   // If candidate is "." or matches current workspace basename
@@ -78,7 +79,7 @@ const validateLocalPath = (candidate: string, repoName?: string, tenantId?: stri
   if (repoRoot) {
     const relative = path.relative(path.resolve(repoRoot), resolved);
     if (relative.startsWith("..") || path.isAbsolute(relative))
-      throw new Error("Repository path must be inside REPOSITORY_ROOT");
+      throw new AppError("Repository path must be inside REPOSITORY_ROOT", "VALIDATION_ERROR", 400);
   }
 
   return resolved;
@@ -210,7 +211,7 @@ export class RepositoryStore {
    */
   async ensureWorkspace(repositoryId: string, tenantId?: string): Promise<string> {
     const repo = this.getRepository(repositoryId, tenantId);
-    if (!repo) throw new Error(`Repository ${repositoryId} not found`);
+    if (!repo) throw new AppError(`Repository ${repositoryId} not found`, "NOT_FOUND", 404);
 
     if (!fs.existsSync(repo.localPath) || !fs.existsSync(path.join(repo.localPath, ".git"))) {
       fs.mkdirSync(repo.localPath, { recursive: true });
@@ -394,7 +395,7 @@ export class RepositoryStore {
 
   async syncRepository(repositoryId: string, tenantId: string): Promise<SyncResult> {
     const repo = this.getRepository(repositoryId, tenantId);
-    if (!repo) throw new Error("Repository not found");
+    if (!repo) throw new AppError(`Repository ${repositoryId} not found`, "NOT_FOUND", 404);
 
     const statusBefore = await executeGitStatus(repo.localPath);
     const result: SyncResult = {
@@ -428,7 +429,7 @@ export class RepositoryStore {
 
   async disconnectRepository(repositoryId: string, tenantId: string): Promise<Repository> {
     const repo = this.getRepository(repositoryId, tenantId);
-    if (!repo) throw new Error("Repository not found");
+    if (!repo) throw new AppError(`Repository ${repositoryId} not found`, "NOT_FOUND", 404);
 
     repositories.delete(repositoryId);
     await markRepositoryDisconnected(repositoryId);
@@ -438,7 +439,7 @@ export class RepositoryStore {
 
   async getRepositoryStatus(repositoryId: string, tenantId: string): Promise<Repository> {
     const repo = this.getRepository(repositoryId, tenantId);
-    if (!repo) throw new Error("Repository not found");
+    if (!repo) throw new AppError(`Repository ${repositoryId} not found`, "NOT_FOUND", 404);
 
     const status = await executeGitStatus(repo.localPath).catch(() => null);
     const updated: Repository = status
@@ -452,7 +453,7 @@ export class RepositoryStore {
 
   listProtectedBranches(repositoryId: string, tenantId: string): readonly ProtectedBranch[] {
     const repo = this.getRepository(repositoryId, tenantId);
-    if (!repo) throw new Error("Repository not found");
+    if (!repo) throw new AppError(`Repository ${repositoryId} not found`, "NOT_FOUND", 404);
 
     const key = `${tenantId}:${repositoryId}`;
     const existing = protectedBranches.get(key);
@@ -483,7 +484,7 @@ export class RepositoryStore {
     config?: Partial<ProtectedBranch>,
   ): ProtectedBranch {
     const repo = this.getRepository(repositoryId, tenantId);
-    if (!repo) throw new Error("Repository not found");
+    if (!repo) throw new AppError(`Repository ${repositoryId} not found`, "NOT_FOUND", 404);
 
     const key = `${tenantId}:${repositoryId}`;
     const existing = protectedBranches.get(key) ?? [];
@@ -505,7 +506,7 @@ export class RepositoryStore {
 
   removeProtectedBranch(repositoryId: string, tenantId: string, branchName: string): boolean {
     const repo = this.getRepository(repositoryId, tenantId);
-    if (!repo) throw new Error("Repository not found");
+    if (!repo) throw new AppError(`Repository ${repositoryId} not found`, "NOT_FOUND", 404);
 
     const key = `${tenantId}:${repositoryId}`;
     const existing = protectedBranches.get(key);

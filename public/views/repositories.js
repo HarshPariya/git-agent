@@ -290,6 +290,11 @@ async function indexRepo(repoId) {
 
 async function disconnectRepo(repoId) {
   if (!confirm("Are you sure you want to disconnect this repository?")) return;
+  // Prevent duplicate disconnect requests from double-clicks
+  if (window._disconnectingRepos?.has(repoId)) return;
+  window._disconnectingRepos = window._disconnectingRepos || new Set();
+  window._disconnectingRepos.add(repoId);
+
   try {
     const updatedRepos = (window.state.repositories || []).filter((r) => r.id !== repoId);
     window.setState("repositories", updatedRepos);
@@ -316,6 +321,8 @@ async function disconnectRepo(repoId) {
   } catch (err) {
     showToast(`Failed to disconnect: ${err.message}`, "error");
     await loadRepositories();
+  } finally {
+    window._disconnectingRepos.delete(repoId);
   }
 }
 

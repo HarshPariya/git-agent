@@ -271,18 +271,6 @@ class ApiClient {
       body: JSON.stringify({ repositoryId, message, stageAll, ...(files ? { files } : {}) }),
     });
   }
-  async syncGitFile(repositoryId, filePath, content, action = "write") {
-    return this.request("/api/git/sync-file", {
-      method: "POST",
-      body: JSON.stringify({ repositoryId, filePath, content, action }),
-    });
-  }
-  async syncGitWorkspace(repositoryId, files) {
-    return this.request("/api/git/sync-workspace", {
-      method: "POST",
-      body: JSON.stringify({ repositoryId, files }),
-    });
-  }
   async stageFile(repositoryId, filePath) {
     return this.request("/api/git/stage", {
       method: "POST",
@@ -415,18 +403,6 @@ class ApiClient {
     return this.request("/api/git/stash", {
       method: "POST",
       body: JSON.stringify({ repositoryId, message }),
-    });
-  }
-  async gitStashPop(repositoryId) {
-    return this.request("/api/git/stash/pop", {
-      method: "POST",
-      body: JSON.stringify({ repositoryId }),
-    });
-  }
-  async gitStashList(repositoryId) {
-    return this.request("/api/git/stash/list", {
-      method: "POST",
-      body: JSON.stringify({ repositoryId }),
     });
   }
   async gitDeleteBranch(repositoryId, branch, force = false) {
