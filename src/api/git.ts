@@ -201,9 +201,28 @@ export async function gitSyncFileHandler(request: Request, response: Response, n
       if (syncFs.existsSync(targetFile)) {
         await syncFs.promises.unlink(targetFile);
       }
+      await execAsync(`git clean -fd -- "${filePath}"`, { cwd: execPath }).catch(noop);
     } else {
       await syncFs.promises.mkdir(path.dirname(targetFile), { recursive: true });
-      await syncFs.promises.writeFile(targetFile, content ?? "", "utf8");
+
+      // Check if file exists in HEAD and compare normalized content
+      let restoredToHead = false;
+      try {
+        const { stdout: headContent } = await execAsync(`git show HEAD:"${filePath}"`, { cwd: execPath });
+        const normHead = headContent.replace(/\r\n/g, "\n");
+        const normIncoming = (content ?? "").replace(/\r\n/g, "\n");
+        if (normHead === normIncoming) {
+          restoredToHead = true;
+          // Checkout clean version directly from HEAD to keep git index and timestamps in perfect sync
+          await execAsync(`git checkout HEAD -- "${filePath}"`, { cwd: execPath });
+        }
+      } catch {
+        // File may not exist in HEAD yet
+      }
+
+      if (!restoredToHead) {
+        await syncFs.promises.writeFile(targetFile, content ?? "", "utf8");
+      }
     }
 
     // Refresh index so git immediately detects if file is restored back to clean HEAD
@@ -221,6 +240,7 @@ export async function gitSyncWorkspaceHandler(request: Request, response: Respon
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
     const files = Array.isArray(body.files) ? (body.files as Array<{ filePath: string; content: string }>) : [];
+    const commitBaseline = body.commitBaseline === true;
 
     await validateRepositoryAccess(repoId);
     const execPath = getExecutionPath(repoId);
@@ -237,18 +257,13 @@ export async function gitSyncWorkspaceHandler(request: Request, response: Respon
       written++;
     }
 
-    // If repository was freshly auto-initialized with only the default README,
-    // commit this initial batch as the clean baseline so future edits generate real diffs!
-    if (written > 0) {
-      try {
-        const { stdout: logOut } = await execAsync("git rev-list --count HEAD", { cwd: execPath });
-        const commitCount = parseInt(logOut.trim(), 10) || 0;
-        if (commitCount <= 1) {
-          await execAsync("git add -A", { cwd: execPath });
-          await execAsync('git commit -m "Baseline project files"', { cwd: execPath });
-        }
-      } catch {
-        // Non-fatal if git commit fails
+    if (commitBaseline && written > 0) {
+      await execAsync("git add -A", { cwd: execPath }).catch(noop);
+      const { stdout: statusOut } = await execAsync("git status --porcelain=v1", { cwd: execPath }).catch(() => ({
+        stdout: "",
+      }));
+      if (statusOut.trim()) {
+        await execAsync('git commit -m "Initialize project baseline"', { cwd: execPath }).catch(noop);
       }
     }
 
@@ -256,6 +271,33 @@ export async function gitSyncWorkspaceHandler(request: Request, response: Respon
 
     const latest = await executeGitStatus(repoId);
     response.status(200).json({ success: true, count: written, status: latest });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function gitCommitBaselineHandler(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    await validateRepositoryAccess(repoId);
+    const execPath = getExecutionPath(repoId);
+
+    await execAsync("git add -A", { cwd: execPath }).catch(noop);
+    const { stdout: statusOut } = await execAsync("git status --porcelain=v1", { cwd: execPath }).catch(() => ({
+      stdout: "",
+    }));
+    if (statusOut.trim()) {
+      await execAsync('git commit -m "Initialize project baseline"', { cwd: execPath }).catch(noop);
+    }
+    await execAsync("git update-index --refresh", { cwd: execPath }).catch(noop);
+
+    const latest = await executeGitStatus(repoId);
+    response.status(200).json({ success: true, status: latest });
   } catch (error) {
     next(error);
   }
@@ -409,18 +451,29 @@ export async function gitDiscardHandler(request: Request, response: Response, ne
     const filePath = optionalString(body, "filePath");
     const repoPath = getExecutionPath(repoId);
 
+    let restoredContent: string | null = null;
+    let isDeleted = false;
+
     if (filePath) {
       await execAsync(`git reset HEAD -- "${filePath}"`, { cwd: repoPath }).catch(noop);
       await execAsync(`git checkout -- "${filePath}"`, { cwd: repoPath }).catch(noop);
       await execAsync(`git clean -fd -- "${filePath}"`, { cwd: repoPath }).catch(noop);
+
+      const targetFile = path.resolve(repoPath, filePath);
+      if (syncFs.existsSync(targetFile)) {
+        restoredContent = await syncFs.promises.readFile(targetFile, "utf8").catch(() => null);
+      } else {
+        isDeleted = true;
+      }
     } else {
       await execAsync("git reset HEAD -- .", { cwd: repoPath }).catch(noop);
       await execAsync("git checkout -- .", { cwd: repoPath }).catch(noop);
       await execAsync("git clean -fd", { cwd: repoPath }).catch(noop);
     }
 
+    await execAsync("git update-index --refresh", { cwd: repoPath }).catch(noop);
     const status = await executeGitStatus(repoId);
-    response.status(200).json({ success: true, status });
+    response.status(200).json({ success: true, filePath, restoredContent, isDeleted, status });
   } catch (error) {
     next(error);
   }

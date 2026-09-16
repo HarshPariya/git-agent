@@ -32,6 +32,7 @@ import {
   gitStreamStatusHandler,
   gitSyncFileHandler,
   gitSyncWorkspaceHandler,
+  gitCommitBaselineHandler,
   gitDiscardHandler,
   gitStashHandler,
   gitStashPopHandler,
@@ -269,6 +270,7 @@ app.post("/api/git/unstage-all", ...protectedRoute, gitUnstageAllHandler);
 app.post("/api/git/discard", ...protectedRoute, gitDiscardHandler);
 app.post("/api/git/sync-file", ...protectedRoute, gitSyncFileHandler);
 app.post("/api/git/sync-workspace", ...protectedRoute, gitSyncWorkspaceHandler);
+app.post("/api/git/commit-baseline", ...protectedRoute, gitCommitBaselineHandler);
 app.post("/api/git/push", ...protectedRoute, gitPushHandler);
 app.post("/api/git/pull", ...protectedRoute, gitPullHandler);
 app.post("/api/git/fetch", ...protectedRoute, gitFetchHandler);

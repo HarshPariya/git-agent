@@ -6,7 +6,7 @@ import { createTenantContext } from "../security/tenant-context.js";
 import { verifySessionToken } from "../security/auth.js";
 import { getPermissionFromPath } from "./permission.js";
 
-const DEFAULT_RATE_LIMIT_MAX = 600;
+const DEFAULT_RATE_LIMIT_MAX = 1200;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 
 const WORKSPACE_ALLOWLIST: readonly string[] = (process.env.WORKSPACE_ALLOWLIST?.trim() || "")
@@ -30,7 +30,7 @@ const sanitizeWorkspaceRoot = (raw: string | undefined): string => {
 };
 
 export const rateLimiter = new InMemoryRateLimiter(
-  Number(process.env.RATE_LIMIT_MAX ?? DEFAULT_RATE_LIMIT_MAX),
+  Math.max(Number(process.env.RATE_LIMIT_MAX ?? DEFAULT_RATE_LIMIT_MAX), 300),
   Number(process.env.RATE_LIMIT_WINDOW_MS ?? DEFAULT_RATE_LIMIT_WINDOW_MS),
 );
 
@@ -106,8 +106,25 @@ export const createSecurityMiddleware =
       }
 
       const reqPath = request.path ?? "";
+      const isGitUiInspectionOrSync =
+        reqPath.startsWith("/api/git/") &&
+        (reqPath.endsWith("/status") ||
+          reqPath.endsWith("/diff") ||
+          reqPath.endsWith("/branches") ||
+          reqPath.endsWith("/log") ||
+          reqPath.endsWith("/sync-file") ||
+          reqPath.endsWith("/sync-workspace") ||
+          reqPath.endsWith("/commit-baseline") ||
+          reqPath.endsWith("/generate-commit-message") ||
+          reqPath.endsWith("/catalog") ||
+          reqPath.includes("/stream"));
+
       const isExemptFromRateLimit =
-        reqPath.includes("/stream") || reqPath.endsWith("/status") || reqPath === "/health" || reqPath === "/ready";
+        isGitUiInspectionOrSync ||
+        reqPath.includes("/stream") ||
+        reqPath.endsWith("/status") ||
+        reqPath === "/health" ||
+        reqPath === "/ready";
 
       if (!isExemptFromRateLimit) {
         const rateLimitKey = `${context.tenantId}:${context.userId}`;

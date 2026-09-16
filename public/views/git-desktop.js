@@ -550,6 +550,20 @@ async function viewGitDesktopDiff(filePath, showLoading = true) {
     statusBadge.style.display = "inline-block";
   }
 
+  const metaEl = document.getElementById("gd-diff-meta");
+  if (metaEl) {
+    const code = currentFileObj?.code || "M";
+    const statusText =
+      code === "A"
+        ? "New untracked/added file"
+        : code === "D"
+          ? "Deleted file"
+          : code === "U"
+            ? "Untracked working tree file"
+            : "Modified file";
+    metaEl.textContent = `${statusText} · ${filePath}`;
+  }
+
   const revealBtn = document.getElementById("gd-btn-reveal-os");
   const editBtn = document.getElementById("gd-btn-open-editor");
   if (revealBtn) {
@@ -568,6 +582,12 @@ async function viewGitDesktopDiff(filePath, showLoading = true) {
 
   const viewer = document.getElementById("gd-diff-viewer");
   const isDifferentFile = window._currentRenderedDiffFile !== filePath;
+
+  // Background optimization: If background poll and diff is already rendered for this file, avoid redundant network fetch
+  if (!showLoading && !isDifferentFile && window._currentRenderedDiffText !== null) {
+    return;
+  }
+
   if (viewer && (showLoading || isDifferentFile)) {
     viewer.innerHTML = `<div style="text-align:center;padding:32px 16px;color:var(--c-text-muted)"><div class="spinner"></div><div style="margin-top:8px">Loading unified diff for ${escapeHtml(filePath)}...</div></div>`;
   }
@@ -1683,9 +1703,31 @@ async function getStoredDirHandle(key) {
 
 async function scanDirectoryHandle(dirHandle, basePath = "") {
   const files = [];
-  const IGNORED = new Set([".git", "node_modules", ".cache", "dist", "build", ".gemini", "$RECYCLE.BIN"]);
+  const IGNORED = new Set([
+    ".git",
+    "node_modules",
+    ".cache",
+    "dist",
+    "build",
+    ".gemini",
+    "$RECYCLE.BIN",
+    "scratch",
+    ".idea",
+    ".vscode",
+    "coverage",
+    "temp",
+    "temp_git_test",
+  ]);
   for await (const [name, entry] of dirHandle.entries()) {
-    if (IGNORED.has(name) || name.startsWith(".")) continue;
+    if (
+      IGNORED.has(name) ||
+      name.startsWith(".") ||
+      name.startsWith("temp_") ||
+      name.endsWith(".log") ||
+      name.endsWith(".tmp")
+    ) {
+      continue;
+    }
     const relPath = basePath ? `${basePath}/${name}` : name;
     if (entry.kind === "file") {
       try {
@@ -1718,8 +1760,15 @@ async function startLocalDirectorySync(repoId, dirHandle) {
       const CHUNK_SIZE = 15;
       for (let i = 0; i < files.length; i += CHUNK_SIZE) {
         const slice = files.slice(i, i + CHUNK_SIZE);
-        await api.syncGitWorkspace(repoId, slice.map((f) => ({ filePath: f.filePath, content: f.content })));
+        const isLastChunk = i + CHUNK_SIZE >= files.length;
+        await api.syncGitWorkspace(
+          repoId,
+          slice.map((f) => ({ filePath: f.filePath, content: f.content })),
+          isLastChunk,
+        );
       }
+      // Finalize baseline commit so linked repository starts with a completely clean working tree (0 changes)
+      await api.commitBaseline(repoId).catch(() => {});
       await loadGitDesktop(false);
     }
   } catch (err) {
@@ -1898,7 +1947,43 @@ async function discardGitChanges(filePath = null) {
   }
 
   try {
-    await api.discardGitChanges(repo.id, filePath);
+    const res = await api.discardGitChanges(repo.id, filePath);
+
+    // If local folder is linked, mirror discard so watcher doesn't bounce the discarded change right back
+    if (window._activeLocalDirHandle) {
+      if (filePath) {
+        try {
+          const parts = filePath.split("/").filter(Boolean);
+          let curr = window._activeLocalDirHandle;
+          for (let i = 0; i < parts.length - 1; i++) {
+            curr = await curr.getDirectoryHandle(parts[i]);
+          }
+          const fileName = parts[parts.length - 1];
+
+          if (res?.isDeleted) {
+            await curr.removeEntry(fileName).catch(() => {});
+            _knownLocalFileMtimes.delete(filePath);
+          } else if (typeof res?.restoredContent === "string") {
+            const fileHandle = await curr.getFileHandle(fileName, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(res.restoredContent);
+            await writable.close();
+            const updatedFile = await fileHandle.getFile();
+            _knownLocalFileMtimes.set(filePath, updatedFile.lastModified);
+          }
+        } catch (_) {}
+      } else {
+        // Discard all: re-scan timestamps so watcher doesn't fire
+        try {
+          const files = await scanDirectoryHandle(window._activeLocalDirHandle);
+          _knownLocalFileMtimes.clear();
+          for (const f of files) {
+            _knownLocalFileMtimes.set(f.filePath, f.lastModified);
+          }
+        } catch (_) {}
+      }
+    }
+
     showToast(`Discarded ${targetDesc}`, "info");
     await loadGitDesktop(false);
   } catch (err) {

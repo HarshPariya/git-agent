@@ -313,6 +313,24 @@ class ApiClient {
       body: JSON.stringify({ repositoryId, ...(filePath ? { filePath } : {}) }),
     });
   }
+  async syncGitFile(repositoryId, filePath, content = "", action = "write") {
+    return this.request("/api/git/sync-file", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, filePath, content, action }),
+    });
+  }
+  async syncGitWorkspace(repositoryId, files, commitBaseline = false) {
+    return this.request("/api/git/sync-workspace", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, files, commitBaseline }),
+    });
+  }
+  async commitBaseline(repositoryId) {
+    return this.request("/api/git/commit-baseline", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId }),
+    });
+  }
   // Alias used by the debug view's "Commit & Push Fix" (returns {success, commitHash, message})
   async commitChanges(repositoryId, message) {
     return this.request("/api/git/commit", {
