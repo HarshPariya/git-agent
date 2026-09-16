@@ -347,6 +347,7 @@ export async function gitConflictsHandler(request: Request, response: Response, 
   try {
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
+    await validateRepositoryAccess(repoId);
     const result = await conflictAnalyzer.analyzeRepository(getExecutionPath(repoId));
     response.status(200).json(result);
   } catch (error) {
@@ -1373,15 +1374,22 @@ export async function gitScanSecretsHandler(request: Request, response: Response
 
     if (repoId) {
       await validateRepositoryAccess(repoId);
+      const repoPath = getExecutionPath(repoId);
+      const { stdout: patch } = await execAsync("git diff", { cwd: repoPath, maxBuffer: 10 * 1024 * 1024 });
+      if (!patch?.trim()) {
+        response.status(200).json({ clean: true, matches: [] });
+        return;
+      }
       const diff = await executeGitDiff(repoId);
+      const filePaths = diff.map((e) => e.filePath);
       const allMatches = [];
-      for (const entry of diff) {
-        if (entry.patch) {
-          const scan = scanContentForSecrets(entry.patch, entry.filePath);
-          if (!scan.clean) {
-            allMatches.push(...scan.matches);
-          }
-        }
+      for (const fp of filePaths) {
+        const scan = scanContentForSecrets(patch, fp);
+        if (!scan.clean) allMatches.push(...scan.matches);
+      }
+      if (allMatches.length === 0) {
+        const fullScan = scanContentForSecrets(patch);
+        if (!fullScan.clean) allMatches.push(...fullScan.matches);
       }
       response.status(200).json({ clean: allMatches.length === 0, matches: allMatches });
       return;

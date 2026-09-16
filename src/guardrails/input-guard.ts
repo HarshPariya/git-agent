@@ -4,7 +4,6 @@ export type { InputGuardRequest, InputGuardResult };
 
 const MAX_MESSAGE_LENGTH = Number(process.env.MAX_MESSAGE_LENGTH ?? 64_000);
 const NEGATION_CONTEXT_LENGTH = 80;
-const SECURITY_EVAL_OFFSET = 20;
 
 const INJECTION_PATTERNS = [
   /ignore\s+(all\s+)?previous\s+instructions/i,
@@ -23,19 +22,17 @@ const isNegatedContext = (msg: string, matchIndex: number): boolean => {
   return NEGATION_PATTERN.test(precedingSlice);
 };
 
-const isSecurityEvaluation = (msg: string, matchIndex: number): boolean => {
-  const precedingSlice = msg.slice(Math.max(0, matchIndex - NEGATION_CONTEXT_LENGTH), matchIndex).toLowerCase();
-  const inPreceding = SECURITY_EVAL_PATTERN.test(precedingSlice);
-  const inMessage = SECURITY_EVAL_PATTERN.test(msg);
-  const hasBullets = BULLET_LIST_PATTERN.test(msg.slice(Math.max(0, matchIndex - SECURITY_EVAL_OFFSET), matchIndex));
-  return inPreceding || (inMessage && hasBullets);
+const isSecurityEvaluation = (msg: string, _matchIndex: number): boolean => {
+  return SECURITY_EVAL_PATTERN.test(msg) && BULLET_LIST_PATTERN.test(msg);
 };
 
 const isMaliciousInjection = (msg: string): boolean =>
   INJECTION_PATTERNS.some((pattern) => {
-    const match = pattern.exec(msg);
-    if (!match?.index) return false;
-    return !isNegatedContext(msg, match.index) && !isSecurityEvaluation(msg, match.index);
+    const matches = [...msg.matchAll(pattern)];
+    return matches.some((match) => {
+      const idx = match.index;
+      return idx !== undefined && !isNegatedContext(msg, idx) && !isSecurityEvaluation(msg, idx);
+    });
   });
 
 const INPUT_RULES: ReadonlyArray<(msg: string) => string | null> = [

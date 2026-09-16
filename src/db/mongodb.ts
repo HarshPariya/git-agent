@@ -180,7 +180,8 @@ export const withTransaction = async <T>(callback: (session: ClientSession) => P
     await session.withTransaction(async () => {
       result = await callback(session);
     });
-    return result!;
+    if (result === undefined) throw new Error("Transaction callback did not return a value");
+    return result;
   } finally {
     await session.endSession();
   }
