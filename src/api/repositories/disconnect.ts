@@ -17,8 +17,8 @@ export const disconnectRepositoryHandler = async (
     const context = getTenantContext(request);
     const repositoryId = String(request.params.id || "").trim();
     if (!repositoryId) throw new AppError("Repository id is required", "VALIDATION_ERROR", 400);
-    await repositoryStore.disconnectRepository(repositoryId, context.tenantId);
-    response.status(200).json({ success: true });
+    const { alreadyDisconnected } = await repositoryStore.disconnectRepository(repositoryId, context.tenantId);
+    response.status(200).json({ success: true, alreadyDisconnected });
   } catch (error) {
     next(error);
   }

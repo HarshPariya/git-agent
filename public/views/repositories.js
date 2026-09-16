@@ -311,8 +311,11 @@ async function disconnectRepo(repoId) {
     }
     populateRepoDropdowns();
 
-    await api.disconnectRepository(repoId);
-    showToast("Repository disconnected successfully", "info");
+    const res = await api.disconnectRepository(repoId);
+    showToast(
+      res && res.alreadyDisconnected ? "Repository was already disconnected" : "Repository disconnected successfully",
+      "info",
+    );
 
     await loadRepositories();
     if (typeof window.loadDashboardStats === "function") {
