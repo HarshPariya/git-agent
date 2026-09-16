@@ -124,6 +124,34 @@ function applyGitStatusUpdate(status, repo = window.state.activeRepository, isBa
     headerLabel.textContent = `${repo.name} · ${branchName}`;
   }
 
+  // Update dynamic remote badge in Git Desktop header
+  const remoteEl = document.getElementById("gd-remote-name");
+  const isGitAgent = (repo.name || "").toLowerCase() === "git-agent";
+  const hasRealUrl = repo.url && (isGitAgent || !repo.url.includes("HarshPariya/git-agent"));
+  if (remoteEl) {
+    if (hasRealUrl) {
+      try {
+        const u = new URL(repo.url);
+        const pathPart = u.pathname.replace(/^\/|\.git$/g, "");
+        remoteEl.textContent = pathPart ? `origin (${pathPart})` : "origin";
+        remoteEl.title = repo.url;
+      } catch {
+        remoteEl.textContent = "origin";
+        remoteEl.title = repo.url;
+      }
+    } else {
+      remoteEl.textContent = "Local (No remote)";
+      remoteEl.title = "Local repository without remote origin";
+    }
+  }
+
+  // Update Push / Fetch button labels according to remote availability
+  const pushBtn = document.querySelector('button[data-action="openPushPreviewModal"]');
+  if (pushBtn) {
+    pushBtn.innerHTML = hasRealUrl ? "⬆️ Push origin" : "⬆️ Publish Repo";
+    pushBtn.title = hasRealUrl ? "Push commits to remote origin" : "Publish this local repository to GitHub";
+  }
+
   // Preserve previously selected checkboxes
   const prevFiles = window.state.gitDesktop?.changedFiles || [];
   const prevMap = new Map(prevFiles.map((f) => [f.filePath, f]));
@@ -236,18 +264,28 @@ async function loadGitDesktop(manual = false) {
     }
   }
 
-  // Auto-connect workspace if still no repo connected
+  // Auto-connect workspace only if tenant has zero repositories connected
   if (!repo) {
     try {
-      const res = await api.connectRepository({
-        name: "Git-Agent",
-        localPath: ".",
-        url: "https://github.com/HarshPariya/git-agent.git",
-      });
-      if (res?.repository) {
-        repo = res.repository;
-        localStorage.setItem("gda_active_repo_id", repo.id);
-        window.setState("activeRepository", repo);
+      const listRes = await api.listRepositories().catch(() => []);
+      const repos = listRes.repositories || listRes || [];
+      if (repos.length === 0) {
+        const res = await api.connectRepository({
+          name: "Git-Agent",
+          localPath: ".",
+          url: "https://github.com/HarshPariya/git-agent.git",
+        });
+        if (res?.repository) {
+          repo = res.repository;
+          localStorage.setItem("gda_active_repo_id", repo.id);
+          window.setState("activeRepository", repo);
+        }
+      } else {
+        repo = repos.find((r) => r.id === localStorage.getItem("gda_active_repo_id")) || repos[0];
+        if (repo) {
+          localStorage.setItem("gda_active_repo_id", repo.id);
+          window.setState("activeRepository", repo);
+        }
       }
     } catch (_) { }
   }
@@ -1703,43 +1741,86 @@ async function getStoredDirHandle(key) {
 
 async function scanDirectoryHandle(dirHandle, basePath = "") {
   const files = [];
-  const IGNORED = new Set([
+  const IGNORED_DIRS = new Set([
     ".git",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".venv",
+    "venv",
+    "env",
+    ".env",
     "node_modules",
     ".cache",
     "dist",
     "build",
+    ".next",
+    ".nuxt",
+    ".turbo",
     ".gemini",
-    "$RECYCLE.BIN",
-    "scratch",
     ".idea",
     ".vscode",
     "coverage",
     "temp",
     "temp_git_test",
+    "scratch",
+    "$RECYCLE.BIN",
   ]);
+
+  const IGNORED_EXTS = new Set([
+    ".pyc",
+    ".pyo",
+    ".pyd",
+    ".class",
+    ".exe",
+    ".dll",
+    ".so",
+    ".dylib",
+    ".log",
+    ".tmp",
+    ".swp",
+    ".DS_Store",
+    ".bin",
+  ]);
+
   for await (const [name, entry] of dirHandle.entries()) {
-    if (
-      IGNORED.has(name) ||
-      name.startsWith(".") ||
-      name.startsWith("temp_") ||
-      name.endsWith(".log") ||
-      name.endsWith(".tmp")
-    ) {
-      continue;
-    }
-    const relPath = basePath ? `${basePath}/${name}` : name;
-    if (entry.kind === "file") {
-      try {
-        const file = await entry.getFile();
-        if (file.size <= 1048576) {
-          const content = await file.text();
-          files.push({ filePath: relPath, content, lastModified: file.lastModified, size: file.size });
-        }
-      } catch (_) { }
-    } else if (entry.kind === "directory") {
+    if (entry.kind === "directory") {
+      if (
+        IGNORED_DIRS.has(name) ||
+        name.startsWith(".") ||
+        name.startsWith("temp_") ||
+        name.endsWith(".egg-info")
+      ) {
+        continue;
+      }
+      const relPath = basePath ? `${basePath}/${name}` : name;
       const subFiles = await scanDirectoryHandle(entry, relPath);
       files.push(...subFiles);
+    } else if (entry.kind === "file") {
+      const ext = name.includes(".") ? "." + name.split(".").pop().toLowerCase() : "";
+      if (
+        IGNORED_EXTS.has(ext) ||
+        name === ".DS_Store" ||
+        name === "Thumbs.db" ||
+        name.startsWith(".~") ||
+        name.endsWith(".tmp") ||
+        name.endsWith(".log")
+      ) {
+        continue;
+      }
+      try {
+        const file = await entry.getFile();
+        // Skip binary and oversized files (> 1MB)
+        if (file.size <= 1048576) {
+          const content = await file.text();
+          // Skip if binary (contains null bytes)
+          if (!content.includes("\0")) {
+            const relPath = basePath ? `${basePath}/${name}` : name;
+            files.push({ filePath: relPath, content, lastModified: file.lastModified, size: file.size });
+          }
+        }
+      } catch (_) {}
     }
   }
   return files;

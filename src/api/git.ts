@@ -287,6 +287,20 @@ export async function gitCommitBaselineHandler(
     await validateRepositoryAccess(repoId);
     const execPath = getExecutionPath(repoId);
 
+    // Ensure standard .gitignore is present if not already created, ignoring caches and binary artifacts
+    const gitignorePath = path.join(execPath, ".gitignore");
+    if (!syncFs.existsSync(gitignorePath)) {
+      await syncFs.promises
+        .writeFile(
+          gitignorePath,
+          `node_modules/\n__pycache__/\n*.py[cod]\n*$py.class\n.venv/\nvenv/\nenv/\n.env\n.DS_Store\nThumbs.db\ndist/\nbuild/\n.cache/\ncoverage/\n*.log\n*.tmp\nscratch/\n`,
+          "utf8",
+        )
+        .catch(noop);
+    }
+
+    // Remove any previously pushed binary bytecode or cache files
+    await execAsync('git clean -fd -- "*.pyc" "*.pyo" "__pycache__"', { cwd: execPath }).catch(noop);
     await execAsync("git add -A", { cwd: execPath }).catch(noop);
     const { stdout: statusOut } = await execAsync("git status --porcelain=v1", { cwd: execPath }).catch(() => ({
       stdout: "",

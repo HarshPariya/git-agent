@@ -44,11 +44,13 @@ async function loadRepositories() {
 
 function formatRepoDisplayPath(r) {
   if (!r) return "";
-  if (r.url) return r.url;
+  const isGitAgent = (r.name || "").toLowerCase() === "git-agent";
+  if (r.url && (isGitAgent || !r.url.includes("HarshPariya/git-agent"))) {
+    return r.url;
+  }
   const pathStr = r.localPath || "";
-  if (!pathStr) return r.name || "Local Project";
-  if (pathStr.startsWith("/tmp/repositories/")) {
-    return `${r.name} (Local Project)`;
+  if (!pathStr || pathStr.startsWith("/tmp/repositories/")) {
+    return `Local Repository · ${r.name || "Project"}`;
   }
   return pathStr;
 }
