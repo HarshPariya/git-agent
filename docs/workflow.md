@@ -364,29 +364,29 @@ If you want to modify or extend the system, use this comprehensive reference:
 
 | To Change... | Edit This File | What to Do |
 | :--- | :--- | :--- |
-| **Frontend Global State** | [`public/state.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/state.js) | Add new reactive state variables, subscriptions, or initial defaults. |
-| **Unified Diff Visualizer** | [`public/components/diff-viewer.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/components/diff-viewer.js) | Customize diff hunk rendering, line number gutters, or continuous view mode. |
-| **Commit Plan Cards** | [`public/components/commit-plan.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/components/commit-plan.js) | Adjust group card layouts, risk badge colors, or commit action buttons. |
-| **Dashboard View** | [`public/views/dashboard.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/dashboard.js) | Modify dashboard metrics, active repo card, or system health gauges. |
-| **Repository Management View** | [`public/views/repositories.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/repositories.js) | Customize native folder picker modal, GitHub connector, or repo cards. |
-| **AI Debugging Console (Workspace A)** | [`public/views/debugging.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/debugging.js) | Modify SSE log streaming, hypothesis meters, or Approve/Revert triggers. |
-| **Git Desktop Controller (Workspace B)** | [`public/views/git-desktop.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/git-desktop.js) | Adjust change tables, branch switcher, push preview modal, or post-push summary card. |
-| **Pull Requests Hub** | [`public/views/pull-requests.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/pull-requests.js) | Modify PR lists, create PR modal, or merge strategy options. |
-| **Issue Triage View** | [`public/views/issues.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/issues.js) | Customize issue filters, label tags, or one-click "Debug Issue" action. |
-| **4-Way Conflict Center** | [`public/views/conflicts.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/conflicts.js) | Adjust side-by-side 4-way editor, AI resolution selector, or test runners. |
-| **Commit History Timeline** | [`public/views/history.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/history.js) | Modify commit list rendering, author badges, or diff popups. |
-| **Settings & Diagnostics** | [`public/views/settings.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/views/settings.js) | Add configuration options, LLM model switches, or cache clear actions. |
-| **Master Navigation & Router** | [`public/app.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/app.js) | Adjust keyboard shortcuts, tab switching, or global notification toasts. |
-| **CSS Theme & Glassmorphic Tokens** | [`public/styles.css`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/styles.css) | Modify HSL color tokens, backdrop filters, typography, or responsive rules. |
-| **HTML Shell & Modal Skeletons** | [`public/index.html`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/public/index.html) | Add new modals, top navigation buttons, or sidebar menu items. |
-| **Express API Routing & Middleware** | [`src/app.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/app.ts) | Register new API routes, JWT security middleware, or error handlers. |
-| **Native OS Dialogs & File Ops** | [`src/api/fs.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/api/fs.ts) | Tweak PowerShell `FolderBrowserDialog` or OS file manager launchers. |
-| **Git Engine & Windows execFile** | [`src/git/engine.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/git/engine.ts) | Adjust Git command executions, risk classifications, or formatting flags. |
-| **Push Safeguards & Branch Protection** | [`src/git/push.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/git/push.ts) | Add protected branch patterns or modify force-push lease checks. |
-| **AI Commit Clustering & Messages** | [`src/git/change-analyzer.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/git/change-analyzer.ts) | Tune Groq Conventional Commit prompts or regex fallback clustering. |
-| **Agent State Machine & Planner** | [`src/agent/planner.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/agent/planner.ts) | Customize investigation phases, bug classifiers, or step sequences. |
-| **Critic Agent Review Gates** | [`src/agent/critic.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/agent/critic.ts) | Modify scoring thresholds, security criteria, or forbidden commands. |
-| **Patch Engine & Instant Rollback** | [`src/agent/patch-engine.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/agent/patch-engine.ts) | Adjust file snapshot storage or patch application algorithms. |
-| **GraphRAG Code Retrieval** | [`src/retrieval/retriever.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/retrieval/retriever.ts) | Tune hybrid search weights between graph edges and vector embeddings. |
-| **Input & Output Security Guards** | [`src/guardrails/input-guard.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/src/guardrails/input-guard.ts) | Update prompt injection regex patterns or secret scrubbing filters. |
+| **Frontend Global State** | [`public/state.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/state.js) | Add new reactive state variables, subscriptions, or initial defaults. |
+| **Unified Diff Visualizer** | [`public/components/diff-viewer.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/components/diff-viewer.js) | Customize diff hunk rendering, line number gutters, or continuous view mode. |
+| **Commit Plan Cards** | [`public/components/commit-plan.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/components/commit-plan.js) | Adjust group card layouts, risk badge colors, or commit action buttons. |
+| **Dashboard View** | [`public/views/dashboard.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/dashboard.js) | Modify dashboard metrics, active repo card, or system health gauges. |
+| **Repository Management View** | [`public/views/repositories.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/repositories.js) | Customize native folder picker modal, GitHub connector, or repo cards. |
+| **AI Debugging Console (Workspace A)** | [`public/views/debugging.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/debugging.js) | Modify SSE log streaming, hypothesis meters, or Approve/Revert triggers. |
+| **Git Desktop Controller (Workspace B)** | [`public/views/git-desktop.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/git-desktop.js) | Adjust change tables, branch switcher, push preview modal, or post-push summary card. |
+| **Pull Requests Hub** | [`public/views/pull-requests.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/pull-requests.js) | Modify PR lists, create PR modal, or merge strategy options. |
+| **Issue Triage View** | [`public/views/issues.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/issues.js) | Customize issue filters, label tags, or one-click "Debug Issue" action. |
+| **4-Way Conflict Center** | [`public/views/conflicts.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/conflicts.js) | Adjust side-by-side 4-way editor, AI resolution selector, or test runners. |
+| **Commit History Timeline** | [`public/views/history.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/history.js) | Modify commit list rendering, author badges, or diff popups. |
+| **Settings & Diagnostics** | [`public/views/settings.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/settings.js) | Add configuration options, LLM model switches, or cache clear actions. |
+| **Master Navigation & Router** | [`public/app.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/app.js) | Adjust keyboard shortcuts, tab switching, or global notification toasts. |
+| **CSS Theme & Glassmorphic Tokens** | [`public/styles.css`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/styles.css) | Modify HSL color tokens, backdrop filters, typography, or responsive rules. |
+| **HTML Shell & Modal Skeletons** | [`public/index.html`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/index.html) | Add new modals, top navigation buttons, or sidebar menu items. |
+| **Express API Routing & Middleware** | [`src/app.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/app.ts) | Register new API routes, JWT security middleware, or error handlers. |
+| **Native OS Dialogs & File Ops** | [`src/api/fs.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/api/fs.ts) | Tweak PowerShell `FolderBrowserDialog` or OS file manager launchers. |
+| **Git Engine & Windows execFile** | [`src/git/engine.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/git/engine.ts) | Adjust Git command executions, risk classifications, or formatting flags. |
+| **Push Safeguards & Branch Protection** | [`src/git/push.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/git/push.ts) | Add protected branch patterns or modify force-push lease checks. |
+| **AI Commit Clustering & Messages** | [`src/git/change-analyzer.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/git/change-analyzer.ts) | Tune Groq Conventional Commit prompts or regex fallback clustering. |
+| **Agent State Machine & Planner** | [`src/agent/planner.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/agent/planner.ts) | Customize investigation phases, bug classifiers, or step sequences. |
+| **Critic Agent Review Gates** | [`src/agent/critic.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/agent/critic.ts) | Modify scoring thresholds, security criteria, or forbidden commands. |
+| **Patch Engine & Instant Rollback** | [`src/agent/patch-engine.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/agent/patch-engine.ts) | Adjust file snapshot storage or patch application algorithms. |
+| **GraphRAG Code Retrieval** | [`src/retrieval/retriever.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/retrieval/retriever.ts) | Tune hybrid search weights between graph edges and vector embeddings. |
+| **Input & Output Security Guards** | [`src/guardrails/input-guard.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/guardrails/input-guard.ts) | Update prompt injection regex patterns or secret scrubbing filters. |
 

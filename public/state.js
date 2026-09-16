@@ -15,12 +15,6 @@ window.state = {
   activeTab: "evidence",
   currentBrowsedPath: null,
   browsedFolderGit: null,
-  executionMode: localStorage.getItem("gda_exec_mode") || "local",
-  localAgent: {
-    isOnline: false,
-    paired: false,
-    version: "",
-  },
   gitDesktop: {
     changedFiles: [],
     currentFilter: "all",

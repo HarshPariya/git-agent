@@ -83,7 +83,7 @@ npm run rag:retrieve       # Hybrid search & reranking
 ```
 
 ### GitHub Actions CI
-The CI pipeline ([`.github/workflows/ci.yml`](file:///c:/Users/harsh/Desktop/Codage-tasks/ai-chatbot/.github/workflows/ci.yml)) automatically runs on pushes and pull requests across `main`, `development`, and `feature/**` branches. It validates:
+The CI pipeline ([`.github/workflows/ci.yml`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/.github/workflows/ci.yml)) automatically runs on pushes and pull requests across `main`, `development`, and `feature/**` branches. It validates:
 1. Clean dependency installation (`npm ci`)
 2. Full type checking (`npx tsc --noEmit`)
 3. Compilation (`npm run build`)

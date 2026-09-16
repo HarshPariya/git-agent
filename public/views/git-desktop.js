@@ -95,12 +95,6 @@ const resolveScope = ({ hasFrontend, hasApi, hasGit, hasTests }) =>
 const describeFile = (p) =>
   (DESCRIPTION_RULES.find((r) => r.match(p))?.text ?? DESCRIPTION_DEFAULT)(p);
 
-function isLocalMode(repo = window.state.activeRepository) {
-  if (window.state?.executionMode === "local") return true;
-  if (!repo) return false;
-  return Boolean(repo.isLocal || (typeof repo.id === "string" && repo.id.startsWith("local:")));
-}
-
 // ── Core ──────────────────────────────────────────────────────────────────────
 
 function applyGitStatusUpdate(status, repo = window.state.activeRepository, isBackground = true) {
@@ -256,19 +250,7 @@ async function loadGitDesktop(manual = false) {
   let repo = window.state.activeRepository || window.state.repositories?.[0];
   if (!repo) {
     const savedId = localStorage.getItem("gda_active_repo_id");
-    const localSavedPath = localStorage.getItem("gda_local_repo_path") || window.localAgentClient?.activeRepoPath;
-
-    if (window.state.executionMode === "local" && localSavedPath) {
-      repo = {
-        id: "local:" + localSavedPath,
-        name: localSavedPath.split(/[/\\]/).filter(Boolean).pop() || "Local Repo",
-        path: localSavedPath,
-        isLocal: true,
-        currentBranch: "main",
-        defaultBranch: "main",
-      };
-      window.setState("activeRepository", repo);
-    } else if (window.state.repositories?.length) {
+    if (window.state.repositories?.length) {
       repo = window.state.repositories.find((r) => r.id === savedId) || window.state.repositories[0];
     } else {
       try {
@@ -341,20 +323,6 @@ async function loadGitDesktop(manual = false) {
   if (repoNameEl) repoNameEl.textContent = repo.name || repo.path || "Repository";
 
   try {
-    if (isLocalMode(repo)) {
-      const localPath = repo.path || window.localAgentClient?.activeRepoPath;
-      if (!localPath) {
-        if (manual) showToast("No local repository folder selected. Click 'Open Local Folder'.", "info");
-        return;
-      }
-
-      if (window.localAgentClient) {
-        const status = await window.localAgentClient.getStatus(localPath);
-        applyGitStatusUpdate(status, repo, !manual);
-      }
-      return;
-    }
-
     connectGitDesktopStream(repo.id);
 
     // Auto-restore previously linked local directory if available and granted
@@ -418,19 +386,10 @@ async function toggleFileStaging(filePath, target) {
   renderGitDesktopChanges();
 
   try {
-    if (isLocalMode(repo)) {
-      const repoPath = repo.path || window.localAgentClient?.activeRepoPath;
-      if (isChecked) {
-        await window.localAgentClient.stage([filePath], repoPath);
-      } else {
-        await window.localAgentClient.unstage([filePath], repoPath);
-      }
+    if (isChecked) {
+      await api.stageFile(repo.id, filePath);
     } else {
-      if (isChecked) {
-        await api.stageFile(repo.id, filePath);
-      } else {
-        await api.unstageFile(repo.id, filePath);
-      }
+      await api.unstageFile(repo.id, filePath);
     }
   } catch (err) {
     console.warn("Staging sync warning:", err);
@@ -450,20 +409,10 @@ async function toggleAllStaging(target) {
   renderGitDesktopChanges();
 
   try {
-    if (isLocalMode(repo)) {
-      const repoPath = repo.path || window.localAgentClient?.activeRepoPath;
-      const allPaths = changedFiles.map((f) => f.filePath);
-      if (isChecked) {
-        await window.localAgentClient.stage(allPaths, repoPath);
-      } else {
-        await window.localAgentClient.unstage(allPaths, repoPath);
-      }
+    if (isChecked) {
+      await api.stageAll(repo.id);
     } else {
-      if (isChecked) {
-        await api.stageAll(repo.id);
-      } else {
-        await api.unstageAll(repo.id);
-      }
+      await api.unstageAll(repo.id);
     }
   } catch (err) {
     console.warn("Staging all sync warning:", err);
@@ -694,9 +643,7 @@ async function viewGitDesktopDiff(filePath, showLoading = true) {
   }
 
   try {
-    const res = isLocalMode(repo)
-      ? await window.localAgentClient.getDiff(filePath, false, repo.path || window.localAgentClient?.activeRepoPath)
-      : await api.getGitDiff(repo.id, filePath);
+    const res = await api.getGitDiff(repo.id, filePath);
     let diffText = "";
     if (res?.diff?.trim()) {
       diffText = res.diff;
@@ -805,9 +752,7 @@ async function viewAllFilesDiff(showLoading = true) {
   }
 
   try {
-    const res = isLocalMode(repo)
-      ? await window.localAgentClient.getDiff("", false, repo.path || window.localAgentClient?.activeRepoPath)
-      : await api.getGitDiff(repo.id, "");
+    const res = await api.getGitDiff(repo.id, "");
     const diffText = (res && res.diff) || (typeof res === "string" ? res : "");
 
     if (!diffText?.trim()) {
@@ -1078,34 +1023,19 @@ async function commitFromGitDesktop() {
     const filesToCommit = stageAll ? null : selectedFiles.map((f) => f.filePath);
 
     try {
-      if (isLocalMode(repo)) {
-        const repoPath = repo.path || window.localAgentClient?.activeRepoPath;
-        if (stageAll) {
-          const allPaths = selectedFiles.map((f) => f.filePath);
-          await window.localAgentClient.stage(allPaths, repoPath);
-        } else if (filesToCommit && filesToCommit.length > 0) {
-          await window.localAgentClient.stage(filesToCommit, repoPath);
-        }
-        await window.localAgentClient.commit(fullMessage, repoPath);
-        showToast(`Committed locally: ${summary}`, "success");
+      const res = await api.gitCommit(
+        repo.id,
+        fullMessage,
+        stageAll,
+        filesToCommit,
+      );
+      if (res.success) {
+        showToast(`Committed: ${summary}`, "success");
         if (summaryInput) summaryInput.value = "";
         if (descInput) descInput.value = "";
         await loadGitDesktop(false);
       } else {
-        const res = await api.gitCommit(
-          repo.id,
-          fullMessage,
-          stageAll,
-          filesToCommit,
-        );
-        if (res.success) {
-          showToast(`Committed: ${summary}`, "success");
-          if (summaryInput) summaryInput.value = "";
-          if (descInput) descInput.value = "";
-          await loadGitDesktop(false);
-        } else {
-          showToast(`Commit failed: ${res.error || res.message}`, "error");
-        }
+        showToast(`Commit failed: ${res.error || res.message}`, "error");
       }
     } catch (err) {
       showToast(`Commit error: ${err.message}`, "error");
@@ -1137,24 +1067,7 @@ async function triggerAIAnalyzeChanges() {
   if (summaryEl) summaryEl.textContent = "AI is inspecting AST symbols, imports, and git diffs...";
 
   try {
-    let data;
-    if (isLocalMode(repo)) {
-      const repoPath = repo.path || window.localAgentClient?.activeRepoPath;
-      const diffRes = await window.localAgentClient.getDiff("", false, repoPath);
-      const statusRes = await window.localAgentClient.getStatus(repoPath);
-      const files = (statusRes?.entries || []).map((e) => ({
-        filePath: e.filePath,
-        status: e.status,
-        staged: e.staged,
-      }));
-      data = await api.analyzeDiffDirect({
-        files,
-        diff: diffRes?.diff || "",
-        branch: statusRes?.branch || "main",
-      });
-    } else {
-      data = await api.analyzeChanges(repo.id);
-    }
+    const data = await api.analyzeChanges(repo.id);
     const plan = data.plan || data;
     setGitDesktopState({ commitPlan: plan });
 
@@ -1240,38 +1153,7 @@ async function triggerAICommitAll() {
   }
 
   try {
-    const groups = window.state.gitDesktop.commitPlan?.groups || [];
-
-    if (isLocalMode(repo)) {
-      const repoPath = repo.path || window.localAgentClient?.activeRepoPath;
-      let totalCreated = 0;
-      for (const grp of groups) {
-        if (grp.files && grp.files.length > 0) {
-          await window.localAgentClient.stage(grp.files, repoPath);
-          const { type, scope, subject, body } = grp.suggestedCommit || {};
-          const msg = grp.suggestedCommit
-            ? `${type}${scope ? `(${scope})` : ""}: ${subject}${body ? `\n\n${body}` : ""}`
-            : grp.name;
-          await window.localAgentClient.commit(msg, repoPath);
-          totalCreated++;
-        }
-      }
-      showToast(`Successfully created ${totalCreated} logical commits locally!`, "success");
-      await loadGitDesktop(false);
-      const commitAllBtn = document.getElementById("gd-btn-commit-all");
-      if (commitAllBtn) commitAllBtn.style.display = "none";
-      const planContainer = document.getElementById("gd-commit-plan-container");
-      if (planContainer) {
-        planContainer.innerHTML = `
-          <div class="empty-state" style="padding:24px">
-            <div class="empty-icon">✓</div>
-            <div class="empty-title">All groups committed!</div>
-            <div class="empty-desc">${totalCreated} verified commits created on local branch.</div>
-          </div>`;
-      }
-      return;
-    }
-
+    const groups = window.state.gitDesktop.commitPlan?.groups;
     const res = await api.executeCommitPlan(repo.id, groups);
 
     if (res.success) {
@@ -1307,15 +1189,9 @@ async function triggerGitFetch() {
 
   showToast("Fetching remote references...", "info");
   try {
-    if (isLocalMode(repo)) {
-      await window.localAgentClient.syncFetch("origin", repo.path || window.localAgentClient?.activeRepoPath);
-      await loadGitDesktop();
-      showToast("Fetched latest refs from origin", "success");
-    } else {
-      await api.gitFetch(repo.id);
-      await loadGitDesktop();
-      showToast("Fetched latest refs from origin", "success");
-    }
+    await api.gitFetch(repo.id);
+    await loadGitDesktop();
+    showToast("Fetched latest refs from origin", "success");
   } catch (err) {
     showToast(`Fetch error: ${err.message}`, "error");
   }
@@ -1326,26 +1202,17 @@ async function triggerGitPull() {
   if (!repo) return;
 
   try {
-    if (isLocalMode(repo)) {
-      const res = await window.localAgentClient.syncPull("origin", undefined, repo.path || window.localAgentClient?.activeRepoPath);
-      if (res?.conflict) {
-        showToast("Merge conflict encountered during pull! Opening Conflict Center...", "warning");
-        navigate("conflicts");
-        return;
-      }
-      await loadGitDesktop();
-      showToast("Pulled successfully from origin", "success");
-    } else {
-      const res = await api.gitPull(repo.id);
-      const hasConflict = !res.success && (res.error?.includes("conflict") || res.output?.includes("conflict"));
-      if (hasConflict) {
-        showToast("Merge conflict encountered during pull! Opening Conflict Center...", "warning");
-        navigate("conflicts");
-        return;
-      }
-      await loadGitDesktop();
-      showToast(res.success ? "Pulled successfully" : "Pull failed", res.success ? "success" : "error");
+    const res = await api.gitPull(repo.id);
+
+    const hasConflict = !res.success && (res.error?.includes("conflict") || res.output?.includes("conflict"));
+    if (hasConflict) {
+      showToast("Merge conflict encountered during pull! Opening Conflict Center...", "warning");
+      navigate("conflicts");
+      return;
     }
+
+    await loadGitDesktop();
+    showToast(res.success ? "Pulled successfully" : "Pull failed", res.success ? "success" : "error");
   } catch (err) {
     showToast(`Pull error: ${err.message}`, "error");
   }
@@ -1357,21 +1224,13 @@ async function triggerGitSync() {
 
   showToast("Syncing with remote...", "info");
   try {
-    if (isLocalMode(repo)) {
-      const repoPath = repo.path || window.localAgentClient?.activeRepoPath;
-      await window.localAgentClient.syncFetch("origin", repoPath);
-      const branch = window.state.gitDesktop.gitStatus?.branch || repo.currentBranch || "main";
-      await window.localAgentClient.syncPull("origin", branch, repoPath);
-      await loadGitDesktop();
-      showToast("Synchronized with origin", "success");
+    const res = await api.gitSync(repo.id);
+    await loadGitDesktop();
+
+    if (res.actionRequired === "diverged") {
+      showToast("Branches have diverged! Rebase or merge required.", "warning");
     } else {
-      const res = await api.gitSync(repo.id);
-      await loadGitDesktop();
-      if (res.actionRequired === "diverged") {
-        showToast("Branches have diverged! Rebase or merge required.", "warning");
-      } else {
-        showToast(res.message, "success");
-      }
+      showToast(res.message, "success");
     }
   } catch (err) {
     showToast(`Sync error: ${err.message}`, "error");
@@ -1390,15 +1249,9 @@ async function triggerGitStash() {
 
   showToast("Stashing changes...", "info");
   try {
-    if (isLocalMode(repo)) {
-      await window.localAgentClient.stashPush(msg || "WIP stash", repo.path || window.localAgentClient?.activeRepoPath);
-      showToast("Changes stashed locally!", "success");
-      await loadGitDesktop(false);
-    } else {
-      const res = await api.gitStash(repo.id, msg || "WIP stash");
-      showToast("Changes stashed successfully!", "success");
-      await loadGitDesktop(false);
-    }
+    const res = await api.gitStash(repo.id, msg || "WIP stash");
+    showToast("Changes stashed successfully!", "success");
+    await loadGitDesktop(false);
   } catch (err) {
     showToast(`Stash failed: ${err.message}`, "error");
   }
@@ -1413,15 +1266,9 @@ async function triggerGitStashPop() {
 
   showToast("Restoring stashed changes...", "info");
   try {
-    if (isLocalMode(repo)) {
-      await window.localAgentClient.stashPop(0, repo.path || window.localAgentClient?.activeRepoPath);
-      showToast("Stash applied and popped successfully!", "success");
-      await loadGitDesktop(false);
-    } else {
-      const res = await api.gitStashPop(repo.id);
-      showToast("Stash applied and popped successfully!", "success");
-      await loadGitDesktop(false);
-    }
+    const res = await api.gitStashPop(repo.id);
+    showToast("Stash applied and popped successfully!", "success");
+    await loadGitDesktop(false);
   } catch (err) {
     showToast(`Stash pop failed: ${err.message}`, "error");
   }
@@ -1464,9 +1311,7 @@ async function openPushPreviewModal() {
   openModal("modal-push-preview");
 
   try {
-    const branchesData = isLocalMode(repo)
-      ? { branches: await window.localAgentClient.listBranches(repo.path || window.localAgentClient?.activeRepoPath) }
-      : await api.getGitBranches(repo.id);
+    const branchesData = await api.getGitBranches(repo.id);
     const branches = branchesData.branches || [];
     if (branchSelect) {
       const otherBranches = branches.filter((b) => b.name !== currentBranch);
@@ -1481,9 +1326,7 @@ async function openPushPreviewModal() {
   }
 
   try {
-    const logData = isLocalMode(repo)
-      ? { commits: await window.localAgentClient.getLog(10, repo.path || window.localAgentClient?.activeRepoPath) }
-      : await api.getGitLog(repo.id, 10);
+    const logData = await api.getGitLog(repo.id, 10);
     const commits = logData.commits || logData.entries || [];
     const countEl = document.getElementById("push-commits-count");
     if (countEl) countEl.textContent = `${commits.length} outgoing commit(s)`;
@@ -1537,18 +1380,9 @@ async function executePushFromModal() {
   }
 
   try {
-    let res;
-    if (isLocalMode(repo)) {
-      res = await window.localAgentClient.syncPush(remote, targetBranch, setUpstream, repo.path || window.localAgentClient?.activeRepoPath);
-      closeModal("modal-push-preview");
-      await loadGitDesktop();
-      showToast(`Successfully pushed to ${remote}/${targetBranch}!`, "success");
-    } else {
-      res = await api.gitPush(repo.id, remote, targetBranch, setUpstream, forceWithLease);
-      closeModal("modal-push-preview");
-      await loadGitDesktop();
-      showToast(`Successfully pushed to ${remote}/${targetBranch}!`, "success");
-    }
+    const res = await api.gitPush(repo.id, remote, targetBranch, setUpstream, forceWithLease);
+    closeModal("modal-push-preview");
+    await loadGitDesktop();
 
     if (typeof window.renderPushSummaryView === "function") {
       await window.renderPushSummaryView(remote, targetBranch, res.output || res.message);
@@ -1578,9 +1412,7 @@ async function openBranchSwitcherModal() {
   openModal("modal-branch-switcher");
 
   try {
-    const data = isLocalMode(repo)
-      ? { branches: await window.localAgentClient.listBranches(repo.path || window.localAgentClient?.activeRepoPath) }
-      : await api.getGitBranches(repo.id);
+    const data = await api.getGitBranches(repo.id);
     allRepoBranches = data.branches || [];
     renderBranchSwitcherList(allRepoBranches);
   } catch (err) {
@@ -1607,7 +1439,7 @@ function renderBranchSwitcherList(branches) {
 
   const renderBranchItem = (b) => {
     const isCurrent = b.current || b.name === currentBranch;
-    const isRemote = !b.remote;
+    const isRemote = !!b.remote;
     return `
       <div class="branch-list-item ${isCurrent ? "active-branch" : ""}"
            data-action="checkoutSelectedBranch"
@@ -1630,68 +1462,57 @@ function renderBranchSwitcherList(branches) {
 
   let html = "";
 
+  // Current branch section
   if (currentBranchObj) {
-    html += `<div style="font-size:10.5px;font-weight:700;color:var(--c-text-muted);text-transform:uppercase;letter-spacing:0.5px;padding:4px 8px 6px">Current Branch</div>`;
+    html += `<div style="font-size:10px;font-weight:700;color:var(--c-text-muted);text-transform:uppercase;letter-spacing:0.06em;padding:4px 4px 6px">Current Branch</div>`;
     html += renderBranchItem(currentBranchObj);
   }
 
-  if (localBranches.length > 0) {
-    html += `<div style="font-size:10.5px;font-weight:700;color:var(--c-text-muted);text-transform:uppercase;letter-spacing:0.5px;padding:12px 8px 6px">Local Branches (${localBranches.length})</div>`;
-    localBranches.forEach((b) => {
-      html += renderBranchItem(b);
-    });
+  // Local branches
+  const otherLocal = localBranches.filter((b) => !b.current && b.name !== currentBranch);
+  if (otherLocal.length > 0) {
+    html += `<div style="font-size:10px;font-weight:700;color:var(--c-text-muted);text-transform:uppercase;letter-spacing:0.06em;padding:10px 4px 6px">Local Branches</div>`;
+    html += otherLocal.map(renderBranchItem).join("");
   }
 
+  // Remote branches
   if (remoteBranches.length > 0) {
-    html += `<div style="font-size:10.5px;font-weight:700;color:var(--c-text-muted);text-transform:uppercase;letter-spacing:0.5px;padding:12px 8px 6px">Remote Tracking Branches (${remoteBranches.length})</div>`;
-    remoteBranches.forEach((b) => {
-      html += renderBranchItem(b);
-    });
+    html += `<div style="font-size:10px;font-weight:700;color:var(--c-text-muted);text-transform:uppercase;letter-spacing:0.06em;padding:10px 4px 6px">Remote Branches</div>`;
+    html += remoteBranches.map(renderBranchItem).join("");
   }
 
   container.innerHTML = html;
+
+  // Hover effect
+  container.querySelectorAll(".branch-list-item:not(.active-branch)").forEach((el) => {
+    el.addEventListener("mouseenter", () => { el.style.background = "var(--c-surface-hover)"; el.style.borderColor = "var(--c-border)"; });
+    el.addEventListener("mouseleave", () => { el.style.background = ""; el.style.borderColor = "transparent"; });
+  });
 }
 
+
+
 function filterBranchList() {
-  const input = document.getElementById("branch-search-input");
-  const query = (input ? input.value : "").toLowerCase().trim();
-
-  if (!query) {
-    renderBranchSwitcherList(allRepoBranches);
-    return;
-  }
-
-  const filtered = allRepoBranches.filter((b) =>
-    b.name.toLowerCase().includes(query) || (b.remote && b.remote.toLowerCase().includes(query))
-  );
+  const query = document.getElementById("branch-search-input")?.value?.toLowerCase() || "";
+  const filtered = allRepoBranches.filter((b) => b.name.toLowerCase().includes(query));
   renderBranchSwitcherList(filtered);
 }
 
 async function checkoutSelectedBranch(branchName) {
   const repo = window.state.activeRepository;
-  if (!repo || !branchName) return;
+  if (!repo) return;
 
-  const currentBranch = window.state.gitDesktop.gitStatus?.branch || repo.currentBranch;
-  if (branchName === currentBranch) {
-    closeModal("modal-branch-switcher");
-    return;
-  }
-
+  // Find branch data to check if it's remote-only
   const branchData = allRepoBranches.find((b) => b.name === branchName);
   const isRemoteOnly = branchData?.remote && !branchData.current;
 
   try {
-    if (isLocalMode(repo)) {
-      await window.localAgentClient.checkoutBranch(branchName, repo.path || window.localAgentClient?.activeRepoPath);
-      closeModal("modal-branch-switcher");
-      showToast(`Switched to branch '${branchName}'`, "success");
-      await loadGitDesktop(false);
-    } else {
-      await api.checkoutBranch(repo.id, branchName, false);
-      closeModal("modal-branch-switcher");
-      showToast(`Switched to branch '${branchName}'${isRemoteOnly ? " (tracking remote)" : ""}`, "success");
-      await loadGitDesktop(false);
-    }
+    // For remote branches, we checkout with the plain name — git will auto-create local tracking
+    await api.checkoutBranch(repo.id, branchName, false);
+    closeModal("modal-branch-switcher");
+    showToast(`Switched to branch '${branchName}'${isRemoteOnly ? " (tracking remote)" : ""}`, "success");
+    // Refresh status
+    await loadGitDesktop(false);
   } catch (err) {
     showToast(`Failed to switch branch: ${err.message}`, "error");
   }
@@ -1704,45 +1525,28 @@ async function deleteLocalBranch(branchName) {
   if (!confirm(`Are you sure you want to delete local branch "${branchName}"?`)) return;
 
   try {
-    if (isLocalMode(repo)) {
-      await window.localAgentClient.deleteBranch(branchName, false, repo.path || window.localAgentClient?.activeRepoPath);
-      showToast(`Branch "${branchName}" deleted successfully.`, "success");
-      const branches = await window.localAgentClient.listBranches(repo.path || window.localAgentClient?.activeRepoPath);
-      allRepoBranches = branches || [];
-      renderBranchSwitcherList(allRepoBranches);
-      await loadGitDesktop(false);
-    } else {
-      await api.gitDeleteBranch(repo.id, branchName, false);
-      showToast(`Branch "${branchName}" deleted successfully.`, "success");
-      const data = await api.getGitBranches(repo.id);
-      allRepoBranches = data.branches || [];
-      renderBranchSwitcherList(allRepoBranches);
-      await loadGitDesktop(false);
-    }
+    await api.gitDeleteBranch(repo.id, branchName, false);
+    showToast(`Branch "${branchName}" deleted successfully.`, "success");
+    const data = await api.getGitBranches(repo.id);
+    allRepoBranches = data.branches || [];
+    renderBranchSwitcherList(allRepoBranches);
+    await loadGitDesktop(false);
   } catch (err) {
     if (confirm(`Failed to delete branch "${branchName}": ${err.message}\n\nDo you want to force delete it (-D)?`)) {
       try {
-        if (isLocalMode(repo)) {
-          await window.localAgentClient.deleteBranch(branchName, true, repo.path || window.localAgentClient?.activeRepoPath);
-          showToast(`Branch "${branchName}" force-deleted.`, "success");
-          const branches = await window.localAgentClient.listBranches(repo.path || window.localAgentClient?.activeRepoPath);
-          allRepoBranches = branches || [];
-          renderBranchSwitcherList(allRepoBranches);
-          await loadGitDesktop(false);
-        } else {
-          await api.gitDeleteBranch(repo.id, branchName, true);
-          showToast(`Branch "${branchName}" force-deleted.`, "success");
-          const data = await api.getGitBranches(repo.id);
-          allRepoBranches = data.branches || [];
-          renderBranchSwitcherList(allRepoBranches);
-          await loadGitDesktop(false);
-        }
+        await api.gitDeleteBranch(repo.id, branchName, true);
+        showToast(`Branch "${branchName}" force-deleted.`, "success");
+        const data = await api.getGitBranches(repo.id);
+        allRepoBranches = data.branches || [];
+        renderBranchSwitcherList(allRepoBranches);
+        await loadGitDesktop(false);
       } catch (fErr) {
         showToast(`Force delete failed: ${fErr.message}`, "error");
       }
     }
   }
 }
+
 
 async function createAndCheckoutBranch() {
   const repo = window.state.activeRepository;
@@ -1758,20 +1562,12 @@ async function createAndCheckoutBranch() {
   }
 
   try {
-    if (isLocalMode(repo)) {
-      await window.localAgentClient.createBranch(branchName, repo.path || window.localAgentClient?.activeRepoPath);
-      closeModal("modal-branch-switcher");
-      if (input) input.value = "";
-      showToast(`Created & switched to new branch '${branchName}'`, "success");
-      await loadGitDesktop(false);
-    } else {
-      await api.checkoutBranch(repo.id, branchName, true);
-      closeModal("modal-branch-switcher");
-      if (input) input.value = "";
-      showToast(`Created & switched to new branch '${branchName}'`, "success");
-      if (typeof window.setActiveRepository === "function") {
-        await window.setActiveRepository(repo);
-      }
+    await api.checkoutBranch(repo.id, branchName, true);
+    closeModal("modal-branch-switcher");
+    if (input) input.value = "";
+    showToast(`Created & switched to new branch '${branchName}'`, "success");
+    if (typeof window.setActiveRepository === "function") {
+      await window.setActiveRepository(repo);
     }
   } catch (err) {
     showToast(`Failed to create branch: ${err.message}`, "error");
@@ -2116,73 +1912,8 @@ async function checkLocalDirectoryChanges(repoId, dirHandle) {
 }
 
 async function linkLocalFolderToGitDesktop() {
-  if (isLocalMode()) {
-    if (!window.localAgentClient) {
-      showToast("Local agent client not initialized", "error");
-      return;
-    }
-
-    const health = await window.localAgentClient.checkHealth();
-    if (!health?.online) {
-      showToast("Local Agent is offline. Please run 'npm run local-agent' in terminal and connect pairing code.", "warning");
-      openLocalAgentModal();
-      return;
-    }
-
-    const currentPath = window.localAgentClient.activeRepoPath || localStorage.getItem("gda_local_repo_path") || "";
-    const promptMsg = "Enter the absolute path of your local Git repository folder:\n\n" +
-      "Examples:\n" +
-      "• Windows: C:\\Users\\user\\Projects\\MyProject\n" +
-      "• Mac/Linux: /home/user/projects/MyProject";
-    const chosenPath = prompt(promptMsg, currentPath);
-    if (!chosenPath || !chosenPath.trim()) return;
-
-    try {
-      showToast(`Validating local repository: ${chosenPath.trim()}...`, "info");
-      const validation = await window.localAgentClient.validateRepo(chosenPath.trim());
-      if (!validation?.isGit) {
-        showToast(`Folder is not a Git repository (${chosenPath.trim()}). Ensure .git directory exists.`, "error");
-        return;
-      }
-
-      window.localAgentClient.setActiveRepoPath(chosenPath.trim());
-
-      const localRepo = {
-        id: "local:" + chosenPath.trim(),
-        name: validation.name || chosenPath.trim().split(/[/\\]/).filter(Boolean).pop() || "Local Repo",
-        path: chosenPath.trim(),
-        isLocal: true,
-        currentBranch: validation.branch || "main",
-        defaultBranch: validation.branch || "main",
-        url: validation.remoteUrl || "",
-      };
-
-      window.setState("activeRepository", localRepo);
-      localStorage.setItem("gda_active_repo_id", localRepo.id);
-      localStorage.setItem("gda_local_repo_path", chosenPath.trim());
-
-      const repos = (window.state.repositories || []).filter((r) => r.id !== localRepo.id);
-      repos.unshift(localRepo);
-      window.setState("repositories", repos);
-
-      const badge = document.getElementById("gd-local-folder-badge");
-      const nameEl = document.getElementById("gd-local-folder-name");
-      if (badge && nameEl) {
-        nameEl.textContent = `Local: ${localRepo.name}`;
-        badge.style.display = "inline-flex";
-        badge.className = "badge badge-success";
-      }
-
-      showToast(`✓ Connected local repository: ${localRepo.name} (${localRepo.currentBranch})`, "success");
-      await loadGitDesktop(true);
-    } catch (err) {
-      showToast(`Failed to connect local folder: ${err.message}`, "error");
-    }
-    return;
-  }
-
   if (typeof window.showDirectoryPicker !== "function") {
-    showToast("File System Access API is not supported in this browser. Use 'Browse Repositories' or Local PC mode.", "warning");
+    showToast("File System Access API is not supported in this browser. Use 'Browse Repositories' to add a repository.", "warning");
     return;
   }
 
@@ -2242,14 +1973,7 @@ async function openGitDesktopFileEditor(filePath = "") {
   contentInput.value = "";
 
   if (filePath) {
-    const repo = window.state.activeRepository;
-    if (isLocalMode(repo)) {
-      try {
-        const repoPath = repo?.path || window.localAgentClient?.activeRepoPath;
-        const res = await window.localAgentClient.readFile(filePath, repoPath);
-        contentInput.value = res.content || "";
-      } catch (_) {}
-    } else if (window._activeLocalDirHandle) {
+    if (window._activeLocalDirHandle) {
       try {
         const parts = filePath.split("/").filter(Boolean);
         let curr = window._activeLocalDirHandle;
@@ -2290,16 +2014,6 @@ async function saveGitDesktopFile() {
   }
 
   try {
-    if (isLocalMode(repo)) {
-      const repoPath = repo.path || window.localAgentClient?.activeRepoPath;
-      await window.localAgentClient.writeFile(filePath, content, repoPath);
-      const modal = document.getElementById("modal-git-file-editor");
-      if (modal) modal.style.display = "none";
-      showToast(`Saved ${filePath} to local repository`, "success");
-      await loadGitDesktop(false);
-      return;
-    }
-
     if (window._activeLocalDirHandle) {
       try {
         const parts = filePath.split("/").filter(Boolean);
@@ -2343,14 +2057,6 @@ async function discardGitChanges(filePath = null) {
   }
 
   try {
-    if (isLocalMode(repo)) {
-      const repoPath = repo.path || window.localAgentClient?.activeRepoPath;
-      await window.localAgentClient.discard(filePath || "", repoPath);
-      showToast(`Discarded ${targetDesc}`, "info");
-      await loadGitDesktop(false);
-      return;
-    }
-
     const res = await api.discardGitChanges(repo.id, filePath);
 
     // If local folder is linked, mirror discard so watcher doesn't bounce the discarded change right back

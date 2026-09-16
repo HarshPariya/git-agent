@@ -201,14 +201,8 @@ async function loadGitDesktopHistory() {
   `).join("");
 
   try {
-    const isLocal = window.state?.executionMode === "local" || repo.isLocal;
-    let commits = [];
-    if (isLocal && window.localAgentClient) {
-      commits = await window.localAgentClient.getLog(25, repo.path || window.localAgentClient.activeRepoPath);
-    } else {
-      const logData = await api.getGitLog(repo.id, 25);
-      commits = logData.commits || logData.entries || [];
-    }
+    const logData = await api.getGitLog(repo.id, 25);
+    const commits = logData.commits || logData.entries || [];
 
     if (!commits.length) {
       container.innerHTML = `<div class="empty-state" style="padding:24px"><div class="empty-title">No commits found</div></div>`;

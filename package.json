@@ -16,7 +16,6 @@
     "test:api": "tsx tests/api.test.ts",
     "test:guardrails": "tsx tests/guardrails.test.ts",
     "test:desktop": "tsx tests/git-desktop.test.ts",
-    "test:local-agent": "tsx tests/local-agent.test.ts",
     "rag:parse": "tsx src/ingestion/test-parser.ts",
     "rag:graph": "tsx src/retrieval/test-graph-search.ts",
     "rag:vector": "tsx src/retrieval/test-vector-search.ts",
@@ -34,8 +33,8 @@
     "db:backup-test": "tsx src/db/test-backup.ts",
     "tool:search-code": "tsx src/retrieval/test-graph-search.ts",
     "tool:impact-analysis": "tsx src/retrieval/test-retriever.ts",
-    "lint": "eslint \"{src,apps}/**/*.ts\"",
-    "lint:fix": "eslint \"{src,apps}/**/*.ts\" --fix",
+    "lint": "eslint src/ apps/",
+    "lint:fix": "eslint src/ apps/ --fix",
     "format": "prettier --write \"{src,tests,api,apps}/**/*.ts\"",
     "format:check": "prettier --check \"{src,tests,api,apps}/**/*.ts\""
   },

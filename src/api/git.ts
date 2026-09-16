@@ -19,12 +19,7 @@ import { AppError } from "../errors/app-error.js";
 import { conflictAnalyzer } from "../git/conflicts.js";
 import { executeSafeCommit } from "../git/commit.js";
 import { executeSafePush } from "../git/push.js";
-import {
-  analyzeAndPlanCommits,
-  planCommitsFromFilesAndDiff,
-  executeCommitPlan,
-  type LogicalChangeGroup,
-} from "../git/change-analyzer.js";
+import { analyzeAndPlanCommits, executeCommitPlan, type LogicalChangeGroup } from "../git/change-analyzer.js";
 import { getGitHubToken } from "../github/auth.js";
 import { createGitHubPR } from "../github/pull-requests.js";
 import { generateText } from "../llm/client.js";
@@ -832,39 +827,6 @@ export async function gitAnalyzeChangesHandler(
     response.status(200).json({
       success: true,
       plan,
-      summary: plan.summary,
-      totalFiles: plan.totalFiles,
-      totalCommits: plan.totalCommits,
-      groups: plan.groups,
-      changedFiles: plan.changedFiles,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function gitAnalyzePlanDirectHandler(
-  request: Request,
-  response: Response,
-  next: NextFunction,
-): Promise<void> {
-  try {
-    const body = getGitRequestData(request);
-    const files = Array.isArray(body.files) ? (body.files as Array<{ filePath: string } | string>) : [];
-    const diff = typeof body.diff === "string" ? body.diff : "";
-
-    const normalizedFiles = files.map((f) => (typeof f === "string" ? { filePath: f } : f));
-    const plan = await planCommitsFromFilesAndDiff(normalizedFiles, diff);
-
-    response.status(200).json({
-      success: true,
-      plan: {
-        summary: plan.summary,
-        totalFiles: plan.totalFiles,
-        totalCommits: plan.totalCommits,
-        groups: plan.groups,
-        changedFiles: plan.changedFiles,
-      },
       summary: plan.summary,
       totalFiles: plan.totalFiles,
       totalCommits: plan.totalCommits,

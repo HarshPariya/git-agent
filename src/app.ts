@@ -21,7 +21,6 @@ import {
   gitOperationCatalogHandler,
   gitClassifyHandler,
   gitAnalyzeChangesHandler,
-  gitAnalyzePlanDirectHandler,
   gitExecuteCommitPlanHandler,
   gitSyncHandler,
   gitShipHandler,
@@ -286,7 +285,6 @@ app.post("/api/git/diff", ...protectedRoute, gitDiffHandler);
 app.post("/api/git/branches", ...protectedRoute, gitBranchesHandler);
 app.post("/api/git/operations/:operation", ...protectedRoute, gitExecuteHandler);
 app.post("/api/git/analyze-changes", ...protectedRoute, gitAnalyzeChangesHandler);
-app.post("/api/git/analyze-plan-direct", ...protectedRoute, gitAnalyzePlanDirectHandler);
 app.post("/api/git/commit-plan/execute", ...protectedRoute, gitExecuteCommitPlanHandler);
 app.post("/api/git/commit-all", ...protectedRoute, gitExecuteCommitPlanHandler);
 app.post("/api/git/sync", ...protectedRoute, gitSyncHandler);
