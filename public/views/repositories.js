@@ -153,7 +153,10 @@ async function setActiveRepository(repo) {
   }
 
   try {
-    const status = await api.getGitStatus(repo.id);
+    const isLocal = repo.isLocal || Boolean(repo.id && String(repo.id).startsWith("local:"));
+    const status = isLocal && window.localAgentClient
+      ? await window.localAgentClient.getStatus(repo.path || window.localAgentClient.activeRepoPath)
+      : await api.getGitStatus(repo.id);
     if (!status) return;
 
     const gitDesktopState = { gitStatus: status };

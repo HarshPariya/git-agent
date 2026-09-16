@@ -310,6 +310,58 @@ export async function analyzeAndPlanCommits(repoPath: string): Promise<CommitPla
   };
 }
 
+export async function planCommitsFromFilesAndDiff(
+  files: Array<{ filePath: string; status?: string; additions?: number; deletions?: number; staged?: boolean }>,
+  _diffText?: string,
+): Promise<CommitPlan> {
+  const changedFiles: ChangedFileDetail[] = files.map((f) => ({
+    filePath: f.filePath,
+    status: (f.status as ChangedFileDetail["status"]) || "modified",
+    staged: Boolean(f.staged),
+    additions: f.additions ?? 1,
+    deletions: f.deletions ?? 0,
+    risk: classifyFileRisk(f.filePath),
+  }));
+
+  if (!changedFiles.length) {
+    return {
+      summary: "Working tree is clean. No changed files to analyze.",
+      totalFiles: 0,
+      totalCommits: 0,
+      groups: [],
+      changedFiles: [],
+    };
+  }
+
+  if (isLlmAvailable()) {
+    try {
+      const result = await planWithLlm(changedFiles);
+      if (result) {
+        annotateFiles(changedFiles, result.groups);
+        return {
+          summary: result.summary,
+          totalFiles: changedFiles.length,
+          totalCommits: result.groups.length,
+          groups: result.groups,
+          changedFiles,
+        };
+      }
+    } catch {
+      // Fall through to heuristic planning
+    }
+  }
+
+  const heuristicGroups = groupFilesHeuristically(changedFiles);
+  annotateFiles(changedFiles, heuristicGroups);
+  return {
+    summary: `${changedFiles.length} changed files organized into ${heuristicGroups.length} logical change groups.`,
+    totalFiles: changedFiles.length,
+    totalCommits: heuristicGroups.length,
+    groups: heuristicGroups,
+    changedFiles,
+  };
+}
+
 interface LlmGroup {
   id?: string;
   name?: string;

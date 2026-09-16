@@ -23,6 +23,7 @@ const SUITES: TestSuite[] = [
   { name: "Git Desktop & Commit Plan Engine", command: "npx tsx tests/git-desktop.test.ts" },
   { name: "E2E Git Desktop Workflow & Synchronization", command: "npx tsx tests/e2e-git-desktop-workflow.test.ts" },
   { name: "Multi-Tenant Isolation & Restart Recovery", command: "npx tsx tests/tenant-and-recovery.test.ts" },
+  { name: "Local Companion Agent & Desktop Bridge", command: "npx tsx tests/local-agent.test.ts" },
   { name: "Production System E2E Smoke Test", command: "npx tsx tests/smoke.test.ts" },
 ];
 

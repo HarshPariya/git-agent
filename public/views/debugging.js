@@ -889,7 +889,21 @@ async function applyFix() {
     if (applyBtn) { applyBtn.disabled = true; applyBtn.textContent = "Applying..."; }
     if (diffApplyBtn) { diffApplyBtn.disabled = true; diffApplyBtn.textContent = "Applying..."; }
 
-    const res = await api.approveFix(window.state.currentSession.id);
+    const repo = window.state.activeRepository;
+    const isLocal = window.state.executionMode === "local" || repo?.isLocal || (repo?.id && String(repo.id).startsWith("local:"));
+    let res;
+    if (isLocal && window.localAgentClient) {
+      const repoPath = repo?.path || window.localAgentClient.activeRepoPath;
+      const fixPlan = window.state.currentFixPlan || window.state.currentSession?.fixPlan;
+      const changes = (fixPlan?.patches || fixPlan?.files || []).map((p) => ({
+        filePath: p.filePath || p.file || p.path,
+        content: p.content || p.patchedContent || p.patch || "",
+      })).filter((c) => Boolean(c.filePath && c.content));
+      res = await window.localAgentClient.applyPatch(changes, repoPath);
+    } else {
+      res = await api.approveFix(window.state.currentSession.id);
+    }
+
     if (!res.success) {
       showToast(`Failed to apply patch: ${res.error || "Unknown error"}`, "error");
       if (applyBtn) { applyBtn.disabled = false; applyBtn.textContent = "🔧 Apply Verified Patch"; }
@@ -928,7 +942,15 @@ async function revertFix() {
     if (revertBtn) { revertBtn.disabled = true; revertBtn.textContent = "Reverting..."; }
     if (diffRevertBtn) { diffRevertBtn.disabled = true; diffRevertBtn.textContent = "Reverting..."; }
 
-    const res = await api.revertFix(window.state.currentSession.id, window.state.currentBackupId);
+    const repo = window.state.activeRepository;
+    const isLocal = window.state.executionMode === "local" || repo?.isLocal || (repo?.id && String(repo.id).startsWith("local:"));
+    let res;
+    if (isLocal && window.localAgentClient) {
+      const repoPath = repo?.path || window.localAgentClient.activeRepoPath;
+      res = await window.localAgentClient.revertPatch(window.state.currentBackupId, repoPath);
+    } else {
+      res = await api.revertFix(window.state.currentSession.id, window.state.currentBackupId);
+    }
     if (!res.success) {
       showToast(`Revert failed: ${res.error || "Unknown error"}`, "error");
       return;

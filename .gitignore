@@ -9,3 +9,7 @@ coverage/
 .cache/
 *.log
 scratch/
+*.pem
+*.key
+credentials/
+secrets/

@@ -121,6 +121,28 @@
           <span id="header-active-repo-name">No repo selected</span>
           <span style="font-size:10px;color:var(--c-text-muted)">▾</span>
         </div>
+
+        <!-- Execution Mode Switcher: Local PC vs Cloud Remote -->
+        <div class="exec-mode-switch" id="header-exec-mode-switch"
+          style="display:inline-flex;border:1px solid var(--c-border);border-radius:var(--r-md);background:var(--c-surface-hover);padding:2px;gap:2px;align-items:center"
+          title="Switch between Local PC (Local Companion) and Cloud Remote (Render workspace)">
+          <button class="exec-mode-btn" id="btn-mode-local" data-action="switchExecutionMode" data-value="local"
+            style="padding:3px 9px;font-size:11px;font-weight:600;border:none;border-radius:var(--r-sm);cursor:pointer;background:var(--c-accent);color:white;display:inline-flex;align-items:center;gap:4px">
+            🖥 Local PC
+          </button>
+          <button class="exec-mode-btn" id="btn-mode-remote" data-action="switchExecutionMode" data-value="remote"
+            style="padding:3px 9px;font-size:11px;font-weight:600;border:none;border-radius:var(--r-sm);cursor:pointer;background:transparent;color:var(--c-text-muted);display:inline-flex;align-items:center;gap:4px">
+            ☁ Remote
+          </button>
+        </div>
+
+        <!-- Local Agent Status Indicator -->
+        <div id="header-local-agent-badge" class="badge"
+          style="display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 8px;cursor:pointer"
+          data-action="openLocalAgentModal" title="Local Companion Agent: click to check connection or view instructions">
+          <span id="header-agent-dot" style="width:7px;height:7px;border-radius:50%;background:var(--c-danger)"></span>
+          <span id="header-agent-text">Local Agent: Offline</span>
+        </div>
       </div>
 
       <nav class="header-nav">
@@ -1646,6 +1668,58 @@
     </div>
   </div>
 
+  <!-- Local Companion Agent Setup & Pairing Modal -->
+  <div id="modal-local-agent" class="modal-overlay" style="display:none">
+    <div class="modal" style="max-width:560px;width:94vw">
+      <div class="modal-close" data-action="closeModal" data-value="modal-local-agent">×</div>
+      <div class="modal-title" style="display:flex;align-items:center;gap:8px">
+        <span>🖥️</span> Connect Local Computer (Local Agent)
+      </div>
+      <div class="modal-desc" style="margin-bottom:14px">
+        To use Git Desktop and AI Debugging on your computer's local folders (e.g. <code>C:\Users\...\MyProject</code>), start the lightweight Git-Agent Companion on your PC.
+      </div>
+
+      <div class="card" style="padding:14px;background:var(--c-surface-hover);border:1px solid var(--c-border);margin-bottom:14px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:6px;display:flex;align-items:center;gap:6px">
+          <span>⚡ Step 1: Start Local Agent in terminal</span>
+        </div>
+        <pre style="background:#0f172a;color:#e2e8f0;padding:10px 12px;border-radius:var(--r-sm);font-family:var(--font-mono);font-size:12px;overflow-x:auto"><code>npm run local-agent</code></pre>
+        <div style="font-size:11px;color:var(--c-text-muted);margin-top:4px">Or directly: <code>npx tsx apps/local-agent/src/index.ts</code></div>
+      </div>
+
+      <div class="card" style="padding:14px;background:var(--c-surface-hover);border:1px solid var(--c-border);margin-bottom:14px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:6px">
+          <span>🔑 Step 2: Enter Pairing Code</span>
+        </div>
+        <div style="font-size:11px;color:var(--c-text-muted);margin-bottom:8px">
+          Copy the Pairing Code displayed in your terminal when the local agent starts:
+        </div>
+        <input class="form-input" id="local-agent-token-input" placeholder="Paste 64-char pairing code here..." style="font-family:var(--font-mono);font-size:12px;margin-bottom:8px" />
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="local-agent-url-input" value="http://127.0.0.1:41732" style="font-family:var(--font-mono);font-size:11px;width:180px" />
+          <button class="btn btn-primary btn-sm" id="btn-pair-local-agent" data-action="pairLocalAgent">
+            🔗 Connect &amp; Pair
+          </button>
+        </div>
+      </div>
+
+      <div id="local-agent-status-card" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:var(--r-md);border:1px solid var(--c-border);margin-bottom:12px;background:#fff">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div id="modal-agent-dot" style="width:10px;height:10px;border-radius:50%;background:var(--c-danger)"></div>
+          <div>
+            <div id="modal-agent-title" style="font-weight:700;font-size:12px">Local Agent: Offline</div>
+            <div id="modal-agent-sub" style="font-size:11px;color:var(--c-text-muted)">Waiting for loopback connection on 127.0.0.1:41732</div>
+          </div>
+        </div>
+        <button class="btn btn-secondary btn-sm" data-action="checkLocalAgentStatus">Check Status</button>
+      </div>
+
+      <div class="modal-actions" style="display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn btn-secondary" data-action="closeModal" data-value="modal-local-agent">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Git Desktop File Editor Modal (Edit & Create files directly from browser) -->
   <div id="modal-git-file-editor" class="modal-overlay" style="display:none">
     <div class="modal" style="max-width:720px;width:96vw">
@@ -1680,6 +1754,7 @@
 
   <script src="/config.js"></script>
   <script src="/api.js?v=2.1.0"></script>
+  <script src="/local-agent-client.js?v=2.2.0"></script>
   <script src="/state.js?v=2.1.0"></script>
   <script src="/components/diff-viewer.js?v=2.1.0"></script>
   <script src="/components/commit-plan.js?v=2.1.0"></script>

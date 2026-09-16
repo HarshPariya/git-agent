@@ -300,6 +300,7 @@ async function loadAll() {
     typeof loadGitHubStatus === "function" && loadGitHubStatus(),
     typeof loadDashboardStats === "function" && loadDashboardStats(),
     typeof loadHistory === "function" && loadHistory(),
+    typeof initLocalAgentIntegration === "function" && initLocalAgentIntegration(),
   ].filter(Boolean));
 }
 
@@ -635,6 +636,166 @@ function initScrollToTop() {
 }
 
 // ============================================================
+// LOCAL COMPANION AGENT & EXECUTION MODE
+// ============================================================
+
+function updateExecutionModeUI(mode) {
+  const localBtn = document.getElementById("btn-mode-local");
+  const remoteBtn = document.getElementById("btn-mode-remote");
+  if (!localBtn || !remoteBtn) return;
+
+  if (mode === "local") {
+    localBtn.style.background = "var(--c-accent)";
+    localBtn.style.color = "white";
+    remoteBtn.style.background = "transparent";
+    remoteBtn.style.color = "var(--c-text-muted)";
+  } else {
+    remoteBtn.style.background = "var(--c-accent)";
+    remoteBtn.style.color = "white";
+    localBtn.style.background = "transparent";
+    localBtn.style.color = "var(--c-text-muted)";
+  }
+}
+
+async function switchExecutionMode(targetMode) {
+  const mode = targetMode === "remote" ? "remote" : "local";
+  window.state.executionMode = mode;
+  localStorage.setItem("gda_exec_mode", mode);
+  updateExecutionModeUI(mode);
+
+  if (mode === "local") {
+    showToast("Switched to Local PC mode (using Local Companion Agent on 127.0.0.1:41732)", "info");
+    const health = await checkLocalAgentStatus();
+    if (!health?.online) {
+      openLocalAgentModal();
+    }
+  } else {
+    showToast("Switched to Remote/Cloud mode (using isolated server workspace)", "info");
+  }
+
+  // Refresh current view if relevant
+  if (window.state.currentPage === "git-desktop" && typeof loadGitDesktop === "function") {
+    loadGitDesktop(true);
+  } else if (window.state.currentPage === "repositories" && typeof loadRepositories === "function") {
+    loadRepositories();
+  }
+}
+
+async function checkLocalAgentStatus() {
+  const headerDot = document.getElementById("header-agent-dot");
+  const headerText = document.getElementById("header-agent-text");
+  const modalDot = document.getElementById("modal-agent-dot");
+  const modalTitle = document.getElementById("modal-agent-title");
+  const modalSub = document.getElementById("modal-agent-sub");
+
+  if (!window.localAgentClient) return { online: false };
+
+  try {
+    const res = await window.localAgentClient.checkHealth();
+    const isOnline = Boolean(res?.online);
+    const gitOk = Boolean(res?.gitInstalled);
+
+    window.state.localAgent.isOnline = isOnline;
+    window.state.localAgent.version = res?.version || "";
+
+    if (headerDot) {
+      headerDot.style.background = isOnline ? (gitOk ? "var(--c-success)" : "var(--c-warning)") : "var(--c-danger)";
+    }
+    if (headerText) {
+      headerText.textContent = isOnline
+        ? (gitOk ? "Local: Connected" : "Local: Git Missing")
+        : "Local Agent: Offline";
+    }
+
+    if (modalDot) {
+      modalDot.style.background = isOnline ? (gitOk ? "var(--c-success)" : "var(--c-warning)") : "var(--c-danger)";
+    }
+    if (modalTitle) {
+      modalTitle.textContent = isOnline
+        ? (gitOk ? `Connected (v${res.version || "1.0.0"})` : "Connected — Git Executable Missing!")
+        : "Local Agent: Offline";
+    }
+    if (modalSub) {
+      modalSub.textContent = isOnline
+        ? (gitOk ? `Git ${res.gitVersion || "detected"} on ${res.platform || "PC"} • Ready` : "Please ensure 'git' is in your system PATH.")
+        : "Run `npm run local-agent` in your terminal to start.";
+    }
+
+    return res;
+  } catch (err) {
+    if (headerDot) headerDot.style.background = "var(--c-danger)";
+    if (headerText) headerText.textContent = "Local Agent: Offline";
+    return { online: false, error: err.message };
+  }
+}
+
+function openLocalAgentModal() {
+  const tokenInput = document.getElementById("local-agent-token-input");
+  const urlInput = document.getElementById("local-agent-url-input");
+  if (tokenInput && window.localAgentClient?.token) {
+    tokenInput.value = window.localAgentClient.token;
+  }
+  if (urlInput && window.localAgentClient?.baseUrl) {
+    urlInput.value = window.localAgentClient.baseUrl;
+  }
+  checkLocalAgentStatus();
+  openModal("modal-local-agent");
+}
+
+async function pairLocalAgent() {
+  const tokenInput = document.getElementById("local-agent-token-input");
+  const urlInput = document.getElementById("local-agent-url-input");
+  const token = tokenInput?.value?.trim();
+  const url = urlInput?.value?.trim();
+
+  if (!token) {
+    showToast("Please enter the 64-character Pairing Code shown in your terminal.", "error");
+    return;
+  }
+
+  if (url && window.localAgentClient) {
+    window.localAgentClient.setBaseUrl(url);
+  }
+
+  try {
+    showToast("Connecting to Local Agent...", "info");
+    const result = await window.localAgentClient.pair(token);
+    showToast(`✓ Local Agent paired successfully! (${result.platform || "Local PC"})`, "success");
+    checkLocalAgentStatus();
+    setTimeout(() => {
+      closeModal("modal-local-agent");
+      if (window.state.executionMode === "local" && window.state.currentPage === "git-desktop" && typeof loadGitDesktop === "function") {
+        loadGitDesktop(true);
+      }
+    }, 800);
+  } catch (err) {
+    showToast(`Pairing failed: ${err.message}`, "error");
+    checkLocalAgentStatus();
+  }
+}
+
+function initLocalAgentIntegration() {
+  const mode = localStorage.getItem("gda_exec_mode") || "local";
+  window.state.executionMode = mode;
+  updateExecutionModeUI(mode);
+
+  if (window.localAgentClient) {
+    window.localAgentClient.subscribe((status) => {
+      const headerDot = document.getElementById("header-agent-dot");
+      const headerText = document.getElementById("header-agent-text");
+      if (headerDot) {
+        headerDot.style.background = status.isOnline ? "var(--c-success)" : "var(--c-danger)";
+      }
+      if (headerText) {
+        headerText.textContent = status.isOnline ? "Local: Connected" : "Local Agent: Offline";
+      }
+    });
+
+    checkLocalAgentStatus();
+  }
+}
+
+// ============================================================
 // MODALS & TOASTS
 // ============================================================
 
@@ -741,6 +902,10 @@ document.addEventListener("click", (e) => {
     adminViewActivity: () => typeof adminViewActivity === "function" && adminViewActivity(value),
     adminCloseActivityDetail: () => { const d = document.getElementById("admin-activity-detail-overlay"); if (d) d.style.display = "none"; },
     userRefreshActivity: () => typeof loadUserPanel === "function" && loadUserPanel(),
+    switchExecutionMode: () => switchExecutionMode(value || target?.dataset?.value),
+    openLocalAgentModal: () => openLocalAgentModal(),
+    checkLocalAgentStatus: () => checkLocalAgentStatus(),
+    pairLocalAgent: () => pairLocalAgent(),
   };
 
   // Delegate to view-specific handlers first, fall back to centralized handlers
@@ -891,3 +1056,8 @@ window.formatRelativeTime = formatRelativeTime;
 window.sleep = sleep;
 window.logout = logout;
 window.loadAll = loadAll;
+window.switchExecutionMode = switchExecutionMode;
+window.openLocalAgentModal = openLocalAgentModal;
+window.checkLocalAgentStatus = checkLocalAgentStatus;
+window.pairLocalAgent = pairLocalAgent;
+window.initLocalAgentIntegration = initLocalAgentIntegration;

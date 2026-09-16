@@ -253,6 +253,12 @@ class ApiClient {
       body: JSON.stringify({ repositoryId }),
     });
   }
+  async analyzeDiffDirect(data) {
+    return this.request("/api/git/analyze-plan-direct", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
   async executeCommitPlan(repositoryId, groups) {
     return this.request("/api/git/commit-plan/execute", {
       method: "POST",
