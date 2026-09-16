@@ -1088,10 +1088,7 @@ export async function gitStashHandler(request: Request, response: Response, next
     const repoId = requireString(body, "repositoryId");
     const message = optionalString(body, "message") ?? "WIP stash from Git Agent";
     const repoPath = getExecutionPath(repoId);
-    const result = await executeGitCommand(
-      `git stash push -m "${message.replace(/"/g, '\\"')}"`,
-      repoPath,
-    );
+    const result = await executeGitCommand(`git stash push -m "${message.replace(/"/g, '\\"')}"`, repoPath);
     const latest = await executeGitStatus(repoId).catch(() => null);
     response.status(200).json({ ...result, status: latest });
   } catch (error) {
@@ -1148,4 +1145,3 @@ export async function gitDeleteBranchHandler(request: Request, response: Respons
     next(error);
   }
 }
-

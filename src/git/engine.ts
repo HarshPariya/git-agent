@@ -397,7 +397,10 @@ export async function executeGitBranches(repoPath: string): Promise<GitBranch[]>
     const trimmed = line.trim();
     if (trimmed.startsWith("remotes/")) continue;
     const current = trimmed.startsWith("*");
-    const name = trimmed.replace(/^\*\s*/, "").replace(/\s+->.*$/, "").trim();
+    const name = trimmed
+      .replace(/^\*\s*/, "")
+      .replace(/\s+->.*$/, "")
+      .trim();
     if (!name || name.includes("HEAD")) continue;
     localBranches.add(name);
     result.push({ name, current, ahead: 0, behind: 0 });
@@ -408,7 +411,10 @@ export async function executeGitBranches(repoPath: string): Promise<GitBranch[]>
     const trimmed = line.trim();
     if (!trimmed.startsWith("remotes/")) continue;
     // Remove "remotes/" prefix to get "origin/branch-name"
-    const withoutRemotes = trimmed.replace(/^remotes\//, "").replace(/\s+->.*$/, "").trim();
+    const withoutRemotes = trimmed
+      .replace(/^remotes\//, "")
+      .replace(/\s+->.*$/, "")
+      .trim();
     if (withoutRemotes.includes("HEAD")) continue;
     // Extract remote name and branch name
     const slashIdx = withoutRemotes.indexOf("/");
