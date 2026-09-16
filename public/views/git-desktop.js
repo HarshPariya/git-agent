@@ -173,6 +173,7 @@ function applyGitStatusUpdate(status, repo = window.state.activeRepository, isBa
       viewGitDesktopDiff(fileToView, !isBackground);
     }
   } else {
+    setGitDesktopState({ selectedFile: null });
     const pathEl = document.getElementById("gd-diff-filepath");
     const currentPath = pathEl?.textContent || "";
     if (!currentPath.includes("Push to") && !currentPath.includes("Successful") && !currentPath.includes("Published")) {
@@ -193,18 +194,25 @@ function applyGitStatusUpdate(status, repo = window.state.activeRepository, isBa
       if (revealBtn) revealBtn.style.display = "none";
       if (editBtn) editBtn.style.display = "none";
 
+      const cleanHtml = `
+        <div class="empty-state" style="padding:60px 20px">
+          <div class="empty-icon" style="font-size:32px;color:#10b981">✓</div>
+          <div class="empty-title" style="font-size:15px;margin-top:8px">Working tree is clean</div>
+          <div class="empty-desc" style="max-width:400px;margin:8px auto 0;color:var(--c-text-muted)">
+            All changes committed and synchronized with your branch.
+          </div>
+        </div>`;
+
       const viewer = document.getElementById("gd-diff-viewer");
       if (viewer) {
-        viewer.innerHTML = `
-          <div class="empty-state" style="padding:60px 20px">
-            <div class="empty-icon" style="font-size:32px;color:#10b981">✓</div>
-            <div class="empty-title" style="font-size:15px;margin-top:8px">Working tree is clean</div>
-            <div class="empty-desc" style="max-width:400px;margin:8px auto 0;color:var(--c-text-muted)">
-              All changes committed and synchronized with your branch.
-            </div>
-          </div>`;
+        viewer.innerHTML = cleanHtml;
         window._currentRenderedDiffFile = null;
         window._currentRenderedDiffText = null;
+      }
+      const allViewer = document.getElementById("gd-all-diff-viewer");
+      if (allViewer) {
+        allViewer.innerHTML = cleanHtml;
+        allViewer.dataset.rendered = "";
       }
     }
   }
@@ -231,7 +239,11 @@ async function loadGitDesktop(manual = false) {
   // Auto-connect workspace if still no repo connected
   if (!repo) {
     try {
-      const res = await api.connectRepository({ name: "Git-Agent", localPath: "." });
+      const res = await api.connectRepository({
+        name: "Git-Agent",
+        localPath: ".",
+        url: "https://github.com/HarshPariya/git-agent.git",
+      });
       if (res?.repository) {
         repo = res.repository;
         localStorage.setItem("gda_active_repo_id", repo.id);
@@ -267,17 +279,26 @@ async function loadGitDesktop(manual = false) {
     if (!window._activeLocalDirHandle && typeof getStoredDirHandle === "function") {
       getStoredDirHandle("active_dir")
         .then(async (handle) => {
-          if (handle && typeof handle.queryPermission === "function") {
-            const perm = await handle.queryPermission({ mode: "readwrite" }).catch(() => "prompt");
+          if (handle) {
+            const badge = document.getElementById("gd-local-folder-badge");
+            const nameEl = document.getElementById("gd-local-folder-name");
+            const perm = typeof handle.queryPermission === "function"
+              ? await handle.queryPermission({ mode: "readwrite" }).catch(() => "prompt")
+              : "prompt";
             if (perm === "granted") {
               window._activeLocalDirHandle = handle;
-              const badge = document.getElementById("gd-local-folder-badge");
-              const nameEl = document.getElementById("gd-local-folder-name");
               if (badge && nameEl) {
                 nameEl.textContent = `Synced: ${handle.name}`;
                 badge.style.display = "inline-flex";
+                badge.className = "badge badge-success";
               }
               startLocalDirectorySync(repo.id, handle);
+            } else {
+              if (badge && nameEl) {
+                nameEl.textContent = `⚡ Re-sync: ${handle.name}`;
+                badge.style.display = "inline-flex";
+                badge.className = "badge badge-warning";
+              }
             }
           }
         })
@@ -301,6 +322,7 @@ function updateCommitButtonText() {
   const selectedCount = files.filter((f) => f.selected !== false).length;
   const countLabel = selectedCount > 0 ? ` (${selectedCount} files)` : files.length > 0 ? ` (${files.length} files)` : "";
   btn.innerHTML = `Commit to <span id="gd-commit-branch-label" style="font-weight:700;margin-left:2px">${escapeHtml(branch)}</span>${countLabel}`;
+  btn.disabled = files.length === 0 || selectedCount === 0;
 }
 
 async function toggleFileStaging(filePath, target) {
@@ -380,10 +402,10 @@ function renderGitDesktopChanges() {
 
   if (files.length === 0) {
     container.innerHTML = `
-      <div class="empty-state" style="padding:32px 16px">
-        <div class="empty-icon">✓</div>
-        <div class="empty-title">No changes found</div>
-        <div class="empty-desc">No files matching filter "${filter}".</div>
+      <div class="empty-state" style="padding:36px 16px;text-align:center">
+        <div class="empty-icon" style="font-size:28px;color:#10b981">✓</div>
+        <div class="empty-title" style="margin-top:6px;font-weight:600">No uncommitted changes</div>
+        <div class="empty-desc" style="font-size:12px;color:var(--c-text-muted);margin-top:4px">Your working tree is completely clean and matches branch HEAD.</div>
       </div>`;
     updateCommitButtonText();
     return;
@@ -1691,9 +1713,13 @@ async function startLocalDirectorySync(repoId, dirHandle) {
     for (const f of files) {
       _knownLocalFileMtimes.set(f.filePath, f.lastModified);
     }
-    // Batch sync to server
+    // Batch sync to server in small chunks of 15 files to avoid Vercel payload limit (4.5MB)
     if (files.length > 0) {
-      await api.syncGitWorkspace(repoId, files.map((f) => ({ filePath: f.filePath, content: f.content })));
+      const CHUNK_SIZE = 15;
+      for (let i = 0; i < files.length; i += CHUNK_SIZE) {
+        const slice = files.slice(i, i + CHUNK_SIZE);
+        await api.syncGitWorkspace(repoId, slice.map((f) => ({ filePath: f.filePath, content: f.content })));
+      }
       await loadGitDesktop(false);
     }
   } catch (err) {

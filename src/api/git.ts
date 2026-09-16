@@ -206,6 +206,9 @@ export async function gitSyncFileHandler(request: Request, response: Response, n
       await syncFs.promises.writeFile(targetFile, content ?? "", "utf8");
     }
 
+    // Refresh index so git immediately detects if file is restored back to clean HEAD
+    await execAsync("git update-index --refresh", { cwd: execPath }).catch(noop);
+
     const latest = await executeGitStatus(repoId);
     response.status(200).json({ success: true, filePath, status: latest });
   } catch (error) {
@@ -248,6 +251,8 @@ export async function gitSyncWorkspaceHandler(request: Request, response: Respon
         // Non-fatal if git commit fails
       }
     }
+
+    await execAsync("git update-index --refresh", { cwd: execPath }).catch(noop);
 
     const latest = await executeGitStatus(repoId);
     response.status(200).json({ success: true, count: written, status: latest });
@@ -405,9 +410,11 @@ export async function gitDiscardHandler(request: Request, response: Response, ne
     const repoPath = getExecutionPath(repoId);
 
     if (filePath) {
+      await execAsync(`git reset HEAD -- "${filePath}"`, { cwd: repoPath }).catch(noop);
       await execAsync(`git checkout -- "${filePath}"`, { cwd: repoPath }).catch(noop);
       await execAsync(`git clean -fd -- "${filePath}"`, { cwd: repoPath }).catch(noop);
     } else {
+      await execAsync("git reset HEAD -- .", { cwd: repoPath }).catch(noop);
       await execAsync("git checkout -- .", { cwd: repoPath }).catch(noop);
       await execAsync("git clean -fd", { cwd: repoPath }).catch(noop);
     }

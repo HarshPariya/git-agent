@@ -71,6 +71,26 @@ const validateLocalPath = (candidate: string): string => {
   return resolved;
 };
 
+function copyProjectDirectory(sourceDir: string, targetDir: string): void {
+  const IGNORED = new Set([".git", "node_modules", ".next", "dist", "build", ".gemini", ".cache", "$RECYCLE.BIN"]);
+  if (!fs.existsSync(sourceDir)) return;
+
+  const entries = fs.readdirSync(sourceDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (IGNORED.has(entry.name) || entry.name.startsWith(".")) continue;
+    const srcPath = path.join(sourceDir, entry.name);
+    const destPath = path.join(targetDir, entry.name);
+
+    if (entry.isDirectory()) {
+      fs.mkdirSync(destPath, { recursive: true });
+      copyProjectDirectory(srcPath, destPath);
+    } else if (entry.isFile()) {
+      fs.mkdirSync(path.dirname(destPath), { recursive: true });
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
 const sanitizeDefaultBranch = (branch: string): string =>
   branch && !branch.startsWith("feature/") && !branch.startsWith("fix/") ? branch : "main";
 
@@ -195,51 +215,67 @@ export class RepositoryStore {
       }
     }
 
+    const defaultRemoteUrl =
+      params.url ||
+      process.env.GIT_REPO_URL ||
+      process.env.GITHUB_REPO_URL ||
+      "https://github.com/HarshPariya/git-agent.git";
+
     // Ensure it is initialized as a valid git repository
     const gitDir = path.join(localPath, ".git");
     if (!fs.existsSync(gitDir)) {
       try {
         const { execFileAsync } = await import("../git/utils.js");
         let cloned = false;
-        if (params.url) {
+        if (defaultRemoteUrl) {
           try {
-            await execFileAsync("git", ["clone", "--depth", "100", params.url, localPath]);
+            await execFileAsync("git", ["clone", "--depth", "50", defaultRemoteUrl, localPath]);
             cloned = true;
           } catch (cloneErr) {
-            logger.warn("Direct clone failed, falling back to init and remote add", {
-              metadata: { url: params.url, error: String(cloneErr) },
+            logger.warn("Direct clone failed, falling back to local copy & init", {
+              metadata: { url: defaultRemoteUrl, error: String(cloneErr) },
             });
           }
         }
         if (!cloned) {
           await execFileAsync("git", ["init", "-b", "main"], { cwd: localPath });
-          const readmePath = path.join(localPath, "README.md");
-          if (!fs.existsSync(readmePath)) {
-            fs.writeFileSync(
-              readmePath,
-              `# ${params.name}\n\nWorkspace repository managed by Git Debug Agent.\n\nCreated: ${new Date().toISOString()}\n`,
-            );
-            await execFileAsync("git", ["config", "user.name", "Git Agent"], { cwd: localPath });
-            await execFileAsync("git", ["config", "user.email", "agent@git-agent.local"], { cwd: localPath });
-            await execFileAsync("git", ["add", "README.md"], { cwd: localPath });
-            await execFileAsync("git", ["commit", "-m", "Initial commit from Git Agent"], { cwd: localPath });
+          const sourceRoot = process.cwd();
+          if (sourceRoot && path.resolve(sourceRoot) !== path.resolve(localPath)) {
+            copyProjectDirectory(sourceRoot, localPath);
           }
-          if (params.url) {
-            await execFileAsync("git", ["remote", "add", "origin", params.url], { cwd: localPath }).catch(() => {});
-            await execFileAsync("git", ["pull", "origin", "main", "--allow-unrelated-histories"], {
-              cwd: localPath,
-            }).catch(() => {});
+          await execFileAsync("git", ["config", "user.name", "Git Agent"], { cwd: localPath });
+          await execFileAsync("git", ["config", "user.email", "agent@git-agent.local"], { cwd: localPath });
+          await execFileAsync("git", ["add", "-A"], { cwd: localPath });
+          await execFileAsync("git", ["commit", "-m", "Initial commit from Git Agent"], { cwd: localPath }).catch(
+            () => {},
+          );
+          if (defaultRemoteUrl) {
+            await execFileAsync("git", ["remote", "add", "origin", defaultRemoteUrl], { cwd: localPath }).catch(
+              () => {},
+            );
           }
         }
       } catch (gitErr) {
         logger.warn("Could not auto-initialize git in workspace", { metadata: { localPath, error: String(gitErr) } });
       }
-    } else if (params.url) {
+    } else {
+      // Repository already exists. Verify it is not an empty stub with just README.md
       try {
         const { execFileAsync } = await import("../git/utils.js");
-        await execFileAsync("git", ["remote", "add", "origin", params.url], { cwd: localPath }).catch(() => {});
-      } catch {
-        // remote might already exist
+        const { stdout: commitCountStr } = await execFileAsync("git", ["rev-list", "--count", "HEAD"], {
+          cwd: localPath,
+        }).catch(() => ({ stdout: "0" }));
+        const count = parseInt(commitCountStr.trim(), 10) || 0;
+        if (count <= 1 && defaultRemoteUrl) {
+          // If it was just an empty stub, fetch and checkout real remote main!
+          await execFileAsync("git", ["remote", "set-url", "origin", defaultRemoteUrl], { cwd: localPath }).catch(() =>
+            execFileAsync("git", ["remote", "add", "origin", defaultRemoteUrl], { cwd: localPath }),
+          );
+          await execFileAsync("git", ["fetch", "origin", "main", "--depth=50"], { cwd: localPath }).catch(() => {});
+          await execFileAsync("git", ["reset", "--hard", "origin/main"], { cwd: localPath }).catch(() => {});
+        }
+      } catch (syncErr) {
+        logger.warn("Could not sync stub repo with remote", { metadata: { error: String(syncErr) } });
       }
     }
 
@@ -256,12 +292,12 @@ export class RepositoryStore {
         ...existing,
         name: params.name || existing.name,
         localPath,
-        url: params.url ?? existing.url,
+        url: params.url ?? existing.url ?? defaultRemoteUrl,
       };
       return this.reconnectExisting(existingWithUpdatedPath);
     }
 
-    return this.createRepository({ ...params, localPath });
+    return this.createRepository({ ...params, localPath, url: params.url ?? defaultRemoteUrl });
   }
 
   async syncRepository(repositoryId: string, tenantId: string): Promise<SyncResult> {
