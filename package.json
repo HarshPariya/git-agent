@@ -6,7 +6,6 @@
   "main": "dist/src/app.js",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "local-agent": "tsx apps/local-agent/src/index.ts",
     "dev": "tsx watch src/app.ts",
     "build": "tsc",
     "start": "node dist/src/app.js",
@@ -33,10 +32,10 @@
     "db:backup-test": "tsx src/db/test-backup.ts",
     "tool:search-code": "tsx src/retrieval/test-graph-search.ts",
     "tool:impact-analysis": "tsx src/retrieval/test-retriever.ts",
-    "lint": "eslint src/ apps/",
-    "lint:fix": "eslint src/ apps/ --fix",
-    "format": "prettier --write \"{src,tests,api,apps}/**/*.ts\"",
-    "format:check": "prettier --check \"{src,tests,api,apps}/**/*.ts\""
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write \"{src,tests,api}/**/*.ts\"",
+    "format:check": "prettier --check \"{src,tests,api}/**/*.ts\""
   },
   "repository": {
     "type": "git",
