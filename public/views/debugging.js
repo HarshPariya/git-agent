@@ -167,6 +167,7 @@ async function startDebugFromForm() {
 // executeDebugPipeline — SSE-driven investigation pipeline
 // ────────────────────────────────────────────────────────────────────────────
 async function executeDebugPipeline(repoId, query, mode) {
+  cleanupDebugSession();
   window.setState("agentRunning", true);
 
   const spinner = byId("agent-spinner");

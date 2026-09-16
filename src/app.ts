@@ -424,9 +424,7 @@ app.get("/api/user/activity", ...protectedRoute, async (request, response, next)
   }
 });
 
-app.use(errorHandler);
-
-// Serve static frontend
+// Serve static frontend — must come before error handler
 const publicDir = process.env.PUBLIC_DIR ? path.resolve(process.env.PUBLIC_DIR) : path.resolve(process.cwd(), "public");
 app.use(
   express.static(publicDir, {
@@ -439,9 +437,17 @@ app.use(
     },
   }),
 );
-app.use((_req, res) => {
+// SPA fallback: return 404 for API routes, index.html for everything else
+app.use((req, res) => {
+  if (req.path.startsWith("/api/")) {
+    res.status(404).json({ error: { code: "NOT_FOUND", message: "Endpoint not found" } });
+    return;
+  }
   res.sendFile(path.join(publicDir, "index.html"));
 });
+
+// Global error handler — must be LAST middleware
+app.use(errorHandler);
 
 export const startServer = async (): Promise<void> => {
   // Connect to MongoDB on startup

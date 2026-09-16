@@ -106,6 +106,7 @@ export async function executeSafePush(repoPath: string, options: PushOptions = {
   const branch = options.branch?.trim() ? validateBranchName(options.branch) : preCheck.currentBranch;
   const refSpec = branch === preCheck.currentBranch ? branch : `${preCheck.currentBranch}:${branch}`;
   let pushDestination = escapeShellArg(remote);
+  let secretToRedact: string | undefined;
 
   // Authenticate remote with GitHub PAT if available and remote points to github.com
   if (options.gitHubToken) {
@@ -119,6 +120,7 @@ export async function executeSafePush(repoPath: string, options: PushOptions = {
           `https://${encodeURIComponent(options.gitHubToken)}@github.com/`,
         );
         pushDestination = escapeShellArg(authedUrl);
+        secretToRedact = encodeURIComponent(options.gitHubToken);
       }
     } catch {
       // Fallback to configured remote name
@@ -136,17 +138,25 @@ export async function executeSafePush(repoPath: string, options: PushOptions = {
 
   const cmd = `git push ${flags} ${pushDestination} ${escapedRefSpec}`.replace(/\s+/g, " ").trim();
 
+  const redact = (value: string): string =>
+    secretToRedact ? value.split(secretToRedact).join("***REDACTED***") : value;
+
   try {
     const { stdout, stderr } = await safeExec(cmd, repoPath);
-    return { success: true, branch, remote, output: stdout.trim() || stderr.trim() || "Push completed successfully." };
+    return {
+      success: true,
+      branch,
+      remote,
+      output: redact(stdout.trim()) || redact(stderr.trim()) || "Push completed successfully.",
+    };
   } catch (err: unknown) {
     const e = err as { stdout?: string; stderr?: string; message?: string };
     return {
       success: false,
       branch,
       remote,
-      output: e.stdout ?? "",
-      error: e.stderr ?? e.message ?? "Unknown push error",
+      output: redact(e.stdout ?? ""),
+      error: redact(e.stderr ?? e.message ?? "Unknown push error"),
     };
   }
 }

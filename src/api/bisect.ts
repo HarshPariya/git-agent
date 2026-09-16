@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../errors/app-error.js";
-import { executeGitStatus } from "../git/engine.js";
+import { executeGitStatus, getExecutionPath } from "../git/engine.js";
 import { runBisect, detectRegression } from "../git/bisect.js";
 import type { Repository } from "../types/git.js";
 
@@ -30,7 +30,7 @@ const makeRepository = (id: string, tenantId: string, userId: string): Repositor
   userId,
   name: id,
   url: "",
-  localPath: "",
+  localPath: getExecutionPath(id),
   defaultBranch: "main",
   currentBranch: "main",
   status: "connected",
@@ -69,9 +69,15 @@ export async function detectRegressionHandler(request: Request, response: Respon
     const repoId = requireString(body, "repositoryId");
     const startRef = optionalString(body, "startRef", "HEAD~10");
     const endRef = optionalString(body, "endRef", "HEAD");
+    const testCommand = optionalString(body, "testCommand", "");
 
     await executeGitStatus(repoId);
-    const result = await detectRegression(makeRepository(repoId, context.tenantId, context.userId), startRef, endRef);
+    const result = await detectRegression(
+      makeRepository(repoId, context.tenantId, context.userId),
+      startRef,
+      endRef,
+      testCommand || undefined,
+    );
 
     response.status(200).json(result);
   } catch (error) {

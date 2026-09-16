@@ -33,7 +33,7 @@ import { analyzeAndPlanCommits, executeCommitPlan, type LogicalChangeGroup } fro
 import { getGitHubToken } from "../github/auth.js";
 import { createGitHubPR } from "../github/pull-requests.js";
 import { generateText } from "../llm/client.js";
-import { execAsync, validateBranchName, validateRemoteName, escapeShellArg } from "../git/utils.js";
+import { execAsync, validateBranchName, validateRemoteName, escapeShellArg, validateFilePath } from "../git/utils.js";
 import { logger } from "../logging/logger.js";
 
 const getGitRequestData = (request: Request): Record<string, unknown> => ({
@@ -418,7 +418,7 @@ export async function gitStageHandler(request: Request, response: Response, next
   try {
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
-    const filePath = requireString(body, "filePath");
+    const filePath = validateFilePath(requireString(body, "filePath"));
     const repoPath = getExecutionPath(repoId);
     await execAsync(`git add "${filePath.replace(/"/g, '\\"')}"`, { cwd: repoPath });
     const status = await executeGitStatus(repoId);
@@ -432,7 +432,7 @@ export async function gitUnstageHandler(request: Request, response: Response, ne
   try {
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
-    const filePath = requireString(body, "filePath");
+    const filePath = validateFilePath(requireString(body, "filePath"));
     const repoPath = getExecutionPath(repoId);
     await execAsync(`git reset HEAD "${filePath.replace(/"/g, '\\"')}"`, { cwd: repoPath }).catch(async () => {
       await execAsync(`git rm --cached "${filePath.replace(/"/g, '\\"')}"`, { cwd: repoPath }).catch(noop);
@@ -474,7 +474,8 @@ export async function gitDiscardHandler(request: Request, response: Response, ne
   try {
     const body = getGitRequestData(request);
     const repoId = requireString(body, "repositoryId");
-    const filePath = optionalString(body, "filePath");
+    const rawFilePath = optionalString(body, "filePath");
+    const filePath = rawFilePath ? validateFilePath(rawFilePath) : undefined;
     const repoPath = getExecutionPath(repoId);
 
     let restoredContent: string | null = null;

@@ -17,7 +17,7 @@ export interface RegressionResult {
   readonly startRef: string;
   readonly endRef: string;
   readonly foundRegression: boolean;
-  readonly badCommit?: BisectResult;
+  readonly badCommit: BisectResult | undefined;
   readonly goodCommit?: BisectResult;
   readonly commitsTested: number;
 }
@@ -97,19 +97,38 @@ export async function runBisect(
   }
 }
 
-export async function detectRegression(repo: Repository, startRef: string, endRef: string): Promise<RegressionResult> {
-  const [startLog, endLog] = await Promise.all([
-    runGit(repo.localPath, ["log", "--oneline", "--format=%H|%an|%ai|%s", "-1", startRef]),
-    runGit(repo.localPath, ["log", "--oneline", "--format=%H|%an|%ai|%s", "-1", endRef]),
-  ]);
+export async function detectRegression(
+  repo: Repository,
+  startRef: string,
+  endRef: string,
+  testCommand?: string,
+): Promise<RegressionResult> {
+  const startLog = await runGit(repo.localPath, ["log", "--oneline", "--format=%H|%an|%ai|%s", "-1", startRef]);
+
+  // A regression can only be confirmed by actually testing commits; without a
+  // test command this is a metadata gap-lookup, not a detection.
+  if (!testCommand) {
+    return {
+      repositoryId: repo.id,
+      startRef,
+      endRef,
+      foundRegression: false,
+      goodCommit: { ...parseLogLine(startLog), isBad: false, isGood: true },
+      badCommit: undefined,
+      commitsTested: 0,
+    };
+  }
+
+  const bisect = await runBisect(repo, startRef, endRef, testCommand);
+  const foundRegression = !bisect.isGood;
 
   return {
     repositoryId: repo.id,
     startRef,
     endRef,
-    foundRegression: true,
-    badCommit: parseLogLine(endLog),
+    foundRegression,
+    badCommit: foundRegression ? bisect : undefined,
     goodCommit: { ...parseLogLine(startLog), isBad: false, isGood: true },
-    commitsTested: 0,
+    commitsTested: foundRegression ? 1 : 0,
   };
 }

@@ -393,10 +393,12 @@ class ApiClient {
       }),
     });
   }
-  async resolveConflicts(repositoryId) {
+  async resolveConflicts(repositoryId, filePath) {
+    const body = { repositoryId };
+    if (filePath) body.filePath = filePath;
     return this.request("/api/git/conflicts/resolve", {
       method: "POST",
-      body: JSON.stringify({ repositoryId }),
+      body: JSON.stringify(body),
     });
   }
   async gitStash(repositoryId, message = "WIP stash from Git Agent") {
