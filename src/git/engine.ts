@@ -376,20 +376,59 @@ export async function executeGitDiff(
 }
 
 export async function executeGitBranches(repoPath: string): Promise<GitBranch[]> {
-  const output = await runGit(getExecutionPath(repoPath), ["branch", "-a", "--no-color"]);
+  const execPath = getExecutionPath(repoPath);
+
+  // Try to fetch remote refs so remote branches are up-to-date (silently fail if offline)
+  try {
+    await execFileAsync("git", ["fetch", "--all", "--prune"], { cwd: execPath, timeout: 15000 });
+  } catch {
+    // Offline or no remote — continue with existing refs
+  }
+
+  const output = await runGit(execPath, ["branch", "-a", "--no-color"]);
   if (!output.trim()) return [];
 
-  return output
-    .replace(/\r/g, "")
-    .trim()
-    .split("\n")
-    .map((line) => {
-      const trimmed = line.trim();
-      const current = trimmed.startsWith("*");
-      const name = trimmed.replace("* ", "").replace(/^remotes\/[^/]+\//, "");
-      const remote = trimmed.startsWith("remotes/") ? trimmed : undefined;
-      return { name, current, ahead: 0, behind: 0, ...(remote !== undefined && { remote }) };
-    });
+  const localBranches = new Set<string>();
+  const result: GitBranch[] = [];
+
+  // First pass: collect local branches
+  const lines = output.replace(/\r/g, "").trim().split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("remotes/")) continue;
+    const current = trimmed.startsWith("*");
+    const name = trimmed.replace(/^\*\s*/, "").replace(/\s+->.*$/, "").trim();
+    if (!name || name.includes("HEAD")) continue;
+    localBranches.add(name);
+    result.push({ name, current, ahead: 0, behind: 0 });
+  }
+
+  // Second pass: collect remote branches (exclude ones that already exist as local)
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("remotes/")) continue;
+    // Remove "remotes/" prefix to get "origin/branch-name"
+    const withoutRemotes = trimmed.replace(/^remotes\//, "").replace(/\s+->.*$/, "").trim();
+    if (withoutRemotes.includes("HEAD")) continue;
+    // Extract remote name and branch name
+    const slashIdx = withoutRemotes.indexOf("/");
+    if (slashIdx === -1) continue;
+    const remoteName = withoutRemotes.slice(0, slashIdx);
+    const branchName = withoutRemotes.slice(slashIdx + 1);
+    if (!branchName) continue;
+    // Only add if no local tracking branch exists
+    if (!localBranches.has(branchName)) {
+      result.push({
+        name: branchName,
+        current: false,
+        ahead: 0,
+        behind: 0,
+        remote: remoteName,
+      });
+    }
+  }
+
+  return result;
 }
 
 export async function executeGitOperation(

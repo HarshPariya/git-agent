@@ -65,10 +65,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 });
 
+
 function showAuth() {
   document.getElementById("auth-page").style.display = "flex";
   document.getElementById("app").style.display = "none";
-  // Render Google button now that auth page is visible (needs real dimensions)
+  // Attempt to render Google button immediately; if GSI not loaded yet, set up pending init
   initGoogleSignIn();
 }
 
@@ -78,6 +79,10 @@ function showAuth() {
 // because `google` is undefined yet and the button would never render.
 function waitForGoogleScript(timeoutMs) {
   return new Promise((resolve) => {
+    if (typeof google !== "undefined" && google.accounts && google.accounts.id) {
+      resolve(true);
+      return;
+    }
     const deadline = Date.now() + timeoutMs;
     const check = () => {
       if (typeof google !== "undefined" && google.accounts && google.accounts.id) {
@@ -99,11 +104,25 @@ async function initGoogleSignIn() {
     const { clientId } = await api.getGoogleClientId();
     if (!clientId) return;
 
-    if (typeof google === "undefined") {
-      const ok = await waitForGoogleScript(8000);
-      if (!ok) return; // script never loaded (blocked/offline) — stay on email/password
+    // If Google library isn't loaded yet, register a pending init
+    // that will be called by window.onGoogleLibraryLoad (set in <head>)
+    if (typeof google === "undefined" || !google.accounts || !google.accounts.id) {
+      window._pendingGoogleInit = () => _doInitGoogleSignIn(clientId);
+      // Also start a background wait as fallback (in case onGoogleLibraryLoad missed)
+      waitForGoogleScript(10000).then((ok) => {
+        if (ok && !googleSignInReady) _doInitGoogleSignIn(clientId);
+      });
+      return;
     }
 
+    _doInitGoogleSignIn(clientId);
+  } catch {
+    // Google Sign-In not configured or unavailable — silently skip
+  }
+}
+
+function _doInitGoogleSignIn(clientId) {
+  try {
     if (googleSignInReady) {
       // Already initialized — re-render button if container is now visible
       const container = document.getElementById("google-signin-btn");
@@ -112,8 +131,9 @@ async function initGoogleSignIn() {
         google.accounts.id.renderButton(container, {
           theme: "outline",
           size: "large",
-          width: 320,
+          width: Math.min(container.offsetWidth || 320, 400),
           text: "continue_with",
+          locale: "en",
         });
       }
       return;
@@ -156,20 +176,37 @@ async function initGoogleSignIn() {
     });
 
     googleSignInReady = true;
+    window._pendingGoogleInit = null;
 
     const container = document.getElementById("google-signin-btn");
     if (container) {
-      google.accounts.id.renderButton(container, {
-        theme: "outline",
-        size: "large",
-        width: 320,
-        text: "continue_with",
-      });
+      // Wait for container to be in DOM and have width
+      const renderBtn = () => {
+        container.innerHTML = "";
+        google.accounts.id.renderButton(container, {
+          theme: "outline",
+          size: "large",
+          width: Math.min(container.offsetWidth || 320, 400),
+          text: "continue_with",
+          locale: "en",
+        });
+      };
+      if (container.offsetWidth > 0) {
+        renderBtn();
+      } else {
+        // Container not visible yet — wait for layout paint
+        requestAnimationFrame(() => {
+          requestAnimationFrame(renderBtn);
+        });
+        setTimeout(renderBtn, 150);
+        setTimeout(renderBtn, 500);
+      }
     }
   } catch {
-    // Google Sign-In not configured or unavailable — silently skip
+    // Silently skip
   }
 }
+
 
 function showApp(user, freshLogin = false) {
   document.getElementById("auth-page").style.display = "none";

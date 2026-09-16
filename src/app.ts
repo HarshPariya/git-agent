@@ -33,6 +33,10 @@ import {
   gitSyncFileHandler,
   gitSyncWorkspaceHandler,
   gitDiscardHandler,
+  gitStashHandler,
+  gitStashPopHandler,
+  gitStashListHandler,
+  gitDeleteBranchHandler,
 } from "./api/git.js";
 import {
   startDebugSessionHandler,
@@ -151,9 +155,9 @@ app.use(
 
 const SVG_FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#1f2937"/><stop offset="100%" stop-color="#000000"/></linearGradient></defs><rect x="8" y="8" width="84" height="84" rx="20" fill="url(#g)"/><polyline points="30,55 42,44 30,33" fill="none" stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/><line x1="46" y1="55" x2="68" y2="55" stroke="white" stroke-width="5" stroke-linecap="round" opacity="0.95"/></svg>`;
 
-app.get("/favicon.ico", (_request, response) => {
+app.get(["/favicon.ico", "/favicon.svg"], (_request, response) => {
   response.setHeader("Content-Type", "image/svg+xml");
-  response.setHeader("Cache-Control", "no-cache");
+  response.setHeader("Cache-Control", "public, max-age=86400");
   response.status(200).send(SVG_FAVICON);
 });
 
@@ -280,6 +284,12 @@ app.post("/api/git/commit-all", ...protectedRoute, gitExecuteCommitPlanHandler);
 app.post("/api/git/sync", ...protectedRoute, gitSyncHandler);
 app.post("/api/git/ship", ...protectedRoute, gitShipHandler);
 app.post("/api/git/generate-commit-message", ...protectedRoute, generateCommitMessageHandler);
+app.post("/api/git/stash", ...protectedRoute, gitStashHandler);
+app.post("/api/git/stash/pop", ...protectedRoute, gitStashPopHandler);
+app.get("/api/git/stash/list", ...protectedRoute, gitStashListHandler);
+app.post("/api/git/stash/list", ...protectedRoute, gitStashListHandler);
+app.post("/api/git/branch/delete", ...protectedRoute, gitDeleteBranchHandler);
+app.delete("/api/git/branch", ...protectedRoute, gitDeleteBranchHandler);
 
 // Debugging agent
 app.get("/api/debug", ...protectedRoute, listDebugSessionsHandler);

@@ -368,6 +368,30 @@ class ApiClient {
       body: JSON.stringify({ repositoryId }),
     });
   }
+  async gitStash(repositoryId, message = "WIP stash from Git Agent") {
+    return this.request("/api/git/stash", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, message }),
+    });
+  }
+  async gitStashPop(repositoryId) {
+    return this.request("/api/git/stash/pop", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId }),
+    });
+  }
+  async gitStashList(repositoryId) {
+    return this.request("/api/git/stash/list", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId }),
+    });
+  }
+  async gitDeleteBranch(repositoryId, branch, force = false) {
+    return this.request("/api/git/branch/delete", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId, branch, force }),
+    });
+  }
 
   // GraphRAG
   async indexRepository(repositoryId) {

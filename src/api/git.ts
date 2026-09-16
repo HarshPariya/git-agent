@@ -576,19 +576,29 @@ export async function gitDiffHandler(request: Request, response: Response, next:
           .split("\n")
           .map((f) => f.trim())
           .filter(Boolean)
-          .slice(0, 15)) {
+          .slice(0, 30)) {
           try {
-            const content = await fs.readFile(path.resolve(repoPath, uFile), "utf-8");
-            const lines = content.split("\n");
-            const uDiff = [
-              `diff --git a/${uFile} b/${uFile}`,
-              "new file mode 100644",
-              "--- /dev/null",
-              `+++ b/${uFile}`,
-              `@@ -0,0 +1,${lines.length} @@`,
-              ...lines.map((l) => `+${l}`),
-            ].join("\n");
-            diffText = diffText ? `${diffText}\n\n${uDiff}` : uDiff;
+            const isBinary = /\.(ico|png|jpg|jpeg|gif|webp|woff|woff2|ttf|eot|pdf|zip|tar|gz|exe|dll)$/i.test(uFile);
+            if (isBinary) {
+              const uDiff = [
+                `diff --git a/${uFile} b/${uFile}`,
+                "new file mode 100644",
+                `Binary files /dev/null and b/${uFile} differ`,
+              ].join("\n");
+              diffText = diffText ? `${diffText}\n\n${uDiff}` : uDiff;
+            } else {
+              const content = await fs.readFile(path.resolve(repoPath, uFile), "utf-8");
+              const lines = content.replace(/\r/g, "").split("\n");
+              const uDiff = [
+                `diff --git a/${uFile} b/${uFile}`,
+                "new file mode 100644",
+                "--- /dev/null",
+                `+++ b/${uFile}`,
+                `@@ -0,0 +1,${lines.length} @@`,
+                ...lines.map((l) => `+${l}`),
+              ].join("\n");
+              diffText = diffText ? `${diffText}\n\n${uDiff}` : uDiff;
+            }
           } catch (err: unknown) {
             logger.warn("Failed to read untracked file for diff", {
               operation: "git-diff",
@@ -626,7 +636,8 @@ export async function gitBranchesHandler(request: Request, response: Response, n
     const repoId = requireString(body, "repositoryId");
     await validateRepositoryAccess(repoId);
     const branches = await executeGitBranches(repoId);
-    response.status(200).json(branches);
+    // Return { branches: [] } so client code (data.branches || []) works correctly
+    response.status(200).json({ branches, count: branches.length });
   } catch (error) {
     next(error);
   }
@@ -1069,3 +1080,72 @@ export async function generateCommitMessageHandler(
     next(error);
   }
 }
+
+/** Stash current changes (git stash push -m <message>) */
+export async function gitStashHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    const message = optionalString(body, "message") ?? "WIP stash from Git Agent";
+    const repoPath = getExecutionPath(repoId);
+    const result = await executeGitCommand(
+      `git stash push -m "${message.replace(/"/g, '\\"')}"`,
+      repoPath,
+    );
+    const latest = await executeGitStatus(repoId).catch(() => null);
+    response.status(200).json({ ...result, status: latest });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Pop the most recent stash (git stash pop) */
+export async function gitStashPopHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    const repoPath = getExecutionPath(repoId);
+    const result = await executeGitCommand("git stash pop", repoPath);
+    const latest = await executeGitStatus(repoId).catch(() => null);
+    response.status(200).json({ ...result, status: latest });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** List stashes (git stash list) */
+export async function gitStashListHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    const repoPath = getExecutionPath(repoId);
+    const result = await executeGitCommand("git stash list", repoPath);
+    const stashes = (result.output || "")
+      .split("\n")
+      .filter(Boolean)
+      .map((line, i) => ({ index: i, description: line.trim() }));
+    response.status(200).json({ stashes, count: stashes.length });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Delete a local branch (git branch -d <branch>) */
+export async function gitDeleteBranchHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = getGitRequestData(request);
+    const repoId = requireString(body, "repositoryId");
+    const rawBranch = optionalString(body, "branch");
+    if (!rawBranch) throw new AppError("branch is required", "VALIDATION_ERROR", 400);
+    const branch = validateBranchName(rawBranch);
+    const force = body.force === true;
+    const repoPath = getExecutionPath(repoId);
+    const flag = force ? "-D" : "-d";
+    const result = await executeGitCommand(`git branch ${flag} ${escapeShellArg(branch)}`, repoPath);
+    const latest = await executeGitStatus(repoId).catch(() => null);
+    response.status(200).json({ ...result, branch, status: latest });
+  } catch (error) {
+    next(error);
+  }
+}
+

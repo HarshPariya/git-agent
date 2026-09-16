@@ -73,6 +73,11 @@ const ACTION_DISPATCH = {
   saveGitDesktopFile: () => saveGitDesktopFile(),
   discardGitChanges: (value, target) => discardGitChanges(value || target?.dataset?.path),
   discardAllGitChanges: () => discardAllGitChanges(),
+  triggerGitStash: () => triggerGitStash(),
+  triggerGitStashPop: () => triggerGitStashPop(),
+  deleteLocalBranch: (value) => deleteLocalBranch(value),
+  filterBranchList: () => filterBranchList(),
+  createAndCheckoutBranch: () => createAndCheckoutBranch(),
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -158,11 +163,15 @@ function applyGitStatusUpdate(status, repo = window.state.activeRepository, isBa
 
   // Auto-preview first changed file diff or keep current file diff if available
   if (changedFiles.length > 0) {
-    const currentSelected = window.state.gitDesktop?.selectedFile;
-    const fileToView = changedFiles.some((f) => f.filePath === currentSelected)
-      ? currentSelected
-      : changedFiles[0].filePath;
-    viewGitDesktopDiff(fileToView, !isBackground);
+    if (window.state.gitDesktop?.activeDiffTab === "gd-all-diff") {
+      viewAllFilesDiff(false);
+    } else {
+      const currentSelected = window.state.gitDesktop?.selectedFile;
+      const fileToView = changedFiles.some((f) => f.filePath === currentSelected)
+        ? currentSelected
+        : changedFiles[0].filePath;
+      viewGitDesktopDiff(fileToView, !isBackground);
+    }
   } else {
     const pathEl = document.getElementById("gd-diff-filepath");
     const currentPath = pathEl?.textContent || "";
@@ -386,15 +395,15 @@ function renderGitDesktopChanges() {
 
   // Overview row for All Changed Files (Continuous diff) with Select All checkbox
   html += `
-    <div class="git-change-row all-files-row" style="background:var(--c-surface-hover);font-weight:600;border-bottom:1.5px solid var(--c-border);display:flex;align-items:center;justify-content:space-between;padding:8px 12px">
+    <div class="git-change-row all-files-row" style="background:var(--c-surface-hover);font-weight:600;border-bottom:1.5px solid var(--c-border);display:flex;align-items:center;justify-content:space-between;padding:8px 12px;cursor:pointer" data-action="switchGitDesktopTab" data-value="gd-all-diff">
       <div style="display:flex;align-items:center;gap:10px">
-        <input type="checkbox" id="gd-select-all" ${allSelected ? "checked" : ""} style="cursor:pointer;width:15px;height:15px;accent-color:var(--c-accent)" title="Select / Deselect All for commit" data-action="toggleAllStaging">
-        <span class="git-file-name" style="font-weight:700;color:var(--c-accent);cursor:pointer" data-action="switchGitDesktopTab" data-value="gd-all-diff">
+        <input type="checkbox" id="gd-select-all" ${allSelected ? "checked" : ""} style="cursor:pointer;width:15px;height:15px;accent-color:var(--c-accent)" title="Select / Deselect All for commit" data-action="toggleAllStaging" data-stopprop="true">
+        <span class="git-file-name" style="font-weight:700;color:var(--c-accent);cursor:pointer">
           All Changed Files (${allChanged.length})
         </span>
       </div>
       <div class="git-change-right">
-        <span class="badge badge-secondary" style="font-size:10px;cursor:pointer" data-action="switchGitDesktopTab" data-value="gd-all-diff">VIEW ALL</span>
+        <span class="badge badge-secondary" style="font-size:10px;cursor:pointer">VIEW ALL</span>
       </div>
     </div>`;
 
@@ -495,32 +504,40 @@ async function viewGitDesktopDiff(filePath, showLoading = true) {
     return;
   }
 
-  setGitDesktopState({ selectedFile: filePath });
+  setGitDesktopState({ selectedFile: filePath, activeDiffTab: "gd-diff" });
 
-  const revealBtn = document.getElementById("gd-btn-reveal-os");
-  const editBtn = document.getElementById("gd-btn-open-editor");
-  if (revealBtn) revealBtn.style.display = "inline-flex";
-  if (editBtn) editBtn.style.display = "inline-flex";
+  const diffBtn = document.getElementById("gd-tab-btn-diff");
+  const allDiffBtn = document.getElementById("gd-tab-btn-all-diff");
+  const diffPanel = document.getElementById("panel-gd-diff");
+  const allDiffPanel = document.getElementById("panel-gd-all-diff");
+
+  if (diffBtn) diffBtn.className = "btn btn-secondary btn-sm";
+  if (allDiffBtn) allDiffBtn.className = "btn btn-ghost btn-sm";
+  if (diffPanel) diffPanel.style.display = "block";
+  if (allDiffPanel) allDiffPanel.style.display = "none";
 
   const pathEl = document.getElementById("gd-diff-filepath");
   if (pathEl) pathEl.textContent = filePath;
 
   const statusBadge = document.getElementById("gd-diff-status-badge");
+  const currentFileObj = (window.state.gitDesktop?.changedFiles || []).find((f) => f.filePath === filePath);
   if (statusBadge) {
-    const fileObj = window.state.gitDesktop.changedFiles?.find((f) => f.filePath === filePath);
-    const statusText = fileObj ? fileObj.status.toUpperCase() : "MODIFIED";
-    statusBadge.textContent = statusText;
+    const code = currentFileObj?.code || "M";
+    statusBadge.textContent = code === "A" ? "ADDED" : code === "D" ? "DELETED" : code === "U" ? "UNTRACKED" : "MODIFIED";
+    statusBadge.className = `badge ${currentFileObj?.status === "added" ? "badge-success" : currentFileObj?.status === "deleted" ? "badge-danger" : "badge-accent"}`;
     statusBadge.style.display = "inline-block";
-    statusBadge.className = `badge ${resolveStatusBadgeClass(statusText)}`;
   }
 
-  const metaEl = document.getElementById("gd-diff-meta");
-  if (metaEl) metaEl.textContent = `Unified diff for ${filePath}`;
-
-  document.querySelectorAll(".git-change-row").forEach((r) => {
-    const nameEl = r.querySelector(".git-file-name");
-    r.classList.toggle("selected", nameEl?.getAttribute("title") === filePath);
-  });
+  const revealBtn = document.getElementById("gd-btn-reveal-os");
+  const editBtn = document.getElementById("gd-btn-open-editor");
+  if (revealBtn) {
+    revealBtn.dataset.value = filePath;
+    revealBtn.style.display = "inline-flex";
+  }
+  if (editBtn) {
+    editBtn.dataset.value = filePath;
+    editBtn.style.display = "inline-flex";
+  }
 
   const summaryInput = document.getElementById("gd-commit-summary");
   if (summaryInput && !summaryInput.value.trim()) {
@@ -532,7 +549,6 @@ async function viewGitDesktopDiff(filePath, showLoading = true) {
   if (viewer && (showLoading || isDifferentFile)) {
     viewer.innerHTML = `<div style="text-align:center;padding:32px 16px;color:var(--c-text-muted)"><div class="spinner"></div><div style="margin-top:8px">Loading unified diff for ${escapeHtml(filePath)}...</div></div>`;
   }
-  switchGitDesktopTab("gd-diff");
 
   try {
     const res = await api.getGitDiff(repo.id, filePath);
@@ -597,18 +613,30 @@ async function openSpecificFileInOs(filePath, mode = "reveal") {
   }
 }
 
-async function viewAllFilesDiff() {
+async function viewAllFilesDiff(showLoading = true) {
   const repo = window.state.activeRepository;
   if (!repo) {
     showToast("Select a repository first", "warning");
     return;
   }
 
+  setGitDesktopState({ activeDiffTab: "gd-all-diff" });
+
+  const diffBtn = document.getElementById("gd-tab-btn-diff");
+  const allDiffBtn = document.getElementById("gd-tab-btn-all-diff");
+  const diffPanel = document.getElementById("panel-gd-diff");
+  const allDiffPanel = document.getElementById("panel-gd-all-diff");
+
+  if (diffBtn) diffBtn.className = "btn btn-ghost btn-sm";
+  if (allDiffBtn) allDiffBtn.className = "btn btn-secondary btn-sm";
+  if (diffPanel) diffPanel.style.display = "none";
+  if (allDiffPanel) allDiffPanel.style.display = "block";
+
   const pathEl = document.getElementById("gd-diff-filepath");
   if (pathEl) pathEl.textContent = "All Changed Files";
 
   const statusBadge = document.getElementById("gd-diff-status-badge");
-  const files = window.state.gitDesktop.changedFiles || [];
+  const files = window.state.gitDesktop?.changedFiles || [];
   if (statusBadge) {
     statusBadge.textContent = `${files.length} FILES`;
     statusBadge.style.display = "inline-block";
@@ -627,7 +655,7 @@ async function viewAllFilesDiff() {
   if (countBadge) countBadge.textContent = files.length;
 
   const viewer = document.getElementById("gd-all-diff-viewer");
-  if (viewer) {
+  if (viewer && showLoading && (!viewer.dataset.rendered || viewer.innerHTML.includes("empty-state"))) {
     viewer.innerHTML = `<div style="text-align:center;padding:40px 16px;color:var(--c-text-muted)"><div class="spinner"></div><div style="margin-top:8px">Loading complete unified diff across all changed files...</div></div>`;
   }
 
@@ -647,6 +675,7 @@ async function viewAllFilesDiff() {
       return;
     }
 
+    if (viewer) viewer.dataset.rendered = "true";
     renderMultiFileDiff("gd-all-diff-viewer", diffText);
   } catch (err) {
     if (viewer) viewer.innerHTML = `<div class="text-danger" style="padding:16px">Error loading all diffs: ${escapeHtml(err.message)}</div>`;
@@ -657,20 +686,21 @@ function renderMultiFileDiff(containerId, diffText) {
   const el = document.getElementById(containerId);
   if (!el) return;
 
-  if (!diffText?.trim()) {
+  const cleanText = (diffText || "").replace(/\r/g, "");
+  if (!cleanText.trim()) {
     el.innerHTML = `<div class="empty-state" style="padding:32px"><div class="empty-title">No diff content</div></div>`;
     return;
   }
 
-  const fileChunks = diffText.split(/(?=diff --git )/g).filter(Boolean);
+  const fileChunks = cleanText.split(/(?:\n|^)(?=diff --git a\/)/).filter(Boolean);
   let html = `<div style="display:flex;flex-direction:column;gap:16px">`;
 
   fileChunks.forEach((chunk) => {
-    const firstLine = chunk.split("\n")[0] || "";
-    const match = /diff --git a\/(.*?) b\/(.*)/.exec(firstLine);
-    const filePath = match ? match[2] : (firstLine.replace("diff --git ", "") || "Modified File");
+    const lines = chunk.trim().split("\n");
+    const firstLine = lines[0] || "";
+    const match = /^diff --git a\/(.*?) b\/(.*)$/.exec(firstLine);
+    const filePath = match ? match[2].trim() : (firstLine.replace(/^diff --git a\//, "").replace(/^diff --git /, "").trim() || "Modified File");
 
-    const lines = chunk.split("\n");
     let additions = 0;
     let deletions = 0;
     lines.forEach((l) => {
@@ -695,8 +725,13 @@ function renderMultiFileDiff(containerId, diffText) {
 
     let lineNumOld = 0;
     let lineNumNew = 0;
+    let renderedLinesCount = 0;
 
-    const SKIP_PREFIXES = ["diff --git", "index ", "--- ", "+++ ", "new file mode"];
+    const SKIP_PREFIXES = [
+      "diff --git", "index ", "--- ", "+++ ", "new file mode",
+      "deleted file mode", "old mode", "new mode", "similarity index",
+      "rename from", "rename to", "\\ No newline at end of file"
+    ];
 
     const renderDiffLine = {
       chunk: (escaped) => `<div class="diff-file-row diff-line-chunk"><div class="diff-line-number" style="background:#f1f5f9;color:#64748b">...</div><div class="diff-line-content">${escaped}</div></div>`,
@@ -707,6 +742,11 @@ function renderMultiFileDiff(containerId, diffText) {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (line.startsWith("Binary files")) {
+        html += `<div class="diff-file-row diff-line-chunk"><div class="diff-line-number" style="background:#f1f5f9;color:#64748b">...</div><div class="diff-line-content" style="color:var(--c-text-muted);font-style:italic">Binary file (diff not displayed)</div></div>`;
+        renderedLinesCount++;
+        continue;
+      }
       if (SKIP_PREFIXES.some((p) => line.startsWith(p))) continue;
       const escaped = escapeHtml(line);
 
@@ -717,15 +757,23 @@ function renderMultiFileDiff(containerId, diffText) {
           lineNumNew = parseInt(hunkMatch[2], 10);
         }
         html += renderDiffLine.chunk(escaped);
+        renderedLinesCount++;
       } else if (line.startsWith("+")) {
         html += renderDiffLine.add(escaped, lineNumNew > 0 ? lineNumNew++ : "+");
+        renderedLinesCount++;
       } else if (line.startsWith("-")) {
         html += renderDiffLine.del(escaped, lineNumOld > 0 ? lineNumOld++ : "-");
+        renderedLinesCount++;
       } else {
         if (lineNumOld > 0) lineNumOld++;
         if (lineNumNew > 0) lineNumNew++;
         html += renderDiffLine.context(escaped, lineNumNew > 0 ? (lineNumNew - 1) : "");
+        renderedLinesCount++;
       }
+    }
+
+    if (renderedLinesCount === 0) {
+      html += `<div class="diff-file-row diff-line-chunk"><div class="diff-line-number" style="background:#f1f5f9;color:#64748b">...</div><div class="diff-line-content" style="color:var(--c-text-muted);font-style:italic">File mode changed or empty file</div></div>`;
     }
 
     html += `</div>`;
@@ -799,6 +847,7 @@ function renderFormattedDiff(containerId, diffText, filePath = "") {
 }
 
 function switchGitDesktopTab(tabName) {
+  setGitDesktopState({ activeDiffTab: tabName });
   const diffBtn = document.getElementById("gd-tab-btn-diff");
   const allDiffBtn = document.getElementById("gd-tab-btn-all-diff");
   const diffPanel = document.getElementById("panel-gd-diff");
@@ -810,7 +859,16 @@ function switchGitDesktopTab(tabName) {
   if (diffPanel) diffPanel.style.display = tabName === "gd-diff" ? "block" : "none";
   if (allDiffPanel) allDiffPanel.style.display = tabName === "gd-all-diff" ? "block" : "none";
 
-  if (tabName === "gd-all-diff") viewAllFilesDiff();
+  if (tabName === "gd-all-diff") {
+    viewAllFilesDiff(true);
+  } else if (tabName === "gd-diff") {
+    const currentSelected = window.state.gitDesktop?.selectedFile;
+    const files = window.state.gitDesktop?.changedFiles || [];
+    const fileToView = files.some((f) => f.filePath === currentSelected) ? currentSelected : (files[0]?.filePath);
+    if (fileToView) {
+      viewGitDesktopDiff(fileToView, false);
+    }
+  }
 }
 
 function switchGitDesktopLeftTab(tab) {
@@ -1087,6 +1145,43 @@ async function triggerGitSync() {
   }
 }
 
+async function triggerGitStash() {
+  const repo = window.state.activeRepository;
+  if (!repo) {
+    showToast("Select a repository first", "warning");
+    return;
+  }
+
+  const msg = prompt("Enter stash message (optional):", "WIP stash from Git Desktop");
+  if (msg === null) return; // User cancelled prompt
+
+  showToast("Stashing changes...", "info");
+  try {
+    const res = await api.gitStash(repo.id, msg || "WIP stash");
+    showToast("Changes stashed successfully!", "success");
+    await loadGitDesktop(false);
+  } catch (err) {
+    showToast(`Stash failed: ${err.message}`, "error");
+  }
+}
+
+async function triggerGitStashPop() {
+  const repo = window.state.activeRepository;
+  if (!repo) {
+    showToast("Select a repository first", "warning");
+    return;
+  }
+
+  showToast("Restoring stashed changes...", "info");
+  try {
+    const res = await api.gitStashPop(repo.id);
+    showToast("Stash applied and popped successfully!", "success");
+    await loadGitDesktop(false);
+  } catch (err) {
+    showToast(`Stash pop failed: ${err.message}`, "error");
+  }
+}
+
 async function openPushPreviewModal() {
   const repo = window.state.activeRepository;
   if (!repo) {
@@ -1242,22 +1337,68 @@ function renderBranchSwitcherList(branches) {
   const currentBranch = window.state.gitDesktop.gitStatus?.branch || window.state.activeRepository?.currentBranch || "main";
 
   if (branches.length === 0) {
-    container.innerHTML = `<div class="text-muted" style="text-align:center;padding:20px;font-size:12px">No branches found.</div>`;
+    container.innerHTML = `<div class="text-muted" style="text-align:center;padding:20px;font-size:12px">No branches found. Connect a repository with a remote to see all branches.</div>`;
     return;
   }
 
-  container.innerHTML = branches.map((b) => {
-    const isCurrent = b.name === currentBranch || b.current;
+  const currentBranchObj = branches.find((b) => b.current || b.name === currentBranch);
+  const localBranches = branches.filter((b) => !b.remote && (b.current || b.name !== currentBranch));
+  const remoteBranches = branches.filter((b) => b.remote);
+
+  const renderBranchItem = (b) => {
+    const isCurrent = b.current || b.name === currentBranch;
+    const isRemote = !!b.remote;
     return `
-      <div class="branch-list-item ${isCurrent ? "active-branch" : ""}" data-action="checkoutSelectedBranch" data-value="${escapeHtml(b.name)}">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span>${isCurrent ? "✓" : "🌿"}</span>
-          <span style="font-family:var(--font-mono);font-size:12.5px">${escapeHtml(b.name)}</span>
+      <div class="branch-list-item ${isCurrent ? "active-branch" : ""}"
+           data-action="checkoutSelectedBranch"
+           data-value="${escapeHtml(b.name)}"
+           data-remote="${escapeHtml(b.remote || "")}"
+           style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-radius:8px;margin-bottom:2px;transition:background 0.15s;${isCurrent ? "background:var(--c-accent-light);border:1px solid var(--c-accent-border);" : "border:1px solid transparent;"}">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <span style="font-size:14px;flex-shrink:0">${isCurrent ? "✓" : isRemote ? "🌐" : "🌿"}</span>
+          <div style="min-width:0">
+            <div style="font-family:var(--font-mono);font-size:12.5px;font-weight:${isCurrent ? "700" : "500"};color:${isCurrent ? "var(--c-accent)" : "var(--c-text)"};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(b.name)}</div>
+            ${isRemote ? `<div style="font-size:10px;color:var(--c-text-muted)">${escapeHtml(b.remote || "origin")}</div>` : ""}
+          </div>
         </div>
-        ${isCurrent ? '<span class="badge badge-accent">current</span>' : '<span style="font-size:11px;color:var(--c-text-muted)">checkout</span>'}
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+          ${isCurrent ? '<span class="badge badge-accent" style="font-size:10px">current</span>' : `<span style="font-size:11px;color:var(--c-text-muted)">${isRemote ? "checkout →" : "switch"}</span>`}
+          ${!isCurrent && !isRemote ? `<button class="btn btn-ghost btn-xs" data-action="deleteLocalBranch" data-value="${escapeHtml(b.name)}" title="Delete branch ${escapeHtml(b.name)}" style="padding:2px 6px;font-size:11px;color:var(--c-danger);opacity:0.75" onclick="event.stopPropagation()">🗑️</button>` : ""}
+        </div>
       </div>`;
-  }).join("");
+  };
+
+  let html = "";
+
+  // Current branch section
+  if (currentBranchObj) {
+    html += `<div style="font-size:10px;font-weight:700;color:var(--c-text-muted);text-transform:uppercase;letter-spacing:0.06em;padding:4px 4px 6px">Current Branch</div>`;
+    html += renderBranchItem(currentBranchObj);
+  }
+
+  // Local branches
+  const otherLocal = localBranches.filter((b) => !b.current && b.name !== currentBranch);
+  if (otherLocal.length > 0) {
+    html += `<div style="font-size:10px;font-weight:700;color:var(--c-text-muted);text-transform:uppercase;letter-spacing:0.06em;padding:10px 4px 6px">Local Branches</div>`;
+    html += otherLocal.map(renderBranchItem).join("");
+  }
+
+  // Remote branches
+  if (remoteBranches.length > 0) {
+    html += `<div style="font-size:10px;font-weight:700;color:var(--c-text-muted);text-transform:uppercase;letter-spacing:0.06em;padding:10px 4px 6px">Remote Branches</div>`;
+    html += remoteBranches.map(renderBranchItem).join("");
+  }
+
+  container.innerHTML = html;
+
+  // Hover effect
+  container.querySelectorAll(".branch-list-item:not(.active-branch)").forEach((el) => {
+    el.addEventListener("mouseenter", () => { el.style.background = "var(--c-surface-hover)"; el.style.borderColor = "var(--c-border)"; });
+    el.addEventListener("mouseleave", () => { el.style.background = ""; el.style.borderColor = "transparent"; });
+  });
 }
+
+
 
 function filterBranchList() {
   const query = document.getElementById("branch-search-input")?.value?.toLowerCase() || "";
@@ -1269,17 +1410,51 @@ async function checkoutSelectedBranch(branchName) {
   const repo = window.state.activeRepository;
   if (!repo) return;
 
+  // Find branch data to check if it's remote-only
+  const branchData = allRepoBranches.find((b) => b.name === branchName);
+  const isRemoteOnly = branchData?.remote && !branchData.current;
+
   try {
+    // For remote branches, we checkout with the plain name — git will auto-create local tracking
     await api.checkoutBranch(repo.id, branchName, false);
     closeModal("modal-branch-switcher");
-    showToast(`Switched to branch '${branchName}'`, "success");
-    if (typeof window.setActiveRepository === "function") {
-      await window.setActiveRepository(repo);
-    }
+    showToast(`Switched to branch '${branchName}'${isRemoteOnly ? " (tracking remote)" : ""}`, "success");
+    // Refresh status
+    await loadGitDesktop(false);
   } catch (err) {
     showToast(`Failed to switch branch: ${err.message}`, "error");
   }
 }
+
+async function deleteLocalBranch(branchName) {
+  const repo = window.state.activeRepository;
+  if (!repo || !branchName) return;
+
+  if (!confirm(`Are you sure you want to delete local branch "${branchName}"?`)) return;
+
+  try {
+    await api.gitDeleteBranch(repo.id, branchName, false);
+    showToast(`Branch "${branchName}" deleted successfully.`, "success");
+    const data = await api.getGitBranches(repo.id);
+    allRepoBranches = data.branches || [];
+    renderBranchSwitcherList(allRepoBranches);
+    await loadGitDesktop(false);
+  } catch (err) {
+    if (confirm(`Failed to delete branch "${branchName}": ${err.message}\n\nDo you want to force delete it (-D)?`)) {
+      try {
+        await api.gitDeleteBranch(repo.id, branchName, true);
+        showToast(`Branch "${branchName}" force-deleted.`, "success");
+        const data = await api.getGitBranches(repo.id);
+        allRepoBranches = data.branches || [];
+        renderBranchSwitcherList(allRepoBranches);
+        await loadGitDesktop(false);
+      } catch (fErr) {
+        showToast(`Force delete failed: ${fErr.message}`, "error");
+      }
+    }
+  }
+}
+
 
 async function createAndCheckoutBranch() {
   const repo = window.state.activeRepository;
@@ -1369,10 +1544,13 @@ function connectGitDesktopStream(repoId) {
 
   try {
     const token = localStorage.getItem("gda_token");
-    const baseUrl = typeof api !== "undefined" && api.baseUrl ? api.baseUrl.replace(/\/$/, "") : "";
-    const streamUrl = `${baseUrl}/api/git/stream/${encodeURIComponent(repoId)}${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+    // Use same origin — API_BASE is "" for same-origin deployments (Vercel/Render)
+    // window.location.origin handles all deployment scenarios correctly
+    const apiBase = (typeof API_BASE !== "undefined" && API_BASE) ? API_BASE : "";
+    const streamUrl = `${apiBase}/api/git/stream/${encodeURIComponent(repoId)}${token ? `?token=${encodeURIComponent(token)}` : ""}`;
     _sseSource = new EventSource(streamUrl);
     _sseSource._repoId = repoId;
+    _sseSource._retryCount = 0;
 
     _sseSource.addEventListener("git-status", (e) => {
       try {
@@ -1384,12 +1562,21 @@ function connectGitDesktopStream(repoId) {
     });
 
     _sseSource.onerror = () => {
-      // EventSource auto-reconnects
+      // SSE not supported on serverless — the 2-second polling below handles updates
+      // Close and don't attempt to reconnect (avoids error spam on Vercel)
+      if (_sseSource) {
+        _sseSource._retryCount = (_sseSource._retryCount || 0) + 1;
+        if (_sseSource._retryCount > 3) {
+          _sseSource.close();
+          _sseSource = null;
+        }
+      }
     };
   } catch (err) {
     console.warn("SSE connection error:", err);
   }
 }
+
 
 // Auto-refresh when window focus or tab visibility changes
 window.addEventListener("focus", () => {

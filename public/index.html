@@ -3,13 +3,20 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <meta name="description"
     content="Git Debugging Agent — AI-powered Git repository analysis, automated root cause detection, and intelligent fix generation." />
-  <title>Git Debugging Agent</title>
-  <link rel="icon" href="/favicon.ico?v=2" type="image/svg+xml" />
+  <meta name="theme-color" content="#ffffff" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <title>Git Debug Agent</title>
+  <!-- Inline SVG favicon — works on all deployments including serverless/Vercel without a physical file -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f2937'/%3E%3Cpolyline points='6 22 13 14 6 7' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cline x1='17' y1='24' x2='27' y2='24' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f2937'/%3E%3Cpolyline points='6 22 13 14 6 7' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cline x1='17' y1='24' x2='27' y2='24' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="/styles.css" />
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <!-- Google Sign-In GSI Client -->
+  <script src="https://accounts.google.com/gsi/client" async defer onload="if(typeof window._pendingGoogleInit === 'function') { window._pendingGoogleInit(); }"></script>
 </head>
 
 <body>
@@ -411,7 +418,7 @@
       <div id="page-git-desktop" class="page">
         <!-- Git Desktop Repository Header -->
         <div class="git-desktop-header card" style="margin-bottom:16px;padding:14px 18px">
-          <div class="git-desktop-repo-info">
+        <div class="git-desktop-repo-info git-meta-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
             <div class="git-repo-pill" data-action="openActiveRepoPicker" title="Switch active repository"
               style="cursor:pointer">
               <span class="git-repo-icon">🌿</span>
@@ -472,6 +479,12 @@
             <button class="btn btn-secondary btn-sm" id="gd-btn-ship" data-action="triggerAIShip">
               🚀 AI Ship
             </button>
+            <button class="btn btn-secondary btn-sm" id="gd-btn-stash" data-action="triggerGitStash" title="Stash uncommitted changes to a temporary stack">
+              📦 Stash
+            </button>
+            <button class="btn btn-secondary btn-sm" id="gd-btn-stash-pop" data-action="triggerGitStashPop" title="Pop the most recently stashed changes back into working tree">
+              📤 Stash Pop
+            </button>
             <button class="btn btn-ghost btn-sm" id="gd-btn-discard-all" data-action="discardAllGitChanges" title="Discard all uncommitted changes in working tree">
               🗑️ Discard All
             </button>
@@ -481,9 +494,9 @@
         <!-- Git Desktop 2-Column Working Layout (GitHub Desktop Style) -->
         <div class="git-desktop-grid">
           <!-- Left Column: Changes, Commit Plan & History with Commit Box -->
-          <div class="card" style="padding:0;overflow:hidden;display:flex;flex-direction:column">
+          <div class="card git-left-panel" style="padding:0;overflow:hidden;display:flex;flex-direction:column">
             <!-- Left Tabs: Changes vs Commit Plan vs History -->
-            <div class="tabs"
+            <div class="tabs git-left-tabs"
               style="padding:0 12px;border-bottom:1px solid var(--c-border);background:var(--c-surface-hover)">
               <div class="tab-item active" id="gd-tab-changes" data-action="switchGitDesktopLeftTab"
                 data-value="changes">
@@ -590,7 +603,7 @@
           </div>
 
           <!-- Right Column: Diff Inspector (Full Vertical Height) -->
-          <div style="display:flex;flex-direction:column">
+          <div class="git-right-panel" style="display:flex;flex-direction:column">
             <!-- Selected File Diff Card -->
             <div class="card" style="padding:0;overflow:hidden">
               <div class="card-header"
@@ -619,20 +632,16 @@
                   </button>
                   <span id="gd-diff-status-badge" class="badge badge-secondary" style="display:none">STATUS</span>
                   <div class="tabs" style="padding:0;background:transparent;border:none">
-                    <button class="btn btn-secondary btn-sm" id="gd-tab-btn-diff" data-action="switchGitDesktopTab"
-                      data-value="gd-diff" style="padding:4px 10px;font-size:11px">File
-                      Diff</button>
-                    <button class="btn btn-ghost btn-sm" id="gd-tab-btn-all-diff" data-action="switchGitDesktopTab"
-                      data-value="gd-all-diff" style="padding:4px 10px;font-size:11px">📑 All
-                      Changes (<span id="gd-all-diff-count">0</span>)</button>
+                    <button class="btn btn-secondary btn-sm" id="gd-tab-btn-diff" data-action="switchGitDesktopTab" data-value="gd-diff" style="padding:4px 10px;font-size:11px">File Diff</button>
+                    <button class="btn btn-ghost btn-sm" id="gd-tab-btn-all-diff" data-action="switchGitDesktopTab" data-value="gd-all-diff" style="padding:4px 10px;font-size:11px">📑 All Changes (<span id="gd-all-diff-count">0</span>)</button>
                   </div>
                 </div>
               </div>
 
               <!-- Diff Viewer Body (Single Selected File) -->
               <div id="panel-gd-diff" class="tab-panel active" style="padding:0">
-                <div id="gd-diff-viewer" class="github-diff-viewer"
-                  style="min-height:500px;max-height:740px;overflow-y:auto;font-family:var(--font-mono);font-size:12px;background:#ffffff;padding:12px">
+                <div id="gd-diff-viewer" class="github-diff-viewer diff-viewer"
+                  style="min-height:300px;max-height:640px;overflow-y:auto;overflow-x:auto;font-family:var(--font-mono);font-size:12px;background:#ffffff;padding:12px;-webkit-overflow-scrolling:touch">
                   <div class="empty-state" style="padding:48px 20px">
                     <div class="empty-icon">🔍</div>
                     <div class="empty-title">Select any changed file on the left</div>
@@ -644,8 +653,8 @@
 
               <!-- All Changes Diff Body (Continuous unified diff for ALL modified files) -->
               <div id="panel-gd-all-diff" class="tab-panel" style="display:none;padding:0">
-                <div id="gd-all-diff-viewer" class="github-diff-viewer"
-                  style="min-height:500px;max-height:740px;overflow-y:auto;font-family:var(--font-mono);font-size:12px;background:#ffffff;padding:12px">
+                <div id="gd-all-diff-viewer" class="github-diff-viewer diff-viewer"
+                  style="min-height:300px;max-height:640px;overflow-y:auto;overflow-x:auto;font-family:var(--font-mono);font-size:12px;background:#ffffff;padding:12px;-webkit-overflow-scrolling:touch">
                   <div class="empty-state" style="padding:48px 20px">
                     <div class="empty-icon">📑</div>
                     <div class="empty-title">All Changed Files Diff</div>

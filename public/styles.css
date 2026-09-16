@@ -3927,3 +3927,402 @@ body {
     font-size: 14px !important;
   }
 }
+
+/* ============================================================
+   TABLET BREAKPOINT — 481px to 768px
+   ============================================================ */
+@media (max-width: 768px) and (min-width: 481px) {
+  .git-desktop-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .debug-panels-row {
+    grid-template-columns: 1fr;
+  }
+
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .grid-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .action-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-card {
+    max-width: 90vw;
+    padding: 28px 24px;
+  }
+}
+
+/* ============================================================
+   MOBILE — ≤480px (iPhone SE, small Android, etc.)
+   ============================================================ */
+@media (max-width: 480px) {
+
+  /* Auth page — full screen card */
+  .auth-page {
+    padding: 0;
+    align-items: flex-start;
+    background: var(--c-bg);
+  }
+
+  .auth-card {
+    width: 100%;
+    min-height: 100vh;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    padding: 32px 20px 40px;
+    max-width: 100%;
+  }
+
+  .auth-logo {
+    margin-bottom: 20px;
+  }
+
+  .auth-title {
+    font-size: 22px;
+  }
+
+  /* Header */
+  .header {
+    padding: 0 10px;
+    height: 52px;
+  }
+
+  .header-logo span {
+    display: none;
+  }
+
+  .header-logo-icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .active-repo-badge {
+    max-width: 100px;
+    padding: 3px 7px;
+    font-size: 10.5px;
+  }
+
+  #header-active-repo-name {
+    max-width: 56px;
+    font-size: 10.5px;
+  }
+
+  .status-pill span:not(.status-dot) {
+    display: none;
+  }
+
+  .status-pill {
+    padding: 4px 6px;
+    gap: 4px;
+  }
+
+  /* Layout */
+  .main-layout {
+    padding: 10px 10px 64px;
+  }
+
+  /* Grids collapse to single column */
+  .grid-2, .grid-3, .grid-4, .action-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* Cards */
+  .card {
+    padding: 12px;
+    border-radius: var(--r-md);
+  }
+
+  /* Git Desktop — full stacked layout */
+  .git-desktop-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  /* Git Desktop toolbar — horizontal scroll */
+  .git-desktop-actions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+    padding-bottom: 6px;
+    scrollbar-width: none;
+  }
+
+  .git-desktop-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .git-desktop-actions .btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+    font-size: 11px;
+    padding: 5px 9px;
+  }
+
+  /* Git header meta row */
+  .git-meta-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .git-meta-item {
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+
+  /* Left panel (changes list) */
+  .git-left-panel {
+    min-height: 200px;
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+
+  /* Right panel (diff viewer) */
+  .git-right-panel {
+    min-height: 300px;
+  }
+
+  /* Diff viewer horizontal scroll */
+  .diff-view, .diff-viewer {
+    font-size: 10.5px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .diff-line {
+    min-width: max-content;
+  }
+
+  /* Tabs — horizontal scroll */
+  .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    white-space: nowrap;
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Left tabs */
+  .git-left-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    white-space: nowrap;
+  }
+
+  .git-left-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Modals — full screen on mobile */
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: var(--r-xl) var(--r-xl) 0 0 !important;
+    margin: 0;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 20px 16px 32px !important;
+  }
+
+  .modal-header {
+    margin-bottom: 14px;
+  }
+
+  .modal-title {
+    font-size: 16px;
+  }
+
+  /* Branch switcher modal */
+  #modal-branch-switcher .modal {
+    min-height: 60vh;
+  }
+
+  /* Commit form */
+  .commit-form {
+    padding: 12px;
+  }
+
+  .form-input, .form-select, .form-textarea {
+    font-size: 16px !important; /* Prevent iOS zoom */
+  }
+
+  /* Debug panels */
+  .debug-panels-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  /* History view */
+  .history-table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    font-size: 11px;
+  }
+
+  .history-table th, .history-table td {
+    min-width: 90px;
+    padding: 8px 8px;
+    white-space: nowrap;
+  }
+
+  /* Issues / PR cards */
+  .issue-card, .pr-card {
+    padding: 10px 12px;
+  }
+
+  .issue-title, .pr-title {
+    font-size: 13px;
+  }
+
+  /* Conflicts */
+  .conflict-viewer {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .conflict-panel {
+    min-height: 120px;
+    font-size: 11px;
+  }
+
+  /* Section header */
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .section-title {
+    font-size: 15px;
+  }
+
+  /* Stat cards */
+  .stat-card {
+    padding: 12px;
+  }
+
+  .stat-value {
+    font-size: 22px;
+  }
+
+  /* Buttons */
+  .btn-lg {
+    min-height: 44px;
+    font-size: 14px;
+  }
+
+  /* Toast container positioning */
+  .toast-container {
+    bottom: 16px;
+    right: 10px;
+    left: 10px;
+    max-width: none;
+    width: auto;
+  }
+
+  .toast {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* Code output */
+  pre, .code-block {
+    font-size: 11px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Hide secondary labels on tight space */
+  .hide-mobile {
+    display: none !important;
+  }
+
+  /* Repo cards */
+  .repo-card-meta {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  /* Push modal commit list */
+  #push-commits-list {
+    max-height: 140px;
+    overflow-y: auto;
+  }
+}
+
+/* ============================================================
+   VERY SMALL — iPhone SE / 375px
+   ============================================================ */
+@media (max-width: 375px) {
+  .auth-card {
+    padding: 24px 14px 36px;
+  }
+
+  .main-layout {
+    padding: 8px 8px 60px;
+  }
+
+  .header {
+    padding: 0 8px;
+  }
+
+  .card {
+    padding: 10px;
+  }
+
+  .git-desktop-actions .btn {
+    font-size: 10.5px;
+    padding: 4px 7px;
+  }
+}
+
+/* ============================================================
+   LANDSCAPE PHONE (short height)
+   ============================================================ */
+@media (max-height: 500px) and (orientation: landscape) {
+  .header {
+    height: 46px;
+  }
+
+  .main-layout {
+    padding: 8px 12px 24px;
+  }
+
+  .git-left-panel {
+    max-height: 30vh;
+  }
+
+  .modal {
+    max-height: 85vh !important;
+    overflow-y: auto;
+  }
+
+  .auth-card {
+    min-height: auto;
+    padding: 20px 24px;
+  }
+}
