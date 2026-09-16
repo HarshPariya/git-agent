@@ -190,7 +190,11 @@ async function runSmokeTests(): Promise<void> {
   }
 }
 
-runSmokeTests().catch((err) => {
-  console.error("FATAL: Smoke test suite failed:", err);
-  process.exit(1);
-});
+runSmokeTests()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error("FATAL: Smoke test suite failed:", err);
+    process.exit(1);
+  });

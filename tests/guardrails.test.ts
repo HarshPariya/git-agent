@@ -91,7 +91,11 @@ async function runGuardrailTests() {
   if (failed > 0) process.exitCode = 1;
 }
 
-runGuardrailTests().catch((err) => {
-  console.error("Guardrails test failed:", err);
-  process.exit(1);
-});
+runGuardrailTests()
+  .then(() => {
+    process.exit(process.exitCode ?? 0);
+  })
+  .catch((err) => {
+    console.error("Guardrails test failed:", err);
+    process.exit(1);
+  });

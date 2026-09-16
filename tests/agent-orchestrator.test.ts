@@ -167,7 +167,11 @@ async function runAgentOrchestratorTests() {
   if (failed > 0) process.exitCode = 1;
 }
 
-runAgentOrchestratorTests().catch((err) => {
-  console.error("Agent Orchestrator test failed:", err);
-  process.exit(1);
-});
+runAgentOrchestratorTests()
+  .then(() => {
+    process.exit(process.exitCode ?? 0);
+  })
+  .catch((err) => {
+    console.error("Agent Orchestrator test failed:", err);
+    process.exit(1);
+  });

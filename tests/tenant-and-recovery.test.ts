@@ -8,6 +8,7 @@ import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { repositoryStore } from "../src/repositories/repository-store.js";
 import { executeGitStatus, registerRepositoryPath } from "../src/git/engine.js";
+import { closeDatabase } from "../src/db/mongodb.js";
 
 const execAsync = promisify(exec);
 
@@ -137,10 +138,15 @@ async function runTests() {
     }
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true }).catch(() => {});
+    await closeDatabase().catch(() => {});
   }
 }
 
-runTests().catch((err) => {
-  console.error("Test execution fatal error:", err);
-  process.exit(1);
-});
+runTests()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error("Test execution fatal error:", err);
+    process.exit(1);
+  });
