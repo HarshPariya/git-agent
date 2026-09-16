@@ -264,45 +264,57 @@ async function loadGitDesktop(manual = false) {
     }
   }
 
-  // Auto-connect workspace only if tenant has zero repositories connected
-  if (!repo) {
-    try {
-      const listRes = await api.listRepositories().catch(() => []);
-      const repos = listRes.repositories || listRes || [];
-      if (repos.length === 0) {
-        const res = await api.connectRepository({
-          name: "Git-Agent",
-          localPath: ".",
-          url: "https://github.com/HarshPariya/git-agent.git",
-        });
-        if (res?.repository) {
-          repo = res.repository;
-          localStorage.setItem("gda_active_repo_id", repo.id);
-          window.setState("activeRepository", repo);
-        }
-      } else {
-        repo = repos.find((r) => r.id === localStorage.getItem("gda_active_repo_id")) || repos[0];
-        if (repo) {
-          localStorage.setItem("gda_active_repo_id", repo.id);
-          window.setState("activeRepository", repo);
-        }
-      }
-    } catch (_) { }
-  }
-
+  // If no repository is active or added yet, do not auto-connect anything!
   if (!repo) {
     const repoNameEl = document.getElementById("gd-repo-name");
-    if (repoNameEl) repoNameEl.textContent = "No repository connected";
+    if (repoNameEl) repoNameEl.textContent = "No repository open";
+    const branchBtn = document.getElementById("gd-branch-name");
+    if (branchBtn) branchBtn.innerHTML = `No branch`;
+    const remoteEl = document.getElementById("gd-remote-name");
+    if (remoteEl) remoteEl.textContent = "No remote";
+    const aheadBehindEl = document.getElementById("gd-ahead-behind");
+    if (aheadBehindEl) aheadBehindEl.textContent = "↑ 0 · ↓ 0";
+    const workingStatusEl = document.getElementById("gd-working-status");
+    if (workingStatusEl) {
+      workingStatusEl.textContent = "No repo";
+      workingStatusEl.className = "badge";
+    }
+    const changesCountEl = document.getElementById("gd-changes-count");
+    if (changesCountEl) changesCountEl.textContent = "0";
+
     const changesListEl = document.getElementById("gd-changes-list");
     if (changesListEl) {
       changesListEl.innerHTML = `
-        <div class="empty-state" style="padding:36px 20px">
-          <div class="empty-icon">📁</div>
-          <div class="empty-title">No repository selected</div>
-          <div class="empty-desc">Connect or select a repository to use Git Desktop.</div>
-          <button class="btn btn-primary btn-sm" data-action="openFolderBrowser" style="margin-top:10px">Connect Repository</button>
+        <div class="empty-state" style="padding:36px 16px;text-align:center">
+          <div class="empty-icon" style="font-size:32px;margin-bottom:12px">📁</div>
+          <div class="empty-title" style="font-weight:600;font-size:14px">No repository selected</div>
+          <div class="empty-desc" style="color:var(--c-text-muted);font-size:12px;margin:6px 0 16px;line-height:1.4">Open a local project folder or connect an existing repository.</div>
+          <div style="display:flex;flex-direction:column;gap:8px;max-width:200px;margin:0 auto">
+            <button class="btn btn-primary btn-sm" data-action="linkLocalFolderToGitDesktop">📂 Open Local Folder</button>
+            <button class="btn btn-secondary btn-sm" data-action="openFolderBrowser">Browse Repositories</button>
+          </div>
         </div>`;
     }
+
+    const diffViewer = document.getElementById("gd-diff-viewer");
+    if (diffViewer) {
+      diffViewer.innerHTML = `
+        <div class="empty-state" style="padding:60px 24px;text-align:center">
+          <div class="empty-icon" style="font-size:48px;margin-bottom:16px">🚀</div>
+          <h3 style="font-size:18px;font-weight:600;margin-bottom:8px">Welcome to Git Desktop</h3>
+          <p style="color:var(--c-text-muted);max-width:460px;margin:0 auto 24px;font-size:14px;line-height:1.5">
+            Open any project folder on your computer to track real modified files, review line-by-line diffs, create AI commit plans, and push directly to GitHub.
+          </p>
+          <div style="display:flex;justify-content:center;gap:12px;flex-wrap:wrap">
+            <button class="btn btn-primary" data-action="linkLocalFolderToGitDesktop" style="padding:8px 18px">📂 Open Local Folder</button>
+            <button class="btn btn-secondary" data-action="openFolderBrowser" style="padding:8px 18px">📁 Add Existing Repo</button>
+          </div>
+        </div>`;
+    }
+    const pathEl = document.getElementById("gd-diff-filepath");
+    if (pathEl) pathEl.textContent = "No repository open";
+    const metaEl = document.getElementById("gd-diff-meta");
+    if (metaEl) metaEl.textContent = "Open a local project folder or select a repository to inspect changes";
     return;
   }
 
@@ -1901,19 +1913,34 @@ async function checkLocalDirectoryChanges(repoId, dirHandle) {
 
 async function linkLocalFolderToGitDesktop() {
   if (typeof window.showDirectoryPicker !== "function") {
-    showToast("File System Access API is not supported in this browser. Use '✏️ New / Edit File' to modify repository files.", "warning");
-    return;
-  }
-
-  const repo = window.state.activeRepository;
-  if (!repo) {
-    showToast("Please connect or select a repository first.", "warning");
+    showToast("File System Access API is not supported in this browser. Use 'Browse Repositories' to add a repository.", "warning");
     return;
   }
 
   try {
     const dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
     if (!dirHandle) return;
+
+    let repo = window.state.activeRepository;
+    if (!repo) {
+      showToast(`Opening workspace: ${dirHandle.name}...`, "info");
+      const res = await api.connectRepository({
+        name: dirHandle.name,
+        localPath: ".",
+      });
+      if (res?.repository) {
+        repo = res.repository;
+        window.setState("activeRepository", repo);
+        localStorage.setItem("gda_active_repo_id", repo.id);
+        const listRes = await api.listRepositories().catch(() => []);
+        window.setState("repositories", listRes.repositories || listRes || [repo]);
+        if (typeof window.renderRepositoriesList === "function") window.renderRepositoriesList();
+        if (typeof window.populateRepoDropdowns === "function") window.populateRepoDropdowns();
+      } else {
+        showToast("Failed to initialize workspace for folder.", "error");
+        return;
+      }
+    }
 
     window._activeLocalDirHandle = dirHandle;
     await saveStoredDirHandle("active_dir", dirHandle);
@@ -1923,10 +1950,12 @@ async function linkLocalFolderToGitDesktop() {
     if (badge && nameEl) {
       nameEl.textContent = `Synced: ${dirHandle.name}`;
       badge.style.display = "inline-flex";
+      badge.className = "badge badge-success";
     }
 
     showToast(`Linked local folder: ${dirHandle.name}. Live watching active!`, "success");
     await startLocalDirectorySync(repo.id, dirHandle);
+    await loadGitDesktop();
   } catch (err) {
     if (err.name !== "AbortError") {
       showToast(`Failed to link folder: ${err.message}`, "error");

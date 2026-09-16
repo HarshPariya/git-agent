@@ -27,14 +27,23 @@ const resolveLocalPath = (name: string): string => {
   return path.join(baseDir, "repositories", sanitizedName || "repo");
 };
 
-const validateLocalPath = (candidate: string): string => {
+const validateLocalPath = (candidate: string, repoName?: string): string => {
   if (!candidate?.trim()) throw new Error("Repository path must be a non-empty string");
   const cleaned = candidate.replace(/^["']|["']$/g, "").trim();
 
   // If candidate is "." or matches current workspace basename
   const cwd = process.cwd();
-  if (cleaned === "." || cleaned === "./" || cleaned.toLowerCase() === path.basename(cwd).toLowerCase()) {
+  const cwdBase = path.basename(cwd).toLowerCase();
+  const isThisProject = repoName ? repoName.toLowerCase() === "git-agent" || repoName.toLowerCase() === cwdBase : false;
+
+  if (cleaned === "." || cleaned === "./") {
+    if (isThisProject) return cwd;
+    if (repoName) return resolveLocalPath(repoName);
     return cwd;
+  }
+  if (cleaned.toLowerCase() === cwdBase) {
+    if (isThisProject) return cwd;
+    if (repoName) return resolveLocalPath(repoName);
   }
 
   // If candidate already exists on the local machine
@@ -212,16 +221,21 @@ export class RepositoryStore {
     url: string | undefined;
     localPath: string | undefined;
   }): Promise<Repository> {
-    if (!params.localPath || params.localPath === "." || params.localPath === "./") {
-      params.localPath = process.cwd();
-    }
+    const isGitAgent = params.name.toLowerCase() === "git-agent";
     const cwdBase = path.basename(process.cwd()).toLowerCase();
-    if (params.name && params.name.toLowerCase() === cwdBase) {
-      if (!params.localPath || !fs.existsSync(params.localPath)) {
+    const isThisRepo = isGitAgent || params.name.toLowerCase() === cwdBase;
+
+    if (!params.localPath || params.localPath === "." || params.localPath === "./") {
+      if (isThisRepo) {
         params.localPath = process.cwd();
+      } else {
+        params.localPath = resolveLocalPath(params.name);
       }
     }
-    let localPath = params.localPath ? validateLocalPath(params.localPath) : resolveLocalPath(params.name);
+    if (isThisRepo && (!params.localPath || !fs.existsSync(params.localPath))) {
+      params.localPath = process.cwd();
+    }
+    let localPath = params.localPath ? validateLocalPath(params.localPath, params.name) : resolveLocalPath(params.name);
 
     // Auto-provision directory if running on Vercel or if path doesn't exist yet
     if (!fs.existsSync(localPath)) {
@@ -238,7 +252,6 @@ export class RepositoryStore {
       }
     }
 
-    const isGitAgent = params.name.toLowerCase() === "git-agent";
     let remoteUrl = params.url?.trim() || undefined;
 
     // Check if localPath already has a git remote configured on disk
