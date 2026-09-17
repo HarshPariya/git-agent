@@ -123,6 +123,7 @@ export async function n8nIssueTriageHandler(request: Request, response: Response
       severity: isBug ? "high" : "medium",
       estimatedComplexity: "moderate",
       suggestedLabels,
+      analysis: proposedComment,
       initialAnalysis: triageAnalysis,
       diagnosis: triageAnalysis,
       proposedComment,
@@ -245,6 +246,7 @@ export async function n8nPrReviewHandler(request: Request, response: Response, n
       approved,
       hasHighRisk,
       summary: reviewNotes,
+      analysis: reviewComment,
       reviewNotes,
       reviewComment,
     });
