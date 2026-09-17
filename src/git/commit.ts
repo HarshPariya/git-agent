@@ -1,6 +1,6 @@
 import { callLlm, isLlmAvailable } from "../llm/client.js";
 import { repositoryStore } from "../repositories/repository-store.js";
-import { safeExec, validateFilePath } from "./utils.js";
+import { execFileAsync, safeExec, validateFilePath } from "./utils.js";
 
 export interface ConventionalCommit {
   readonly type: "fix" | "feat" | "refactor" | "test" | "docs" | "style" | "chore" | "perf" | "ci" | "build" | "revert";
@@ -91,9 +91,8 @@ export async function executeSafeCommit(
   const { stdout: statusOut } = await safeExec("git status --porcelain", repoPath);
   if (!statusOut.trim()) return { success: false, message: "Nothing to commit — working tree clean." };
 
-  const escapedMsg = commitMsg.replace(/"/g, '\\"').replace(/`/g, "\\`");
   try {
-    const { stdout } = await safeExec(`git commit -m "${escapedMsg}"`, repoPath);
+    const { stdout } = await execFileAsync("git", ["commit", "-m", commitMsg], { cwd: repoPath });
     const hashMatch = /\[(?:.+?\s+)?([a-f0-9]{7,40})\]/.exec(stdout);
     const commitHash = hashMatch?.[1] ?? (await resolveHeadHash(repoPath));
     return {
@@ -125,8 +124,7 @@ export async function safeCommit(
     const { stdout: statusOut } = await safeExec("git status --porcelain", repoPath);
     if (!statusOut.trim()) return { success: false, message: "Nothing to commit — working tree clean." };
 
-    const escapedMsg = commitMessage.replace(/"/g, '\\"').replace(/`/g, "\\`");
-    const { stdout } = await safeExec(`git commit -m "${escapedMsg}"`, repoPath);
+    const { stdout } = await execFileAsync("git", ["commit", "-m", commitMessage], { cwd: repoPath });
     const hashMatch = /\[[\w/]+ ([a-f0-9]+)\]/.exec(stdout);
     return {
       success: true,

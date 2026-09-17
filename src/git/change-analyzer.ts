@@ -1,7 +1,7 @@
 import { callLlm, isLlmAvailable } from "../llm/client.js";
 import { formatCommitMessage, type ConventionalCommit } from "./commit.js";
 import { getExecutionPath } from "./engine.js";
-import { safeExec } from "./utils.js";
+import { execFileAsync, safeExec } from "./utils.js";
 
 export interface ChangedFileDetail {
   filePath: string;
@@ -269,9 +269,7 @@ function annotateFiles(files: ChangedFileDetail[], groups: LogicalChangeGroup[])
   }
 }
 
-export async function analyzeAndPlanCommits(repoPath: string): Promise<CommitPlan> {
-  const targetPath = getExecutionPath(repoPath);
-  const changedFiles = await getDetailedChangedFiles(targetPath);
+export async function planFromChangedFiles(changedFiles: ChangedFileDetail[]): Promise<CommitPlan> {
   if (!changedFiles.length)
     return {
       summary: "Working tree is clean. No changed files to analyze.",
@@ -308,6 +306,12 @@ export async function analyzeAndPlanCommits(repoPath: string): Promise<CommitPla
     groups: heuristicGroups,
     changedFiles,
   };
+}
+
+export async function analyzeAndPlanCommits(repoPath: string): Promise<CommitPlan> {
+  const targetPath = getExecutionPath(repoPath);
+  const changedFiles = await getDetailedChangedFiles(targetPath);
+  return planFromChangedFiles(changedFiles);
 }
 
 interface LlmGroup {
@@ -431,9 +435,8 @@ export async function executeCommitPlan(
     if (!stagedCheck.trim()) continue;
 
     const msg = formatCommitMessage(group.suggestedCommit);
-    const escapedMsg = msg.replace(/"/g, '\\"').replace(/`/g, "\\`");
     try {
-      const { stdout: commitOut } = await safeExec(`git commit -m "${escapedMsg}"`, targetPath);
+      const { stdout: commitOut } = await execFileAsync("git", ["commit", "-m", msg], { cwd: targetPath });
       const sha = /\[(?:.+?\s+)?([a-f0-9]{7,40})\]/.exec(commitOut)?.[1] ?? (await resolveHeadSha(targetPath));
       executedCommits.push({
         groupId: group.id,

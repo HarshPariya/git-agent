@@ -234,9 +234,15 @@ function populateRepoDropdowns() {
   const issuesSelect = document.getElementById("issues-repo-select");
   const prsSelect = document.getElementById("prs-repo-select");
 
-  const options = (window.state.repositories || []).map((r) => {
-    const branchLabel = r.currentBranch || r.defaultBranch || "feature/git-agent";
-    return `<option value="${escapeHtml(r.id)}">${escapeHtml(r.name)} (${escapeHtml(branchLabel)})</option>`;
+  const allRepos = [...(window.state.repositories || [])];
+  if (window.state.activeRepository?.isLocal && !allRepos.some((r) => r.id === window.state.activeRepository.id)) {
+    allRepos.unshift(window.state.activeRepository);
+  }
+
+  const options = allRepos.map((r) => {
+    const branchLabel = r.currentBranch || r.defaultBranch || "main";
+    const prefix = r.isLocal ? "📂 " : "";
+    return `<option value="${escapeHtml(r.id)}">${prefix}${escapeHtml(r.name)} (${escapeHtml(branchLabel)})</option>`;
   });
 
   const activeId = window.state.activeRepository ? window.state.activeRepository.id : "";

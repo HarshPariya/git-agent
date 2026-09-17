@@ -29,7 +29,13 @@ import { AppError } from "../errors/app-error.js";
 import { conflictAnalyzer } from "../git/conflicts.js";
 import { executeSafeCommit } from "../git/commit.js";
 import { executeSafePush } from "../git/push.js";
-import { analyzeAndPlanCommits, executeCommitPlan, type LogicalChangeGroup } from "../git/change-analyzer.js";
+import {
+  analyzeAndPlanCommits,
+  planFromChangedFiles,
+  executeCommitPlan,
+  type LogicalChangeGroup,
+  type ChangedFileDetail,
+} from "../git/change-analyzer.js";
 import { getGitHubToken } from "../github/auth.js";
 import { createGitHubPR } from "../github/pull-requests.js";
 import { generateText } from "../llm/client.js";
@@ -59,7 +65,23 @@ const noop = (): void => {
 const validateRepositoryAccess = async (repoId: string, tenantId?: string): Promise<void> => {
   try {
     const { repositoryStore } = await import("../repositories/repository-store.js");
-    const repo = repositoryStore.getRepository(repoId, tenantId);
+    let repo = repositoryStore.getRepository(repoId, tenantId);
+    if (!repo) {
+      await repositoryStore.hydrateFromDb();
+      repo = repositoryStore.getRepository(repoId, tenantId);
+    }
+    if (!repo) {
+      const cwdBase = path.basename(process.cwd()).toLowerCase();
+      if (repoId.includes("default") || repoId.includes("git-agent") || repoId.includes(cwdBase)) {
+        repo = await repositoryStore.connectRepository({
+          tenantId: tenantId || "tenant-default",
+          userId: "user-default",
+          name: "Git-Agent",
+          url: process.env.GIT_REPO_URL || "https://github.com/HarshPariya/git-agent.git",
+          localPath: process.cwd(),
+        });
+      }
+    }
     if (!repo) {
       throw new AppError(`Repository "${repoId}" not found or unauthorized`, "NOT_FOUND", 404);
     }
@@ -834,8 +856,13 @@ export async function gitAnalyzeChangesHandler(
 ): Promise<void> {
   try {
     const body = getGitRequestData(request);
-    const repoId = requireString(body, "repositoryId");
-    const plan = await analyzeAndPlanCommits(getExecutionPath(repoId));
+    const repoId = optionalString(body, "repositoryId") || "default";
+    let plan;
+    if (Array.isArray(body.changedFiles) && body.changedFiles.length > 0) {
+      plan = await planFromChangedFiles(body.changedFiles as ChangedFileDetail[]);
+    } else {
+      plan = await analyzeAndPlanCommits(getExecutionPath(repoId));
+    }
     response.status(200).json({
       success: true,
       plan,

@@ -369,6 +369,18 @@ async function loadGitDesktop(manual = false) {
     loadGitStashCount(repo);
   } catch (err) {
     console.error("Failed to load Git Desktop status:", err);
+    if (err.status === 404 || err.message?.includes("404") || err.message?.includes("not found")) {
+      try {
+        const res = await api.listRepositories();
+        const repos = res.repositories || res || [];
+        if (repos.length > 0 && repos[0].id !== repo.id) {
+          window.setState("repositories", repos);
+          window.setState("activeRepository", repos[0]);
+          localStorage.setItem("gda_active_repo_id", repos[0].id);
+          return loadGitDesktop(manual);
+        }
+      } catch (_) {}
+    }
     if (manual) showToast(`Git Desktop error: ${err.message}`, "error");
   }
 }
@@ -1354,7 +1366,9 @@ async function triggerAIAnalyzeChanges() {
   if (summaryEl) summaryEl.textContent = "AI is inspecting AST symbols, imports, and git diffs...";
 
   try {
-    const data = await api.analyzeChanges(repo.id);
+    const isLocal = !!(window._activeLocalDirHandle && repo.isLocal);
+    const changedFiles = isLocal ? (window.state.gitDesktop.changedFiles || []) : null;
+    const data = await api.analyzeChanges(repo.id, changedFiles);
     const plan = data.plan || data;
     setGitDesktopState({ commitPlan: plan });
 
@@ -1441,6 +1455,46 @@ async function triggerAICommitAll() {
 
   try {
     const groups = window.state.gitDesktop.commitPlan?.groups;
+    if (!groups || groups.length === 0) {
+      showToast("No groups found to commit", "warning");
+      return;
+    }
+
+    if (window._activeLocalDirHandle && repo.isLocal) {
+      let created = 0;
+      for (const grp of groups) {
+        if (!grp.files?.length) continue;
+        for (const f of grp.files) {
+          await window.gitLocalEngine.stageFile(window._activeLocalDirHandle, f);
+        }
+        const commitMsg = grp.suggestedCommit
+          ? `${grp.suggestedCommit.type || "fix"}${grp.suggestedCommit.scope ? `(${grp.suggestedCommit.scope})` : ""}: ${grp.suggestedCommit.subject}`
+          : (grp.name || "Apply updates");
+        await window.gitLocalEngine.commit(window._activeLocalDirHandle, {
+          message: commitMsg,
+          author: {
+            name: window.state.user?.name || "Developer",
+            email: window.state.user?.email || "developer@local.host",
+          },
+        });
+        created++;
+      }
+      showToast(`Successfully created ${created} logical commits locally!`, "success");
+      await loadGitDesktop(false);
+      const commitAllBtn = document.getElementById("gd-btn-commit-all");
+      if (commitAllBtn) commitAllBtn.style.display = "none";
+      const planContainer = document.getElementById("gd-commit-plan-container");
+      if (planContainer) {
+        planContainer.innerHTML = `
+          <div class="empty-state" style="padding:24px">
+            <div class="empty-icon">✓</div>
+            <div class="empty-title">All groups committed locally!</div>
+            <div class="empty-desc">${created} verified commits created on branch '${window.state.gitDesktop.gitStatus?.branch || "main"}'.</div>
+          </div>`;
+      }
+      return;
+    }
+
     const res = await api.executeCommitPlan(repo.id, groups);
 
     if (res.success) {

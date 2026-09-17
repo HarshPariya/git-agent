@@ -246,11 +246,10 @@ class ApiClient {
   }
   async getOperationCatalog() { return this.request("/api/git/catalog"); }
 
-  // Git Desktop & AI Change Analysis
-  async analyzeChanges(repositoryId) {
+  async analyzeChanges(repositoryId, changedFiles = null) {
     return this.request("/api/git/analyze-changes", {
       method: "POST",
-      body: JSON.stringify({ repositoryId }),
+      body: JSON.stringify({ repositoryId, ...(changedFiles ? { changedFiles } : {}) }),
     });
   }
   async executeCommitPlan(repositoryId, groups) {
