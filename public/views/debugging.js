@@ -118,6 +118,54 @@ async function startDebugFromForm() {
 
   const queryParts = [description];
   if (logs) queryParts.push(`Logs / Stack trace:\n${logs}`);
+
+  // If local repository is active, selectively bundle relevant context and diff
+  if (window._activeLocalDirHandle && window.gitLocalEngine) {
+    try {
+      const fs = window.gitLocalEngine.getFS(window._activeLocalDirHandle);
+      const localContextParts = [];
+
+      // Include active git diff if any
+      const diff = await window.gitLocalEngine.getDiff(window._activeLocalDirHandle, "").catch(() => "");
+      if (diff && diff.trim()) {
+        localContextParts.push(`### Working Tree Git Diff:\n\`\`\`diff\n${diff.slice(0, 4000)}\n\`\`\``);
+      }
+
+      // Check package.json or pyproject.toml
+      for (const manifest of ["package.json", "requirements.txt", "pyproject.toml"]) {
+        try {
+          const content = await fs.promises.readFile(manifest, { encoding: "utf8" });
+          if (content) {
+            localContextParts.push(`### ${manifest}:\n\`\`\`json\n${content.slice(0, 1500)}\n\`\`\``);
+            break;
+          }
+        } catch (_) {}
+      }
+
+      // Find files mentioned in description or logs
+      const combinedText = `${description} ${logs || ""}`;
+      const mentionedPaths = (combinedText.match(/[a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+/g) || [])
+        .filter((p) => p.includes("/") || p.endsWith(".js") || p.endsWith(".ts") || p.endsWith(".py") || p.endsWith(".html") || p.endsWith(".css"))
+        .slice(0, 5);
+
+      for (const p of mentionedPaths) {
+        if (window.gitLocalEngine.isSensitiveFile(p)) continue;
+        try {
+          const content = await fs.promises.readFile(p, { encoding: "utf8" });
+          if (content) {
+            localContextParts.push(`### File: ${p}\n\`\`\`\n${content.slice(0, 3000)}\n\`\`\``);
+          }
+        } catch (_) {}
+      }
+
+      if (localContextParts.length > 0) {
+        queryParts.push(`### Local Codebase Context:\n${localContextParts.join("\n\n")}`);
+      }
+    } catch (localCtxErr) {
+      console.warn("Could not bundle local context:", localCtxErr);
+    }
+  }
+
   const fullQuery = queryParts.join("\n\n");
 
   const repo = (window.state.repositories || []).find((r) => r.id === repoId);
@@ -260,6 +308,7 @@ async function executeDebugPipeline(repoId, query, mode) {
     }
 
     renderEvidence(findings);
+    window.setState("currentFixPlan", fixPlan);
     renderDiff(fixPlan, findings);
     renderCritic(critic);
     renderTests({ ...sess, testResult });
@@ -918,6 +967,64 @@ async function applyFix() {
   const diffApplyBtn = byId("diff-apply-btn");
   const revertBtn = byId("revert-fix-btn");
   const diffRevertBtn = byId("diff-revert-btn");
+
+  const session = window.state.currentSession;
+  const fixPlan = window.state.currentFixPlan || session?.fixPlan;
+
+  // Local directory handle: apply patch directly to user's local PC folder files
+  if (window._activeLocalDirHandle && window.gitLocalEngine && fixPlan?.filesToChange?.length) {
+    try {
+      if (applyBtn) { applyBtn.disabled = true; applyBtn.textContent = "Applying to files..."; }
+      if (diffApplyBtn) { diffApplyBtn.disabled = true; diffApplyBtn.textContent = "Applying to files..."; }
+
+      const fs = window.gitLocalEngine.getFS(window._activeLocalDirHandle);
+      const appliedFiles = [];
+
+      for (const fc of fixPlan.filesToChange) {
+        if (!fc.filePath) continue;
+        let original = "";
+        try {
+          original = await fs.promises.readFile(fc.filePath, { encoding: "utf8" });
+        } catch (_) {}
+
+        let newContent = fc.newContent || fc.suggestedCode;
+        if (!newContent && fc.patch) {
+          const lines = fc.patch.split("\n");
+          const minusLines = lines.filter((l) => l.startsWith("-") && !l.startsWith("---")).map((l) => l.slice(1).trim()).filter(Boolean);
+          const plusLines = lines.filter((l) => l.startsWith("+") && !l.startsWith("+++")).map((l) => l.slice(1)).filter(Boolean);
+          newContent = original;
+          for (let i = 0; i < minusLines.length; i++) {
+            const target = minusLines[i];
+            const rep = plusLines[i] ?? "";
+            if (target && newContent.includes(target)) {
+              newContent = newContent.replace(target, rep);
+            }
+          }
+        }
+        if (!newContent) newContent = original;
+
+        await window.gitLocalEngine.applyPatch(window._activeLocalDirHandle, fc.filePath, newContent);
+        appliedFiles.push(fc.filePath);
+      }
+
+      await api.approveFix(session.id, { appliedLocally: true }).catch(() => {});
+
+      showToast(`Applied patch to ${appliedFiles.length} file(s) in local folder!`, "success");
+      if (applyBtn) { applyBtn.textContent = "Applied ✓"; applyBtn.disabled = true; }
+      if (diffApplyBtn) { diffApplyBtn.textContent = "Applied ✓"; diffApplyBtn.disabled = true; }
+
+      // Update Git Desktop view with the real newly modified files
+      if (typeof window.loadGitDesktop === "function") {
+        await window.loadGitDesktop(false);
+      }
+      return;
+    } catch (err) {
+      showToast(`Local patch error: ${err.message}`, "error");
+      if (applyBtn) { applyBtn.disabled = false; applyBtn.textContent = "🔧 Apply Verified Patch"; }
+      if (diffApplyBtn) { diffApplyBtn.disabled = false; diffApplyBtn.textContent = "🔧 Apply Patch"; }
+      return;
+    }
+  }
 
   try {
     if (applyBtn) { applyBtn.disabled = true; applyBtn.textContent = "Applying..."; }

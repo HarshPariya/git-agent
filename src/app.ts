@@ -125,6 +125,14 @@ import {
   userDataHandler,
   aggregateStatsHandler,
 } from "./api/admin.js";
+import { gitCorsProxyHandler } from "./api/git-proxy.js";
+import {
+  n8nIssueTriageHandler,
+  n8nCiFailureHandler,
+  n8nPrReviewHandler,
+  n8nPostCommitHandler,
+  n8nCiResultHandler,
+} from "./api/automation/n8n.js";
 
 export const app = express();
 
@@ -315,6 +323,7 @@ app.get("/api/git/graph", ...protectedRoute, gitLogGraphHandler);
 app.post("/api/git/scan-secrets", ...protectedRoute, gitScanSecretsHandler);
 app.post("/api/git/branch/delete", ...protectedRoute, gitDeleteBranchHandler);
 app.delete("/api/git/branch", ...protectedRoute, gitDeleteBranchHandler);
+app.use("/api/git/proxy", gitCorsProxyHandler);
 
 // Debugging agent
 app.get("/api/debug", ...protectedRoute, listDebugSessionsHandler);
@@ -382,6 +391,13 @@ app.get("/api/pr/:id", ...protectedRoute, getPullRequestHandler);
 app.post("/api/pr", ...protectedRoute, createPullRequestHandler);
 app.post("/api/pr/:id/merge", ...protectedRoute, mergePullRequestHandler);
 app.post("/api/pr/:id/reviewers", ...protectedRoute, addPrReviewerHandler);
+
+// n8n Automation Internal Endpoints (protected by server-to-server N8N_API_KEY)
+app.post("/api/internal/automation/issue-triage", n8nIssueTriageHandler);
+app.post("/api/internal/automation/ci-failure", n8nCiFailureHandler);
+app.post("/api/internal/automation/pr-review", n8nPrReviewHandler);
+app.post("/api/internal/automation/post-commit", n8nPostCommitHandler);
+app.post("/api/internal/automation/ci-result", n8nCiResultHandler);
 
 // Admin routes (require admin role — enforced inside each handler)
 app.get("/api/admin/users", ...protectedRoute, listUsersHandler);

@@ -1,0 +1,90 @@
+{
+  "name": "5 - Post-Commit Automation & Notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "post-commit-webhook",
+        "options": {}
+      },
+      "id": "node-post-commit-webhook",
+      "name": "Webhook - Git Agent Post-Commit",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [220, 300],
+      "webhookId": "post-commit-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.GIT_AGENT_URL || 'https://git-agent.onrender.com') + '/api/internal/automation/post-commit' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-N8N-Key",
+              "value": "={{ $env.N8N_API_KEY || 'test-n8n-key' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"repository\": \"{{ $json.body.repository || 'workspace' }}\",\n  \"branch\": \"{{ $json.body.branch || 'main' }}\",\n  \"commitHash\": \"{{ $json.body.commitHash || $json.body.sha }}\",\n  \"commitMessage\": \"{{ $json.body.commitMessage || $json.body.message }}\",\n  \"author\": \"{{ $json.body.author || 'Developer' }}\"\n}",
+        "options": {}
+      },
+      "id": "node-record-post-commit",
+      "name": "Git Agent - Validate & Log Commit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.ciTriggered }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "node-if-ci-triggered",
+      "name": "If CI Dispatched",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [700, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - Git Agent Post-Commit": {
+      "main": [
+        [
+          {
+            "node": "Git Agent - Validate & Log Commit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Git Agent - Validate & Log Commit": {
+      "main": [
+        [
+          {
+            "node": "If CI Dispatched",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

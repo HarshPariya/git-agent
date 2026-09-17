@@ -24,7 +24,7 @@ function requireAdmin(request: Request): void {
       // Token invalid — fall through to error
     }
   }
-  throw new AppError("Admin access required (harshpariya195@gmail.com only)", "AUTHORIZATION_ERROR", 403);
+  throw new AppError("Admin access required", "AUTHORIZATION_ERROR", 403);
 }
 
 /** Ensure the database is reachable before running admin queries. */

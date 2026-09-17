@@ -333,38 +333,37 @@ async function loadGitDesktop(manual = false) {
   if (repoNameEl) repoNameEl.textContent = repo.name || repo.path || "Repository";
 
   try {
-    connectGitDesktopStream(repo.id);
-
     // Auto-restore previously linked local directory if available and granted
     if (!window._activeLocalDirHandle && typeof getStoredDirHandle === "function") {
-      getStoredDirHandle("active_dir")
-        .then(async (handle) => {
-          if (handle) {
+      try {
+        const handle = await getStoredDirHandle("active_dir");
+        if (handle) {
+          const perm = typeof handle.queryPermission === "function"
+            ? await handle.queryPermission({ mode: "readwrite" }).catch(() => "prompt")
+            : "prompt";
+          if (perm === "granted") {
+            window._activeLocalDirHandle = handle;
             const badge = document.getElementById("gd-local-folder-badge");
             const nameEl = document.getElementById("gd-local-folder-name");
-            const perm = typeof handle.queryPermission === "function"
-              ? await handle.queryPermission({ mode: "readwrite" }).catch(() => "prompt")
-              : "prompt";
-            if (perm === "granted") {
-              window._activeLocalDirHandle = handle;
-              if (badge && nameEl) {
-                nameEl.textContent = `Synced: ${handle.name}`;
-                badge.style.display = "inline-flex";
-                badge.className = "badge badge-success";
-              }
-              startLocalDirectorySync(repo.id, handle);
-            } else {
-              if (badge && nameEl) {
-                nameEl.textContent = `⚡ Re-sync: ${handle.name}`;
-                badge.style.display = "inline-flex";
-                badge.className = "badge badge-warning";
-              }
+            if (badge && nameEl) {
+              nameEl.textContent = `Local: ${handle.name}`;
+              badge.style.display = "inline-flex";
+              badge.className = "badge badge-success";
             }
           }
-        })
-        .catch(() => {});
+        }
+      } catch (_) {}
     }
 
+    // Direct browser Git operations on user's PC folder
+    if (window._activeLocalDirHandle && window.gitLocalEngine) {
+      const status = await window.gitLocalEngine.getStatus(window._activeLocalDirHandle);
+      applyGitStatusUpdate(status, repo, !manual);
+      startLocalDirectoryWatcher(window._activeLocalDirHandle);
+      return;
+    }
+
+    connectGitDesktopStream(repo.id);
     const status = await api.getGitStatus(repo.id);
     applyGitStatusUpdate(status, repo, !manual);
     loadGitStashCount(repo);
@@ -388,8 +387,25 @@ function updateCommitButtonText() {
 
 async function toggleFileStaging(filePath, target) {
   const repo = window.state.activeRepository;
-  if (!repo || !filePath) return;
+  if (!filePath) return;
   const isChecked = target ? target.checked : true;
+
+  if (window._activeLocalDirHandle && window.gitLocalEngine) {
+    try {
+      if (isChecked) {
+        await window.gitLocalEngine.stageFile(window._activeLocalDirHandle, filePath);
+      } else {
+        await window.gitLocalEngine.unstageFile(window._activeLocalDirHandle, filePath);
+      }
+      const status = await window.gitLocalEngine.getStatus(window._activeLocalDirHandle);
+      applyGitStatusUpdate(status, repo, true);
+    } catch (err) {
+      showToast(`Local staging error: ${err.message}`, "error");
+    }
+    return;
+  }
+
+  if (!repo) return;
   const changedFiles = (window.state.gitDesktop.changedFiles || []).map((f) =>
     f.filePath === filePath ? { ...f, selected: isChecked, staged: isChecked } : f
   );
@@ -409,8 +425,24 @@ async function toggleFileStaging(filePath, target) {
 
 async function toggleAllStaging(target) {
   const repo = window.state.activeRepository;
-  if (!repo) return;
   const isChecked = target ? target.checked : true;
+
+  if (window._activeLocalDirHandle && window.gitLocalEngine) {
+    try {
+      if (isChecked) {
+        await window.gitLocalEngine.stageAll(window._activeLocalDirHandle);
+      } else {
+        await window.gitLocalEngine.unstageAll(window._activeLocalDirHandle);
+      }
+      const status = await window.gitLocalEngine.getStatus(window._activeLocalDirHandle);
+      applyGitStatusUpdate(status, repo, true);
+    } catch (err) {
+      showToast(`Local staging all error: ${err.message}`, "error");
+    }
+    return;
+  }
+
+  if (!repo) return;
   const changedFiles = (window.state.gitDesktop.changedFiles || []).map((f) => ({
     ...f,
     selected: isChecked,
@@ -549,6 +581,24 @@ async function generateAutoCommitMessage(force = false) {
   }
 
   try {
+    if (window._activeLocalDirHandle && window.gitLocalEngine) {
+      try {
+        const diff = await window.gitLocalEngine.getDiff(window._activeLocalDirHandle, "");
+        if (diff) {
+          try {
+            const res = await api.generateCommitMessage(repo.id, { diffSnippet: diff.slice(0, 3000) });
+            if (res?.summary) {
+              summaryEl.value = res.summary;
+              if (res.description) descEl.value = res.description;
+              const branchLabel = document.getElementById("gd-commit-branch-label");
+              if (branchLabel && res.branch) branchLabel.textContent = res.branch;
+              return;
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+
     const res = await api.generateCommitMessage(repo.id);
     if (res.summary) {
       summaryEl.value = res.summary;
@@ -651,6 +701,35 @@ async function viewGitDesktopDiff(filePath, showLoading = true) {
 
   if (viewer && (showLoading || isDifferentFile)) {
     viewer.innerHTML = `<div style="text-align:center;padding:32px 16px;color:var(--c-text-muted)"><div class="spinner"></div><div style="margin-top:8px">Loading unified diff for ${escapeHtml(filePath)}...</div></div>`;
+  }
+
+  if (window._activeLocalDirHandle && window.gitLocalEngine) {
+    try {
+      const diffText = await window.gitLocalEngine.getDiff(window._activeLocalDirHandle, filePath);
+      if (diffText?.trim()) {
+        if (diffText !== window._currentRenderedDiffText || isDifferentFile) {
+          window._currentRenderedDiffFile = filePath;
+          window._currentRenderedDiffText = diffText;
+          renderFormattedDiff("gd-diff-viewer", diffText, filePath);
+        }
+        return;
+      }
+
+      if (viewer) {
+        viewer.innerHTML = `
+          <div class="empty-state" style="padding:40px 16px">
+            <div class="empty-icon">✓</div>
+            <div class="empty-title">In sync with repository</div>
+            <div class="empty-desc">No active line differences detected for "${escapeHtml(filePath)}".</div>
+          </div>`;
+        window._currentRenderedDiffFile = filePath;
+        window._currentRenderedDiffText = "";
+      }
+      return;
+    } catch (err) {
+      if (viewer) viewer.innerHTML = `<div class="text-danger" style="padding:16px">Local diff error: ${escapeHtml(err.message)}</div>`;
+      return;
+    }
   }
 
   try {
@@ -760,6 +839,28 @@ async function viewAllFilesDiff(showLoading = true) {
   const viewer = document.getElementById("gd-all-diff-viewer");
   if (viewer && showLoading && (!viewer.dataset.rendered || viewer.innerHTML.includes("empty-state"))) {
     viewer.innerHTML = `<div style="text-align:center;padding:40px 16px;color:var(--c-text-muted)"><div class="spinner"></div><div style="margin-top:8px">Loading complete unified diff across all changed files...</div></div>`;
+  }
+
+  if (window._activeLocalDirHandle && window.gitLocalEngine) {
+    try {
+      const diffText = await window.gitLocalEngine.getDiff(window._activeLocalDirHandle, "");
+      if (!diffText?.trim()) {
+        if (viewer) {
+          viewer.innerHTML = `
+            <div class="empty-state" style="padding:48px 20px">
+              <div class="empty-icon">✓</div>
+              <div class="empty-title">Working tree is clean</div>
+              <div class="empty-desc">No active line differences detected across repository.</div>
+            </div>`;
+        }
+        return;
+      }
+      renderMultiFileDiff("gd-all-diff-viewer", diffText);
+      return;
+    } catch (err) {
+      if (viewer) viewer.innerHTML = `<div class="text-danger" style="padding:16px">Local diff error: ${escapeHtml(err.message)}</div>`;
+      return;
+    }
   }
 
   try {
@@ -1122,6 +1223,67 @@ async function commitFromGitDesktop() {
     setGitDesktopState({ isActionRunning: true });
     const stageAll = selectedFiles.length === allFiles.length;
     const filesToCommit = stageAll ? null : selectedFiles.map((f) => f.filePath);
+
+    // Direct local commit via isomorphic-git on user's local PC folder
+    if (window._activeLocalDirHandle && window.gitLocalEngine) {
+      try {
+        const fileList = filesToCommit || (selectedFiles.length > 0 ? selectedFiles.map((f) => f.filePath) : allFiles.map((f) => f.filePath));
+        const secretReport = await window.gitLocalEngine.scanSecrets(window._activeLocalDirHandle, fileList);
+        if (!secretReport.clean) {
+          const preview = secretReport.matches.slice(0, 3).map((s) => `${s.file}:${s.line || 1} (${s.rule})`).join("\n");
+          if (!confirm(`⚠️ SECRET SCANNER ALERT:\nDetected potential secret(s) in local files:\n\n${preview}\n\nAre you sure you want to commit these changes?`)) {
+            showToast("Commit aborted due to potential secrets", "warning");
+            btn.disabled = false;
+            setGitDesktopState({ isActionRunning: false });
+            return;
+          }
+        }
+
+        if (stageAll) {
+          await window.gitLocalEngine.stageAll(window._activeLocalDirHandle);
+        } else if (filesToCommit) {
+          for (const f of filesToCommit) {
+            await window.gitLocalEngine.stageFile(window._activeLocalDirHandle, f);
+          }
+        }
+
+        const commitRes = await window.gitLocalEngine.commit(window._activeLocalDirHandle, {
+          message: fullMessage,
+          author: {
+            name: window.state.user?.name || "Developer",
+            email: window.state.user?.email || "developer@local.host",
+          },
+        });
+
+        showToast(`Committed locally: ${summary} (${commitRes.shortSha})`, "success");
+        if (summaryInput) summaryInput.value = "";
+        if (descInput) descInput.value = "";
+
+        // Send event to n8n post-commit webhook
+        fetch("/api/internal/automation/post-commit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repository: repo.name,
+            branch: window.state.gitDesktop.gitStatus?.branch || "main",
+            commitHash: commitRes.sha,
+            commitMessage: fullMessage,
+            author: window.state.user?.name || "Developer",
+          }),
+        }).catch(() => {});
+
+        await loadGitDesktop(false);
+      } catch (err) {
+        showToast(`Local commit error: ${err.message}`, "error");
+      } finally {
+        setGitDesktopState({ isActionRunning: false });
+        if (btn) {
+          btn.disabled = false;
+          updateCommitButtonText();
+        }
+      }
+      return;
+    }
 
     // Pre-commit secret scanning guardrail
     try {
@@ -1691,7 +1853,7 @@ async function executePushFromModal() {
 
 async function openBranchSwitcherModal() {
   const repo = window.state.activeRepository;
-  if (!repo) {
+  if (!repo && !window._activeLocalDirHandle) {
     showToast("Select a repository first", "warning");
     return;
   }
@@ -1701,6 +1863,24 @@ async function openBranchSwitcherModal() {
     container.innerHTML = `<div class="text-muted" style="text-align:center;padding:20px;font-size:12px"><div class="spinner"></div><div style="margin-top:6px">Loading branches...</div></div>`;
   }
   openModal("modal-branch-switcher");
+
+  if (window._activeLocalDirHandle && window.gitLocalEngine) {
+    try {
+      const data = await window.gitLocalEngine.listBranches(window._activeLocalDirHandle);
+      allRepoBranches = (data.branches || []).map((b) => ({
+        name: b,
+        current: b === data.currentBranch,
+        remote: null,
+      }));
+      renderBranchSwitcherList(allRepoBranches);
+      return;
+    } catch (err) {
+      if (container) {
+        container.innerHTML = `<div class="text-danger" style="padding:16px;font-size:12px">Error loading local branches: ${escapeHtml(err.message)}</div>`;
+      }
+      return;
+    }
+  }
 
   try {
     const data = await api.getGitBranches(repo.id);
@@ -1791,7 +1971,20 @@ function filterBranchList() {
 
 async function checkoutSelectedBranch(branchName) {
   const repo = window.state.activeRepository;
-  if (!repo) return;
+  if (!repo && !window._activeLocalDirHandle) return;
+
+  if (window._activeLocalDirHandle && window.gitLocalEngine) {
+    try {
+      await window.gitLocalEngine.checkoutBranch(window._activeLocalDirHandle, branchName);
+      closeModal("modal-branch-switcher");
+      showToast(`Switched to local branch '${branchName}'`, "success");
+      await loadGitDesktop(false);
+      return;
+    } catch (err) {
+      showToast(`Failed to switch branch: ${err.message}`, "error");
+      return;
+    }
+  }
 
   // Find branch data to check if it's remote-only
   const branchData = allRepoBranches.find((b) => b.name === branchName);
@@ -1811,9 +2004,30 @@ async function checkoutSelectedBranch(branchName) {
 
 async function deleteLocalBranch(branchName) {
   const repo = window.state.activeRepository;
-  if (!repo || !branchName) return;
+  if (!branchName) return;
 
   if (!confirm(`Are you sure you want to delete local branch "${branchName}"?`)) return;
+
+  if (window._activeLocalDirHandle && window.gitLocalEngine) {
+    try {
+      await window.gitLocalEngine.deleteBranch(window._activeLocalDirHandle, branchName);
+      showToast(`Branch "${branchName}" deleted successfully.`, "success");
+      const data = await window.gitLocalEngine.listBranches(window._activeLocalDirHandle);
+      allRepoBranches = (data.branches || []).map((b) => ({
+        name: b,
+        current: b === data.currentBranch,
+        remote: null,
+      }));
+      renderBranchSwitcherList(allRepoBranches);
+      await loadGitDesktop(false);
+      return;
+    } catch (err) {
+      showToast(`Failed to delete local branch: ${err.message}`, "error");
+      return;
+    }
+  }
+
+  if (!repo) return;
 
   try {
     await api.gitDeleteBranch(repo.id, branchName, false);
@@ -1841,8 +2055,6 @@ async function deleteLocalBranch(branchName) {
 
 async function createAndCheckoutBranch() {
   const repo = window.state.activeRepository;
-  if (!repo) return;
-
   const input = document.getElementById("new-branch-name-input");
   const branchName = input ? input.value.trim() : "";
 
@@ -1851,6 +2063,22 @@ async function createAndCheckoutBranch() {
     input?.focus();
     return;
   }
+
+  if (window._activeLocalDirHandle && window.gitLocalEngine) {
+    try {
+      await window.gitLocalEngine.createBranch(window._activeLocalDirHandle, branchName);
+      closeModal("modal-branch-switcher");
+      if (input) input.value = "";
+      showToast(`Created & switched to new local branch '${branchName}'`, "success");
+      await loadGitDesktop(false);
+      return;
+    } catch (err) {
+      showToast(`Failed to create local branch: ${err.message}`, "error");
+      return;
+    }
+  }
+
+  if (!repo) return;
 
   try {
     await api.checkoutBranch(repo.id, branchName, true);
@@ -2042,6 +2270,9 @@ async function getStoredDirHandle(key) {
   }
 }
 
+window.saveStoredDirHandle = saveStoredDirHandle;
+window.getStoredDirHandle = getStoredDirHandle;
+
 async function scanDirectoryHandle(dirHandle, basePath = "") {
   const files = [];
   const IGNORED_DIRS = new Set([
@@ -2129,82 +2360,36 @@ async function scanDirectoryHandle(dirHandle, basePath = "") {
   return files;
 }
 
-async function startLocalDirectorySync(repoId, dirHandle) {
-  if (!repoId || !dirHandle) return;
+function startLocalDirectoryWatcher(dirHandle) {
+  if (!dirHandle) return;
   window._activeLocalDirHandle = dirHandle;
-
-  try {
-    const files = await scanDirectoryHandle(dirHandle);
-    _knownLocalFileMtimes.clear();
-    for (const f of files) {
-      _knownLocalFileMtimes.set(f.filePath, f.lastModified);
-    }
-    // Batch sync to server in small chunks of 15 files to avoid Vercel payload limit (4.5MB)
-    if (files.length > 0) {
-      const CHUNK_SIZE = 15;
-      for (let i = 0; i < files.length; i += CHUNK_SIZE) {
-        const slice = files.slice(i, i + CHUNK_SIZE);
-        const isLastChunk = i + CHUNK_SIZE >= files.length;
-        await api.syncGitWorkspace(
-          repoId,
-          slice.map((f) => ({ filePath: f.filePath, content: f.content })),
-          isLastChunk,
-        );
-      }
-      // Finalize baseline commit so linked repository starts with a completely clean working tree (0 changes)
-      await api.commitBaseline(repoId).catch(() => {});
-      await loadGitDesktop(false);
-    }
-  } catch (err) {
-    console.warn("Initial local directory sync warning:", err);
-  }
-
-  // Poll directory handle for changes every 1 second
   if (_localDirWatcherInterval) clearInterval(_localDirWatcherInterval);
-  _localDirWatcherInterval = setInterval(() => {
-    checkLocalDirectoryChanges(repoId, dirHandle).catch(() => { });
-  }, 1000);
+
+  _localDirWatcherInterval = setInterval(async () => {
+    if (_isScanningLocalDir || !window._activeLocalDirHandle || !window.gitLocalEngine) return;
+    _isScanningLocalDir = true;
+    try {
+      const status = await window.gitLocalEngine.getStatus(window._activeLocalDirHandle);
+      const prevEntries = window.state.gitDesktop?.gitStatus?.entries || [];
+      const changed = JSON.stringify(status.entries) !== JSON.stringify(prevEntries);
+      if (changed) {
+        applyGitStatusUpdate(status, window.state.activeRepository, true);
+      }
+    } catch (_) {}
+    finally {
+      _isScanningLocalDir = false;
+    }
+  }, 2000);
 }
 
-async function checkLocalDirectoryChanges(repoId, dirHandle) {
-  if (_isScanningLocalDir || !dirHandle || !repoId) return;
-  _isScanningLocalDir = true;
-  try {
-    const files = await scanDirectoryHandle(dirHandle);
-    let hasChanges = false;
-    const currentPaths = new Set();
-
-    for (const f of files) {
-      currentPaths.add(f.filePath);
-      const prevMtime = _knownLocalFileMtimes.get(f.filePath);
-      if (prevMtime === undefined || prevMtime !== f.lastModified) {
-        _knownLocalFileMtimes.set(f.filePath, f.lastModified);
-        hasChanges = true;
-        await api.syncGitFile(repoId, f.filePath, f.content, "write");
-      }
-    }
-
-    // Detect deleted files
-    for (const [knownPath] of _knownLocalFileMtimes) {
-      if (!currentPaths.has(knownPath)) {
-        _knownLocalFileMtimes.delete(knownPath);
-        hasChanges = true;
-        await api.syncGitFile(repoId, knownPath, "", "delete");
-      }
-    }
-
-    if (hasChanges) {
-      await loadGitDesktop(false);
-    }
-  } catch (_) {
-  } finally {
-    _isScanningLocalDir = false;
-  }
+// Backward-compatible alias
+async function startLocalDirectorySync(repoId, dirHandle) {
+  startLocalDirectoryWatcher(dirHandle);
 }
 
 async function linkLocalFolderToGitDesktop() {
   if (typeof window.showDirectoryPicker !== "function") {
-    showToast("File System Access API is not supported in this browser. Use 'Browse Repositories' to add a repository.", "warning");
+    showToast("File System Access API is not supported in this browser. Please use Google Chrome, Microsoft Edge, or Brave.", "warning");
     return;
   }
 
@@ -2212,41 +2397,48 @@ async function linkLocalFolderToGitDesktop() {
     const dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
     if (!dirHandle) return;
 
-    let repo = window.state.activeRepository;
-    if (!repo) {
-      showToast(`Opening workspace: ${dirHandle.name}...`, "info");
-      const res = await api.connectRepository({
-        name: dirHandle.name,
-        localPath: ".",
-      });
-      if (res?.repository) {
-        repo = res.repository;
-        window.setState("activeRepository", repo);
-        localStorage.setItem("gda_active_repo_id", repo.id);
-        const listRes = await api.listRepositories().catch(() => []);
-        window.setState("repositories", listRes.repositories || listRes || [repo]);
-        if (typeof window.renderRepositoriesList === "function") window.renderRepositoriesList();
-        if (typeof window.populateRepoDropdowns === "function") window.populateRepoDropdowns();
+    // Detect REAL Git repository via isomorphic-git
+    const repoInfo = await window.gitLocalEngine.detectRepository(dirHandle);
+    if (!repoInfo.isGit) {
+      const wantInit = confirm(`The folder "${dirHandle.name}" does not contain a .git directory.\n\nWould you like to initialize a new Git repository here?`);
+      if (wantInit) {
+        await window.gitLocalEngine.initRepository(dirHandle);
+        showToast(`Initialized Git repository in ${dirHandle.name}`, "success");
       } else {
-        showToast("Failed to initialize workspace for folder.", "error");
+        showToast("Please choose a folder that contains a Git repository.", "info");
         return;
       }
     }
 
+    const localRepo = {
+      id: `local-${dirHandle.name.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
+      name: dirHandle.name,
+      path: dirHandle.name,
+      isLocal: true,
+      currentBranch: repoInfo.branch || "main",
+      defaultBranch: "main",
+      url: repoInfo.url || ""
+    };
+
     window._activeLocalDirHandle = dirHandle;
-    await saveStoredDirHandle("active_dir", dirHandle);
+    if (typeof saveStoredDirHandle === "function") {
+      await saveStoredDirHandle("active_dir", dirHandle);
+    }
+
+    window.setState("activeRepository", localRepo);
+    localStorage.setItem("gda_active_repo_id", localRepo.id);
 
     const badge = document.getElementById("gd-local-folder-badge");
     const nameEl = document.getElementById("gd-local-folder-name");
     if (badge && nameEl) {
-      nameEl.textContent = `Synced: ${dirHandle.name}`;
+      nameEl.textContent = `Local: ${dirHandle.name}`;
       badge.style.display = "inline-flex";
       badge.className = "badge badge-success";
     }
 
-    showToast(`Linked local folder: ${dirHandle.name}. Live watching active!`, "success");
-    await startLocalDirectorySync(repo.id, dirHandle);
-    await loadGitDesktop();
+    showToast(`Connected local Git repository: ${dirHandle.name}`, "success");
+    startLocalDirectoryWatcher(dirHandle);
+    await loadGitDesktop(true);
   } catch (err) {
     if (err.name !== "AbortError") {
       showToast(`Failed to link folder: ${err.message}`, "error");
@@ -2283,11 +2475,6 @@ async function openGitDesktopFileEditor(filePath = "") {
 
 async function saveGitDesktopFile() {
   const repo = window.state.activeRepository;
-  if (!repo) {
-    showToast("No active repository", "error");
-    return;
-  }
-
   const pathInput = document.getElementById("git-editor-filepath");
   const contentInput = document.getElementById("git-editor-content");
   const saveBtn = document.getElementById("btn-save-git-file");
@@ -2319,72 +2506,56 @@ async function saveGitDesktopFile() {
       } catch (diskErr) {
         console.warn("Could not write to local directory handle:", diskErr);
       }
+    } else if (repo) {
+      await api.syncGitFile(repo.id, filePath, content, "write");
     }
-
-    await api.syncGitFile(repo.id, filePath, content, "write");
 
     const modal = document.getElementById("modal-git-file-editor");
     if (modal) modal.style.display = "none";
 
-    showToast(`Saved and synced ${filePath}`, "success");
+    showToast(`Saved ${filePath}`, "success");
     await loadGitDesktop(false);
   } catch (err) {
     showToast(`Failed to save file: ${err.message}`, "error");
   } finally {
     if (saveBtn) {
       saveBtn.disabled = false;
-      saveBtn.innerHTML = "💾 Save &amp; Live Sync";
+      saveBtn.innerHTML = "💾 Save File";
     }
   }
 }
 
 async function discardGitChanges(filePath = null) {
   const repo = window.state.activeRepository;
-  if (!repo) return;
-
   const targetDesc = filePath ? filePath : "all uncommitted changes";
   if (!confirm(`Are you sure you want to discard ${targetDesc}? This action cannot be undone.`)) {
     return;
   }
 
-  try {
-    const res = await api.discardGitChanges(repo.id, filePath);
-
-    // If local folder is linked, mirror discard so watcher doesn't bounce the discarded change right back
-    if (window._activeLocalDirHandle) {
+  if (window._activeLocalDirHandle && window.gitLocalEngine) {
+    try {
       if (filePath) {
-        try {
-          const parts = filePath.split("/").filter(Boolean);
-          let curr = window._activeLocalDirHandle;
-          for (let i = 0; i < parts.length - 1; i++) {
-            curr = await curr.getDirectoryHandle(parts[i]);
-          }
-          const fileName = parts[parts.length - 1];
-
-          if (res?.isDeleted) {
-            await curr.removeEntry(fileName).catch(() => {});
-            _knownLocalFileMtimes.delete(filePath);
-          } else if (typeof res?.restoredContent === "string") {
-            const fileHandle = await curr.getFileHandle(fileName, { create: true });
-            const writable = await fileHandle.createWritable();
-            await writable.write(res.restoredContent);
-            await writable.close();
-            const updatedFile = await fileHandle.getFile();
-            _knownLocalFileMtimes.set(filePath, updatedFile.lastModified);
-          }
-        } catch (_) {}
+        await window.gitLocalEngine.discardFile(window._activeLocalDirHandle, filePath);
       } else {
-        // Discard all: re-scan timestamps so watcher doesn't fire
-        try {
-          const files = await scanDirectoryHandle(window._activeLocalDirHandle);
-          _knownLocalFileMtimes.clear();
-          for (const f of files) {
-            _knownLocalFileMtimes.set(f.filePath, f.lastModified);
-          }
-        } catch (_) {}
+        const allFiles = window.state.gitDesktop.changedFiles || [];
+        for (const f of allFiles) {
+          await window.gitLocalEngine.discardFile(window._activeLocalDirHandle, f.filePath).catch(() => {});
+        }
       }
+      showToast(`Discarded ${targetDesc}`, "info");
+      const status = await window.gitLocalEngine.getStatus(window._activeLocalDirHandle);
+      applyGitStatusUpdate(status, repo, false);
+      return;
+    } catch (err) {
+      showToast(`Failed to discard local changes: ${err.message}`, "error");
+      return;
     }
+  }
 
+  if (!repo) return;
+
+  try {
+    await api.discardGitChanges(repo.id, filePath);
     showToast(`Discarded ${targetDesc}`, "info");
     await loadGitDesktop(false);
   } catch (err) {
@@ -2405,6 +2576,7 @@ window.saveGitDesktopFile = saveGitDesktopFile;
 window.discardGitChanges = discardGitChanges;
 window.discardAllGitChanges = discardAllGitChanges;
 window.startLocalDirectorySync = startLocalDirectorySync;
+window.startLocalDirectoryWatcher = startLocalDirectoryWatcher;
 window.scanDirectoryHandle = scanDirectoryHandle;
 window.filterChangedFiles = filterChangedFiles;
 window.renderGitDesktopChanges = renderGitDesktopChanges;

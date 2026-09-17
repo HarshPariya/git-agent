@@ -3760,23 +3760,22 @@ body {
   flex-wrap: wrap;
 }
 
-.header-mobile-toggle {
+/* Mobile Navigation Backdrop */
+.mobile-nav-backdrop {
   display: none;
-  background: var(--c-surface-hover);
-  border: 1px solid var(--c-border);
-  color: var(--c-text);
-  font-size: 18px;
-  padding: 6px 10px;
-  border-radius: var(--r-md);
-  cursor: pointer;
-  line-height: 1;
-  transition: all 0.15s ease;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 1150;
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
 
-.header-mobile-toggle:hover {
-  background: var(--c-accent-light);
-  border-color: var(--c-accent-border);
-  color: var(--c-accent);
+.mobile-nav-backdrop.active {
+  display: block;
+  opacity: 1;
 }
 
 @media (max-width: 1024px) {
@@ -3826,16 +3825,70 @@ body {
   .header {
     padding: 0 12px;
     height: 56px;
+    position: sticky;
+    top: 0;
+    z-index: 1100;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  #github-connect-btn {
+    padding: 6px 8px;
+    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #github-connect-btn .btn-text {
+    display: none !important;
+  }
+
+  #header-status-pill {
+    padding: 4px 6px;
+  }
+
+  #header-status-pill #server-status-text {
+    display: none !important;
   }
 
   .header-mobile-toggle {
-    display: flex;
+    display: flex !important;
     align-items: center;
     justify-content: center;
     width: 38px;
     height: 38px;
     font-size: 20px;
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-md);
+    cursor: pointer;
     flex-shrink: 0;
+    color: var(--c-text);
+    z-index: 1201;
+    transition: all 0.15s ease;
+  }
+
+  .header-mobile-toggle:hover {
+    background: var(--c-surface-hover);
+    border-color: var(--c-border-hover);
   }
 
   .header-nav {
@@ -3844,48 +3897,75 @@ body {
     top: 56px;
     left: 0;
     right: 0;
-    bottom: 0;
-    background: rgba(255, 255, 255, 0.98);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
+    bottom: auto;
+    max-height: calc(100vh - 64px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: var(--c-surface);
+    border-bottom: 1px solid var(--c-border);
+    box-shadow: var(--shadow-2xl);
     flex-direction: column;
     align-items: stretch;
-    padding: 16px;
+    padding: 14px 16px 24px;
     gap: 6px;
     z-index: 1200;
-    overflow-y: auto;
-    box-shadow: var(--shadow-2xl);
-    border-top: 1px solid var(--c-border);
   }
 
   .header-nav.mobile-open {
-    display: flex;
-    animation: fadeIn 0.2s ease;
+    display: flex !important;
+    animation: slideDownNav 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes slideDownNav {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .header-nav-item {
-    padding: 14px 16px;
-    font-size: 15px;
-    font-weight: 600;
+    padding: 12px 16px;
+    font-size: 14px;
+    font-weight: 500;
     border-radius: var(--r-md);
     background: var(--c-surface-subtle);
     border: 1px solid var(--c-border-subtle);
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .header-nav-item:hover,
+  .header-nav-item:active {
+    background: var(--c-surface-hover);
+    border-color: var(--c-border);
   }
 
   .header-nav-item.active {
     background: var(--c-accent-light);
     color: var(--c-accent);
     border-color: var(--c-accent-border);
+    font-weight: 600;
   }
 
   .active-repo-badge {
     max-width: 120px;
     padding: 4px 8px;
     font-size: 11px;
+    flex-shrink: 1;
+    overflow: hidden;
   }
 
   #header-active-repo-name {
-    max-width: 70px;
+    max-width: 75px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .header-actions {

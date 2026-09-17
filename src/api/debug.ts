@@ -371,9 +371,22 @@ export async function approveFixHandler(request: Request, response: Response, ne
 
     if (!plan) throw new AppError("No fix plan available in this session to approve", "VALIDATION_ERROR", 400);
 
-    fixPlanner.approve(plan.id, context.userId);
-
     const body = getRequestBody(request);
+    if (body.appliedLocally === true) {
+      debugAgentPipeline.transitionState(
+        sessionId,
+        "COMMITTING_CHANGES",
+        "Fix approved and applied to local files directly",
+      );
+      response.status(200).json({
+        status: "approved",
+        success: true,
+        appliedLocally: true,
+        planId: plan.id,
+      });
+      return;
+    }
+
     const customFiles = Array.isArray(body.customFiles)
       ? (body.customFiles as Array<{ filePath: string; newContent: string }>)
       : undefined;

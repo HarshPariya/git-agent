@@ -582,26 +582,59 @@ function initUserMenu() {
 function initMobileMenu() {
   const toggle = document.getElementById("mobile-nav-toggle");
   const nav = document.querySelector(".header-nav");
+  const backdrop = document.getElementById("mobile-nav-backdrop");
   if (!toggle || !nav) return;
 
-  toggle.addEventListener("click", () => {
-    nav.classList.toggle("mobile-open");
-    toggle.textContent = nav.classList.contains("mobile-open") ? "✕" : "☰";
+  function closeMenu() {
+    nav.classList.remove("mobile-open");
+    toggle.textContent = "☰";
+    toggle.setAttribute("aria-expanded", "false");
+    if (backdrop) backdrop.classList.remove("active");
+  }
+
+  function openMenu() {
+    nav.classList.add("mobile-open");
+    toggle.textContent = "✕";
+    toggle.setAttribute("aria-expanded", "true");
+    if (backdrop) backdrop.classList.add("active");
+  }
+
+  toggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (nav.classList.contains("mobile-open")) {
+      closeMenu();
+    } else {
+      openMenu();
+    }
   });
 
-  // Close mobile menu when a nav item is clicked
+  if (backdrop) {
+    backdrop.addEventListener("click", closeMenu);
+  }
+
+  // Close mobile menu when any nav item is clicked
   nav.querySelectorAll(".header-nav-item").forEach((item) => {
-    item.addEventListener("click", () => {
-      nav.classList.remove("mobile-open");
-      toggle.textContent = "☰";
-    });
+    item.addEventListener("click", closeMenu);
   });
 
-  // Close mobile menu when clicking outside
+  // Close mobile menu on Escape key
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && nav.classList.contains("mobile-open")) {
+      closeMenu();
+    }
+  });
+
+  // Close on outside click
   document.addEventListener("click", (e) => {
-    if (!nav.contains(e.target) && !toggle.contains(e.target)) {
-      nav.classList.remove("mobile-open");
-      toggle.textContent = "☰";
+    if (nav.classList.contains("mobile-open") && !nav.contains(e.target) && !toggle.contains(e.target)) {
+      closeMenu();
+    }
+  });
+
+  // Clean up on desktop resize
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 900 && nav.classList.contains("mobile-open")) {
+      closeMenu();
     }
   });
 }

@@ -1,0 +1,134 @@
+{
+  "name": "3 - Automated PR Review & Semantic Check",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "github-pr-review",
+        "options": {}
+      },
+      "id": "node-pr-webhook",
+      "name": "Webhook - PR Event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [220, 300],
+      "webhookId": "github-pr-review-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.action }}",
+              "operation": "regex",
+              "value2": "opened|synchronize"
+            }
+          ]
+        }
+      },
+      "id": "node-if-pr-active",
+      "name": "If PR Opened or Synchronized",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.GIT_AGENT_URL || 'https://git-agent.onrender.com') + '/api/internal/automation/pr-review' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-N8N-Key",
+              "value": "={{ $env.N8N_API_KEY || 'test-n8n-key' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"repository\": \"{{ $json.body.repository.full_name || $json.body.repository.name }}\",\n  \"pullRequestId\": {{ $json.body.pull_request.number }},\n  \"title\": \"{{ $json.body.pull_request.title }}\",\n  \"description\": \"{{ $json.body.pull_request.body || '' }}\",\n  \"headSha\": \"{{ $json.body.pull_request.head.sha }}\",\n  \"baseRef\": \"{{ $json.body.pull_request.base.ref }}\"\n}",
+        "options": {}
+      },
+      "id": "node-call-git-agent-pr-review",
+      "name": "Git Agent - Semantic PR Review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.github.com/repos/' + $('Webhook - PR Event').item.json.body.repository.full_name + '/pulls/' + $('Webhook - PR Event').item.json.body.pull_request.number + '/reviews' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Git-Agent-Reviewer"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"event\": \"{{ $json.approved ? 'APPROVE' : 'COMMENT' }}\",\n  \"body\": \"🔍 **Git Agent AI - Automated PR Review**\\n\\n{{ $json.summary }}\\n\\n- **Approval Recommendation:** {{ $json.approved ? '✅ Approved' : '⚠️ Comments Pending' }}\\n- **High Risk Flag:** {{ $json.hasHighRisk ? 'YES' : 'NO' }}\\n\\n*Automated review by Git Agent Critic Engine.*\"\n}",
+        "options": {}
+      },
+      "id": "node-post-github-review",
+      "name": "GitHub - Submit Review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [920, 240]
+    }
+  ],
+  "connections": {
+    "Webhook - PR Event": {
+      "main": [
+        [
+          {
+            "node": "If PR Opened or Synchronized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If PR Opened or Synchronized": {
+      "main": [
+        [
+          {
+            "node": "Git Agent - Semantic PR Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Git Agent - Semantic PR Review": {
+      "main": [
+        [
+          {
+            "node": "GitHub - Submit Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

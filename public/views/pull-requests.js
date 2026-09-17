@@ -64,7 +64,7 @@ async function loadPRs() {
       const defaultBranch = repo?.defaultBranch || "development";
       const ghUrl = repo?.url && repo.url.includes("github.com")
         ? `${repo.url.replace(/\.git$/, "")}/compare/${defaultBranch}...${currentBranch}?expand=1`
-        : `https://github.com/HarshPariya/ai-chatbot/compare/${defaultBranch}...${currentBranch}?expand=1`;
+        : "";
 
       container.innerHTML = `
         <div class="empty-state" style="padding:48px 24px;text-align:center">

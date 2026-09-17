@@ -32,8 +32,13 @@ const SALT_LENGTH = 16;
 const PBKDF2_ITERATIONS = 1000;
 const PBKDF2_KEY_LENGTH = 64;
 
-/** The sole permitted admin email. */
-export const ADMIN_EMAILS = new Set(["harshpariya195@gmail.com"]);
+/** The permitted admin emails (configurable via ADMIN_EMAILS env, comma-separated). */
+export const ADMIN_EMAILS = new Set(
+  (process.env.ADMIN_EMAILS || "harshpariya195@gmail.com")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
+);
 
 const hashPassword = (password: string, salt: string): string =>
   crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, PBKDF2_KEY_LENGTH, "sha512").toString("hex");

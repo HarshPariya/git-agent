@@ -29,8 +29,8 @@ async function renderPushSummaryView(remote, targetBranch, rawOutput = "") {
   } catch { }
 
   const ghUrl = repo?.url && repo.url.includes("github.com")
-    ? `${repo.url.replace(/\.git$/, "")}/compare/${repo.defaultBranch || "development"}...${targetBranch}?expand=1`
-    : `https://github.com/HarshPariya/ai-chatbot/compare/development...${targetBranch}?expand=1`;
+    ? `${repo.url.replace(/\.git$/, "")}/compare/${repo.defaultBranch || "main"}...${targetBranch}?expand=1`
+    : "";
 
   if (viewer) {
     viewer.innerHTML = `

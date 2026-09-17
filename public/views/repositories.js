@@ -423,72 +423,73 @@ function initDragAndDrop() {
   });
 }
 
-async function triggerNativeFolderPicker() {
-  const btn = document.getElementById("btn-open-os-dialog") || document.getElementById("open-os-dialog-btn");
-  const origHtml = btn ? btn.innerHTML : "";
+async function openLocalFolder() {
+  if (typeof window.showDirectoryPicker !== "function") {
+    showToast(
+      "File System Access API is not supported in this browser. Please use Chrome, Edge, Brave, or Opera for direct local folder access.",
+      "warning",
+    );
+    return;
+  }
 
-  // Priority 1: Backend native OS dialog (for local desktop / Electron instances)
-  let backendDialogAttempted = false;
   try {
-    if (btn) {
-      btn.disabled = true;
-      btn.innerHTML = `⏳ Opening OS Dialog...`;
-    }
-    showToast("Opening system folder dialog...", "info");
+    const dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+    if (!dirHandle) return;
 
-    const res = await api.pickNativeFolderDialog();
-    backendDialogAttempted = true;
-    if (res && res.path && !res.cancelled) {
-      showToast(`Selected: ${res.path}`, "success");
-      await connectSpecificFolder(res.folderName || "Repository", res.path);
-      return;
-    } else if (res && res.cancelled && !res.isCloud) {
-      showToast("Folder selection cancelled", "info");
-      return;
+    showToast(`Detecting Git repository in "${dirHandle.name}"...`, "info");
+    const detection = await window.gitLocalEngine.detectRepository(dirHandle);
+
+    if (!detection.isGit) {
+      const initConfirm = confirm(
+        `"${dirHandle.name}" is not a Git repository.\n\nWould you like to initialize a new Git repository in this folder?`
+      );
+      if (initConfirm) {
+        showToast("Initializing Git repository...", "info");
+        await window.gitLocalEngine.initRepository(dirHandle);
+      } else {
+        showToast("Folder selection cancelled (not a Git repository)", "info");
+        return;
+      }
     }
+
+    window._activeLocalDirHandle = dirHandle;
+    const localRepo = {
+      id: "local-" + dirHandle.name.toLowerCase().replace(/[^a-z0-9]/g, "-"),
+      name: dirHandle.name,
+      isLocal: true,
+      mode: "LOCAL",
+      dirHandle,
+      currentBranch: detection.branch || "main",
+      defaultBranch: detection.branch || "main",
+      remotes: detection.remotes || [],
+      url: detection.url || "",
+      path: dirHandle.name,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (typeof window.saveStoredDirHandle === "function") {
+      await window.saveStoredDirHandle("active_dir", dirHandle).catch(() => {});
+    }
+    localStorage.setItem("gda_active_repo_id", localRepo.id);
+
+    const existing = (window.state.repositories || []).filter((r) => r.id !== localRepo.id);
+    window.setState("repositories", [localRepo, ...existing]);
+    window.setState("activeRepository", localRepo);
+
+    showToast(`Opened local repository: ${dirHandle.name} (${detection.branch || "main"})`, "success");
+
+    if (typeof window.renderRepositoriesList === "function") window.renderRepositoriesList();
+    if (typeof window.populateRepoDropdowns === "function") window.populateRepoDropdowns();
+    if (typeof window.navigate === "function") window.navigate("git-desktop");
   } catch (err) {
-    console.warn("Backend OS native dialog error, trying browser picker:", err);
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = origHtml;
+    if (err.name !== "AbortError") {
+      showToast(`Failed to open folder: ${err.message}`, "error");
     }
   }
+}
 
-  // Priority 2: Browser's native File System Access API (for deployed cloud mode / Chrome)
-  if (typeof window.showDirectoryPicker === "function") {
-    try {
-      const dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
-      if (dirHandle && dirHandle.name) {
-        showToast(`Connecting repository "${dirHandle.name}"...`, "info");
-        window._activeLocalDirHandle = dirHandle;
-        let resolvedPath = dirHandle.name;
-        try {
-          const res = await api.resolveFolder(dirHandle.name, [], window.state.currentBrowsedPath);
-          if (res && res.resolvedPath && res.exists) {
-            resolvedPath = res.resolvedPath;
-          }
-        } catch (_) {
-          // Cloud mode
-        }
-        await connectSpecificFolder(dirHandle.name, resolvedPath, dirHandle);
-        return;
-      }
-    } catch (fsErr) {
-      if (fsErr.name === "AbortError") {
-        showToast("Folder selection cancelled", "info");
-        return;
-      }
-      console.warn("Browser showDirectoryPicker fallback error:", fsErr);
-    }
-  }
-
-  // Priority 3: Fallback to input webkitdirectory
-  const input = document.getElementById("native-folder-input");
-  if (input) {
-    input.value = "";
-    input.click();
-  }
+async function triggerNativeFolderPicker() {
+  await openLocalFolder();
 }
 
 function setupFolderDropZone() {

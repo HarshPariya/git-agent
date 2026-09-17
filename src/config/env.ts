@@ -34,4 +34,7 @@ export const env = Object.freeze({
   maxRetrievedChunks: Number(process.env.MAX_RETRIEVED_CHUNKS ?? 4),
   ragDebugContext: process.env.RAG_DEBUG_CONTEXT === "true",
   googleClientId: process.env.GOOGLE_CLIENT_ID?.trim() || "",
+  n8nApiKey: process.env.N8N_API_KEY?.trim() || "",
+  n8nWebhookSecret: process.env.N8N_WEBHOOK_SECRET?.trim() || "",
+  n8nWebhookUrl: process.env.N8N_WEBHOOK_URL?.trim() || "",
 });

@@ -1,0 +1,206 @@
+{
+  "name": "1 - GitHub Issue Triage Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "github-issue-triage",
+        "options": {}
+      },
+      "id": "node-webhook-1",
+      "name": "Webhook - Issue Event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [220, 300],
+      "webhookId": "github-issue-triage-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.action }}",
+              "operation": "equal",
+              "value2": "opened"
+            }
+          ]
+        }
+      },
+      "id": "node-if-opened",
+      "name": "If Issue Opened",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.GIT_AGENT_URL || 'https://git-agent.onrender.com') + '/api/internal/automation/issue-triage' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-N8N-Key",
+              "value": "={{ $env.N8N_API_KEY || 'test-n8n-key' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"repository\": \"{{ $json.body.repository.full_name || $json.body.repository.name }}\",\n  \"issueNumber\": {{ $json.body.issue.number }},\n  \"title\": \"{{ $json.body.issue.title }}\",\n  \"body\": \"{{ $json.body.issue.body }}\",\n  \"author\": \"{{ $json.body.issue.user.login }}\"\n}",
+        "options": {}
+      },
+      "id": "node-call-git-agent-triage",
+      "name": "Git Agent - Analyze Issue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 240]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.classification }}",
+              "operation": "equal",
+              "value2": "bug"
+            }
+          ]
+        }
+      },
+      "id": "node-check-is-bug",
+      "name": "If Bug Detected",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [920, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.github.com/repos/' + $('Webhook - Issue Event').item.json.body.repository.full_name + '/issues/' + $('Webhook - Issue Event').item.json.body.issue.number + '/comments' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Git-Agent-Automation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"body\": \"🤖 **Git Agent AI Triage Report**\\n\\n- **Classification:** {{ $json.classification | upper }}\\n- **Estimated Complexity:** {{ $json.estimatedComplexity }}\\n- **Severity:** {{ $json.severity }}\\n\\n### Initial Analysis:\\n{{ $json.initialAnalysis }}\\n\\n*Automated triage via Git-Agent & n8n.*\"\n}",
+        "options": {}
+      },
+      "id": "node-post-github-comment",
+      "name": "GitHub - Post AI Triage Comment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1160, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.github.com/repos/' + $('Webhook - Issue Event').item.json.body.repository.full_name + '/issues/' + $('Webhook - Issue Event').item.json.body.issue.number + '/labels' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.GITHUB_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Git-Agent-Automation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"labels\": {{ JSON.stringify($json.suggestedLabels || ['triaged', 'ai-analyzed']) }}\n}",
+        "options": {}
+      },
+      "id": "node-add-labels",
+      "name": "GitHub - Add Labels",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1380, 180]
+    }
+  ],
+  "connections": {
+    "Webhook - Issue Event": {
+      "main": [
+        [
+          {
+            "node": "If Issue Opened",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Issue Opened": {
+      "main": [
+        [
+          {
+            "node": "Git Agent - Analyze Issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Git Agent - Analyze Issue": {
+      "main": [
+        [
+          {
+            "node": "If Bug Detected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Bug Detected": {
+      "main": [
+        [
+          {
+            "node": "GitHub - Post AI Triage Comment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub - Post AI Triage Comment": {
+      "main": [
+        [
+          {
+            "node": "GitHub - Add Labels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

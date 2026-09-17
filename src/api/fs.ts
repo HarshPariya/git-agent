@@ -356,72 +356,19 @@ export async function resolveFolderHandler(request: Request, response: Response,
   }
 }
 
-export async function pickNativeDialogHandler(
-  _request: Request,
-  response: Response,
-  next: NextFunction,
-): Promise<void> {
+export function pickNativeDialogHandler(_request: Request, response: Response, next: NextFunction): void {
   try {
-    if (process.env.VERCEL || process.env.RENDER) {
-      response.status(200).json({ cancelled: true, isCloud: true });
-      return;
-    }
-    const selectedPath = await showNativeFolderDialog();
-    if (!selectedPath) {
-      response.status(200).json({ cancelled: true });
-      return;
-    }
-    const exists = fs.existsSync(selectedPath);
+    // A cloud web server cannot open desktop dialogs on the user's PC.
+    // In accordance with product rules, local folder selection is performed via the browser's File System Access API.
     response.status(200).json({
-      path: selectedPath,
-      folderName: path.basename(selectedPath) || selectedPath,
-      isGitRepo: exists && fs.existsSync(path.join(selectedPath, ".git")),
-      cancelled: false,
+      cancelled: true,
+      isCloud: true,
+      message:
+        "Direct OS dialog not supported on web server. Use browser File System Access API (showDirectoryPicker).",
     });
   } catch (error) {
     next(error);
   }
-}
-
-function showNativeFolderDialog(): Promise<string | null> {
-  return new Promise((resolve) => {
-    if (process.platform === "win32") {
-      const psScript = `Add-Type -AssemblyName System.Windows.Forms\n$dialog = New-Object System.Windows.Forms.FolderBrowserDialog\n$dialog.Description = "Select any repository or project folder"\n$dialog.ShowNewFolderButton = $true\n$topForm = New-Object System.Windows.Forms.Form\n$topForm.TopMost = $true\n$res = $dialog.ShowDialog($topForm)\nif ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dialog.SelectedPath }\n$topForm.Dispose()`;
-      const encoded = Buffer.from(psScript, "utf16le").toString("base64");
-      execFile(
-        "powershell.exe",
-        ["-NoProfile", "-STA", "-EncodedCommand", encoded],
-        { timeout: 120000 },
-        (err, stdout) => {
-          if (err || !stdout) resolve(null);
-          else {
-            const picked = stdout.trim().split(/\r?\n/).filter(Boolean).pop()?.trim();
-            resolve(picked && fs.existsSync(picked) ? picked : null);
-          }
-        },
-      );
-    } else if (process.platform === "darwin") {
-      execFile(
-        "osascript",
-        ["-e", 'POSIX path of (choose folder with prompt "Select a repository folder:")'],
-        { timeout: 120000 },
-        (err, stdout) => {
-          if (err || !stdout) resolve(null);
-          else resolve(stdout.trim());
-        },
-      );
-    } else {
-      execFile(
-        "zenity",
-        ["--file-selection", "--directory", "--title=Select Repository Folder"],
-        { timeout: 120000 },
-        (err, stdout) => {
-          if (!err && stdout) resolve(stdout.trim());
-          else resolve(null);
-        },
-      );
-    }
-  });
 }
 
 export async function openInOsHandler(request: Request, response: Response, next: NextFunction): Promise<void> {
@@ -430,6 +377,14 @@ export async function openInOsHandler(request: Request, response: Response, next
     const filePath = typeof body.filePath === "string" ? body.filePath.trim() : "";
     const repoId = typeof body.repositoryId === "string" ? body.repositoryId.trim() : "";
     const mode = typeof body.mode === "string" ? body.mode : "reveal";
+
+    if (process.env.VERCEL || process.env.RENDER) {
+      response.status(200).json({
+        success: false,
+        message: "Native OS actions cannot run from a cloud web backend. In Local Mode, use your PC file manager.",
+      });
+      return;
+    }
 
     if (!filePath && !repoId) throw new AppError("filePath or repositoryId is required", "VALIDATION_ERROR", 400);
 

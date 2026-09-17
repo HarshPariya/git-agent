@@ -292,10 +292,9 @@ export class RepositoryStore {
       }
     }
 
-    // Default remote URL is ONLY for Git-Agent itself!
+    // Default remote URL from env if configured
     if (!remoteUrl && isGitAgent) {
-      remoteUrl =
-        process.env.GIT_REPO_URL || process.env.GITHUB_REPO_URL || "https://github.com/HarshPariya/git-agent.git";
+      remoteUrl = process.env.GIT_REPO_URL || process.env.GITHUB_REPO_URL || "";
     }
 
     // Ensure it is initialized as a valid git repository

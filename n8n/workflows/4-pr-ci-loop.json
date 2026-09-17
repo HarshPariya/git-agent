@@ -1,0 +1,130 @@
+{
+  "name": "4 - PR CI Loop & Verification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pr-ci-loop",
+        "options": {}
+      },
+      "id": "node-pr-ci-webhook",
+      "name": "Webhook - CI Check Finished",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [220, 300],
+      "webhookId": "pr-ci-loop-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.GIT_AGENT_URL || 'https://git-agent.onrender.com') + '/api/internal/automation/ci-result' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-N8N-Key",
+              "value": "={{ $env.N8N_API_KEY || 'test-n8n-key' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"repository\": \"{{ $json.body.repository ? ($json.body.repository.full_name || $json.body.repository.name) : 'repository' }}\",\n  \"pullRequestId\": {{ $json.body.pull_request ? $json.body.pull_request.number : ($json.body.prNumber || 0) }},\n  \"commitSha\": \"{{ $json.body.check_run ? $json.body.check_run.head_sha : ($json.body.sha || '') }}\",\n  \"checkName\": \"{{ $json.body.check_run ? $json.body.check_run.name : ($json.body.checkName || 'CI') }}\",\n  \"status\": \"{{ $json.body.check_run ? $json.body.check_run.conclusion : ($json.body.status || 'success') }}\",\n  \"failureDetails\": \"{{ $json.body.output ? $json.body.output.summary : ($json.body.error || '') }}\"\n}",
+        "options": {}
+      },
+      "id": "node-report-ci-result",
+      "name": "Git Agent - Process CI Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.actionRequired }}",
+              "operation": "equal",
+              "value2": "debug_and_patch"
+            }
+          ]
+        }
+      },
+      "id": "node-if-remediation-needed",
+      "name": "If Remediation Needed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.GIT_AGENT_URL || 'https://git-agent.onrender.com') + '/api/internal/automation/ci-failure' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-N8N-Key",
+              "value": "={{ $env.N8N_API_KEY || 'test-n8n-key' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"repository\": \"{{ $('Webhook - CI Check Finished').item.json.body.repository ? $('Webhook - CI Check Finished').item.json.body.repository.full_name : 'repository' }}\",\n  \"runId\": \"0\",\n  \"commitSha\": \"{{ $('Webhook - CI Check Finished').item.json.body.check_run ? $('Webhook - CI Check Finished').item.json.body.check_run.head_sha : '' }}\",\n  \"branch\": \"main\",\n  \"failureLogs\": \"{{ $('Webhook - CI Check Finished').item.json.body.output ? $('Webhook - CI Check Finished').item.json.body.output.summary : 'CI failure' }}\"\n}",
+        "options": {}
+      },
+      "id": "node-trigger-ci-agent-fix",
+      "name": "Git Agent - Synthesize Fix",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [940, 240]
+    }
+  ],
+  "connections": {
+    "Webhook - CI Check Finished": {
+      "main": [
+        [
+          {
+            "node": "Git Agent - Process CI Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Git Agent - Process CI Result": {
+      "main": [
+        [
+          {
+            "node": "If Remediation Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Remediation Needed": {
+      "main": [
+        [
+          {
+            "node": "Git Agent - Synthesize Fix",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
