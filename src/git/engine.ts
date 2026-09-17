@@ -277,7 +277,7 @@ export async function executeGitStatus(repoPath: string): Promise<GitStatusOutpu
 
     const x = line.charAt(0);
     const y = line.charAt(1);
-    const rawPath = line.substring(3).trim().replace(/^"|"$/g, "");
+    const rawPath = line.slice(2).trim().replace(/^"|"$/g, "");
     if (!rawPath) continue;
 
     const filePath = rawPath.includes(" -> ") ? (rawPath.split(" -> ")[1] ?? rawPath).trim() : rawPath;

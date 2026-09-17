@@ -5,6 +5,18 @@
   "cleanUrls": true,
   "rewrites": [
     {
+      "source": "/api/(.*)",
+      "destination": "https://git-agent-backend-jsog.onrender.com/api/$1"
+    },
+    {
+      "source": "/health",
+      "destination": "https://git-agent-backend-jsog.onrender.com/health"
+    },
+    {
+      "source": "/ready",
+      "destination": "https://git-agent-backend-jsog.onrender.com/ready"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

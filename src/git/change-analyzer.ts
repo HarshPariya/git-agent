@@ -213,7 +213,7 @@ export async function getDetailedChangedFiles(repoPath: string): Promise<Changed
     .map((line) => {
       const indexCode = line.charAt(0);
       const workCode = line.charAt(1);
-      const rawPath = line.substring(3).trim().replace(/^"|"$/g, "");
+      const rawPath = line.slice(2).trim().replace(/^"|"$/g, "");
       const status = classifyFileStatus(indexCode, workCode);
       const isStaged = indexCode !== " " && indexCode !== "?";
       const stats = numstatMap.get(rawPath) ?? {

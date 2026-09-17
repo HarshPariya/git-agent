@@ -765,6 +765,13 @@ async function viewGitDesktopDiff(filePath, showLoading = true) {
     }
   } catch (err) {
     if (viewer) viewer.innerHTML = `<div class="text-danger" style="padding:16px">Error loading diff: ${escapeHtml(err.message)}</div>`;
+  } finally {
+    if (window.innerWidth <= 768 && showLoading) {
+      const viewerPanel = document.getElementById("panel-gd-diff") || document.getElementById("gd-diff-viewer");
+      if (viewerPanel) {
+        viewerPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    }
   }
 }
 
