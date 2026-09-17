@@ -687,7 +687,9 @@ window.addEventListener("click", (e) => {
 });
 
 // ── Centralized data-action event delegation ─────────────────────────────────
+// ── Centralized data-action event delegation ─────────────────────────────────
 document.addEventListener("click", (e) => {
+  if (e._gdaHandled) return;
   const target = e.target.closest("[data-action]");
   if (!target) return;
 
@@ -722,6 +724,7 @@ document.addEventListener("click", (e) => {
     discardGitChanges: () => typeof discardGitChanges === "function" && discardGitChanges(value || target?.dataset?.path),
     discardAllGitChanges: () => typeof discardAllGitChanges === "function" && discardAllGitChanges(),
     linkLocalFolderToGitDesktop: () => typeof linkLocalFolderToGitDesktop === "function" && linkLocalFolderToGitDesktop(),
+    unlinkLocalFolderFromGitDesktop: () => typeof unlinkLocalFolderFromGitDesktop === "function" && unlinkLocalFolderFromGitDesktop(),
     openGitDesktopFileEditor: () => typeof openGitDesktopFileEditor === "function" && openGitDesktopFileEditor(value || target?.dataset?.path),
     saveGitDesktopFile: () => typeof saveGitDesktopFile === "function" && saveGitDesktopFile(),
     openSpecificFileInOs: () => typeof openSpecificFileInOs === "function" && openSpecificFileInOs(value, target?.dataset?.mode || "reveal"),
@@ -778,8 +781,10 @@ document.addEventListener("click", (e) => {
 
   // Delegate to view-specific handlers first, fall back to centralized handlers or window methods
   if (typeof HANDLERS[action] === "function") {
+    e._gdaHandled = true;
     HANDLERS[action]();
   } else if (typeof window[action] === "function") {
+    e._gdaHandled = true;
     window[action](value, target);
   }
 });

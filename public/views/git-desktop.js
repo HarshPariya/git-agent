@@ -69,6 +69,7 @@ const ACTION_DISPATCH = {
   openPushPreviewModal: () => openPushPreviewModal(),
   triggerAIShip: () => triggerAIShip(),
   linkLocalFolderToGitDesktop: () => linkLocalFolderToGitDesktop(),
+  unlinkLocalFolderFromGitDesktop: () => unlinkLocalFolderFromGitDesktop(),
   openGitDesktopFileEditor: (value, target) => openGitDesktopFileEditor(value || target?.dataset?.path),
   saveGitDesktopFile: () => saveGitDesktopFile(),
   discardGitChanges: (value, target) => discardGitChanges(value || target?.dataset?.path),
@@ -276,6 +277,9 @@ async function loadGitDesktop(manual = false) {
 
   // If no repository is active or added yet, do not auto-connect anything!
   if (!repo) {
+    const badge = document.getElementById("gd-local-folder-badge");
+    if (badge) badge.style.display = "none";
+
     const repoNameEl = document.getElementById("gd-repo-name");
     if (repoNameEl) repoNameEl.textContent = "No repository open";
     const branchBtn = document.getElementById("gd-branch-name");
@@ -357,6 +361,13 @@ async function loadGitDesktop(manual = false) {
 
     // Direct browser Git operations on user's PC folder
     if (window._activeLocalDirHandle && window.gitLocalEngine) {
+      const badge = document.getElementById("gd-local-folder-badge");
+      const nameEl = document.getElementById("gd-local-folder-name");
+      if (badge && nameEl) {
+        nameEl.textContent = `Local: ${window._activeLocalDirHandle.name}`;
+        badge.style.display = "inline-flex";
+        badge.className = "badge badge-success";
+      }
       const status = await window.gitLocalEngine.getStatus(window._activeLocalDirHandle);
       applyGitStatusUpdate(status, repo, !manual);
       startLocalDirectoryWatcher(window._activeLocalDirHandle);
@@ -2202,6 +2213,7 @@ async function triggerAIShip() {
 
 // Event delegation for data-action attributes
 document.addEventListener("click", (e) => {
+  if (e._gdaHandled) return;
   const target = e.target.closest("[data-action]");
   if (!target) return;
 
@@ -2209,7 +2221,11 @@ document.addEventListener("click", (e) => {
 
   const action = target.dataset.action;
   const handler = ACTION_DISPATCH[action];
-  if (handler) handler(target.dataset.value, target);
+  if (handler) {
+    e._gdaHandled = true;
+    e.stopImmediatePropagation();
+    handler(target.dataset.value, target);
+  }
 });
 
 async function refreshGitDesktop() {
@@ -2360,8 +2376,23 @@ async function getStoredDirHandle(key) {
   }
 }
 
+async function removeStoredDirHandle(key) {
+  try {
+    const db = await openHandlesDb();
+    const tx = db.transaction("handles", "readwrite");
+    tx.objectStore("handles").delete(key);
+    return new Promise((res, rej) => {
+      tx.oncomplete = () => res(true);
+      tx.onerror = () => rej(tx.error);
+    });
+  } catch (_) {
+    return false;
+  }
+}
+
 window.saveStoredDirHandle = saveStoredDirHandle;
 window.getStoredDirHandle = getStoredDirHandle;
+window.removeStoredDirHandle = removeStoredDirHandle;
 
 async function scanDirectoryHandle(dirHandle, basePath = "") {
   const files = [];
@@ -2472,12 +2503,59 @@ function startLocalDirectoryWatcher(dirHandle) {
   }, 2000);
 }
 
+function stopLocalDirectoryWatcher() {
+  if (_localDirWatcherInterval) {
+    clearInterval(_localDirWatcherInterval);
+    _localDirWatcherInterval = null;
+  }
+  _isScanningLocalDir = false;
+}
+
 // Backward-compatible alias
 async function startLocalDirectorySync(repoId, dirHandle) {
   startLocalDirectoryWatcher(dirHandle);
 }
 
+async function unlinkLocalFolderFromGitDesktop() {
+  const currentRepo = window.state.activeRepository;
+  const repoName = currentRepo?.name || window._activeLocalDirHandle?.name || "local repository";
+  if (!confirm(`Are you sure you want to disconnect local repository "${repoName}"?`)) return;
+
+  stopLocalDirectoryWatcher();
+  window._activeLocalDirHandle = null;
+  await removeStoredDirHandle("active_dir").catch(() => {});
+
+  if (typeof window.removeStoredLocalRepo === "function" && currentRepo?.id) {
+    window.removeStoredLocalRepo(currentRepo.id);
+  }
+
+  const badge = document.getElementById("gd-local-folder-badge");
+  const nameEl = document.getElementById("gd-local-folder-name");
+  if (badge) badge.style.display = "none";
+  if (nameEl) nameEl.textContent = "Local Synced";
+
+  const remaining = (window.state.repositories || []).filter((r) => r.id !== currentRepo?.id);
+  window.setState("repositories", remaining);
+  window.setState("activeRepository", remaining[0] || null);
+  if (remaining[0]) {
+    localStorage.setItem("gda_active_repo_id", remaining[0].id);
+  } else {
+    localStorage.removeItem("gda_active_repo_id");
+  }
+
+  showToast(`Disconnected local repository: ${repoName}`, "info");
+  if (typeof window.renderRepositoriesList === "function") window.renderRepositoriesList();
+  if (typeof window.populateRepoDropdowns === "function") window.populateRepoDropdowns();
+  if (typeof window.updateServerStatus === "function") window.updateServerStatus();
+  await loadGitDesktop(true);
+}
+
 async function linkLocalFolderToGitDesktop() {
+  if (typeof window.openLocalFolder === "function") {
+    await window.openLocalFolder();
+    return;
+  }
+
   if (typeof window.showDirectoryPicker !== "function") {
     showToast("File System Access API is not supported in this browser. Please use Google Chrome, Microsoft Edge, or Brave.", "warning");
     return;
@@ -2513,6 +2591,9 @@ async function linkLocalFolderToGitDesktop() {
     window._activeLocalDirHandle = dirHandle;
     if (typeof saveStoredDirHandle === "function") {
       await saveStoredDirHandle("active_dir", dirHandle);
+    }
+    if (typeof window.saveStoredLocalRepo === "function") {
+      window.saveStoredLocalRepo(localRepo);
     }
 
     window.setState("activeRepository", localRepo);
@@ -2667,6 +2748,9 @@ window.discardGitChanges = discardGitChanges;
 window.discardAllGitChanges = discardAllGitChanges;
 window.startLocalDirectorySync = startLocalDirectorySync;
 window.startLocalDirectoryWatcher = startLocalDirectoryWatcher;
+window.stopLocalDirectoryWatcher = stopLocalDirectoryWatcher;
+window.unlinkLocalFolderFromGitDesktop = unlinkLocalFolderFromGitDesktop;
+window.removeStoredDirHandle = removeStoredDirHandle;
 window.scanDirectoryHandle = scanDirectoryHandle;
 window.filterChangedFiles = filterChangedFiles;
 window.renderGitDesktopChanges = renderGitDesktopChanges;

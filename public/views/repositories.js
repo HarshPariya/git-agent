@@ -3,6 +3,41 @@
  * Repository listings, active repo state, interactive folder browser, and GitHub integration
  */
 
+function getStoredLocalRepos() {
+  try {
+    return JSON.parse(localStorage.getItem("gda_local_repos") || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredLocalRepo(repo) {
+  if (!repo || !repo.id) return;
+  const list = getStoredLocalRepos().filter((r) => r.id !== repo.id);
+  const serializable = {
+    id: repo.id,
+    name: repo.name,
+    isLocal: true,
+    mode: "LOCAL",
+    currentBranch: repo.currentBranch || "main",
+    defaultBranch: repo.defaultBranch || "main",
+    remotes: repo.remotes || [],
+    url: repo.url || "",
+    path: repo.path || repo.name,
+    localPath: repo.localPath || repo.name,
+    status: "connected",
+    updatedAt: repo.updatedAt || new Date().toISOString(),
+  };
+  list.unshift(serializable);
+  localStorage.setItem("gda_local_repos", JSON.stringify(list));
+}
+
+function removeStoredLocalRepo(repoId) {
+  if (!repoId) return;
+  const list = getStoredLocalRepos().filter((r) => r.id !== repoId);
+  localStorage.setItem("gda_local_repos", JSON.stringify(list));
+}
+
 async function loadRepositories() {
   const listEl = document.getElementById("repos-list");
   if (listEl) {
@@ -23,8 +58,15 @@ async function loadRepositories() {
   }
 
   try {
-    const data = await api.listRepositories();
-    const repos = Array.isArray(data) ? data : data.repositories || [];
+    const data = await api.listRepositories().catch(() => ({ repositories: [] }));
+    const serverRepos = Array.isArray(data) ? data : data.repositories || [];
+    const localRepos = getStoredLocalRepos().map((lr) => {
+      if (window._activeLocalDirHandle && window._activeLocalDirHandle.name === lr.name) {
+        lr.dirHandle = window._activeLocalDirHandle;
+      }
+      return lr;
+    });
+    const repos = [...localRepos, ...serverRepos.filter((sr) => !localRepos.some((lr) => lr.id === sr.id))];
     window.setState("repositories", repos);
     if (typeof window.updateServerStatus === "function") window.updateServerStatus();
 
@@ -295,20 +337,46 @@ async function indexRepo(repoId) {
 }
 
 async function disconnectRepo(repoId) {
-  if (!confirm("Are you sure you want to disconnect this repository?")) return;
-  // Prevent duplicate disconnect requests from double-clicks
+  if (!repoId) return;
+  const repo = (window.state.repositories || []).find((r) => r.id === repoId) ||
+    (window.state.activeRepository?.id === repoId ? window.state.activeRepository : null);
+  const repoName = repo?.name || repoId;
+
+  if (!confirm(`Are you sure you want to disconnect repository "${repoName}"?`)) return;
   if (window._disconnectingRepos?.has(repoId)) return;
   window._disconnectingRepos = window._disconnectingRepos || new Set();
   window._disconnectingRepos.add(repoId);
 
   try {
+    const isLocal = repo?.isLocal || repoId.startsWith("local-") ||
+      (window._activeLocalDirHandle && (window._activeLocalDirHandle.name === repoName || repoId.includes(window._activeLocalDirHandle.name.toLowerCase())));
+
+    if (isLocal) {
+      if (typeof window.stopLocalDirectoryWatcher === "function") {
+        window.stopLocalDirectoryWatcher();
+      }
+      window._activeLocalDirHandle = null;
+      if (typeof window.removeStoredDirHandle === "function") {
+        await window.removeStoredDirHandle("active_dir").catch(() => {});
+      }
+      removeStoredLocalRepo(repoId);
+
+      const badge = document.getElementById("gd-local-folder-badge");
+      const nameEl = document.getElementById("gd-local-folder-name");
+      if (badge) badge.style.display = "none";
+      if (nameEl) nameEl.textContent = "Local Synced";
+    }
+
     const updatedRepos = (window.state.repositories || []).filter((r) => r.id !== repoId);
     window.setState("repositories", updatedRepos);
-    // Update the navbar pill immediately so "Connected" disappears as soon as the user disconnects.
     if (typeof window.updateServerStatus === "function") window.updateServerStatus();
 
     if (window.state.activeRepository?.id === repoId) {
-      setActiveRepository(updatedRepos[0] || null);
+      const nextRepo = updatedRepos[0] || null;
+      await setActiveRepository(nextRepo);
+      if (!nextRepo) {
+        localStorage.removeItem("gda_active_repo_id");
+      }
     }
 
     renderRepositoriesList();
@@ -317,15 +385,27 @@ async function disconnectRepo(repoId) {
     }
     populateRepoDropdowns();
 
-    const res = await api.disconnectRepository(repoId);
-    showToast(
-      res && res.alreadyDisconnected ? "Repository was already disconnected" : "Repository disconnected successfully",
-      "info",
-    );
+    // If server repo, inform backend. If local repo, best-effort without failing user disconnect.
+    if (!isLocal) {
+      try {
+        await api.disconnectRepository(repoId);
+      } catch (backendErr) {
+        console.warn("Backend disconnect warning:", backendErr);
+      }
+    } else {
+      try {
+        await api.disconnectRepository(repoId);
+      } catch (_) {}
+    }
+
+    showToast(`Repository "${repoName}" disconnected successfully`, "info");
 
     await loadRepositories();
     if (typeof window.loadDashboardStats === "function") {
       await window.loadDashboardStats();
+    }
+    if (window.state.currentPage === "git-desktop" && typeof window.loadGitDesktop === "function") {
+      await window.loadGitDesktop(true);
     }
   } catch (err) {
     showToast(`Failed to disconnect: ${err.message}`, "error");
@@ -429,18 +509,27 @@ function initDragAndDrop() {
   });
 }
 
+let _isOpeningLocalFolder = false;
+
 async function openLocalFolder() {
+  if (_isOpeningLocalFolder) return;
+  _isOpeningLocalFolder = true;
+
   if (typeof window.showDirectoryPicker !== "function") {
     showToast(
       "File System Access API is not supported in this browser. Please use Chrome, Edge, Brave, or Opera for direct local folder access.",
       "warning",
     );
+    _isOpeningLocalFolder = false;
     return;
   }
 
   try {
     const dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
     if (!dirHandle) return;
+
+    // Immediately close modal so it doesn't block the screen
+    closeModal("modal-folder-browser");
 
     showToast(`Detecting Git repository in "${dirHandle.name}"...`, "info");
     const detection = await window.gitLocalEngine.detectRepository(dirHandle);
@@ -470,9 +559,12 @@ async function openLocalFolder() {
       remotes: detection.remotes || [],
       url: detection.url || "",
       path: dirHandle.name,
+      localPath: dirHandle.name,
+      status: "connected",
       updatedAt: new Date().toISOString(),
     };
 
+    saveStoredLocalRepo(localRepo);
     if (typeof window.saveStoredDirHandle === "function") {
       await window.saveStoredDirHandle("active_dir", dirHandle).catch(() => {});
     }
@@ -482,15 +574,37 @@ async function openLocalFolder() {
     window.setState("repositories", [localRepo, ...existing]);
     window.setState("activeRepository", localRepo);
 
+    // Update Git Desktop local badge
+    const badge = document.getElementById("gd-local-folder-badge");
+    const nameEl = document.getElementById("gd-local-folder-name");
+    if (badge && nameEl) {
+      nameEl.textContent = `Local: ${dirHandle.name}`;
+      badge.style.display = "inline-flex";
+      badge.className = "badge badge-success";
+    }
+
+    if (typeof window.startLocalDirectoryWatcher === "function") {
+      window.startLocalDirectoryWatcher(dirHandle);
+    }
+
     showToast(`Opened local repository: ${dirHandle.name} (${detection.branch || "main"})`, "success");
 
     if (typeof window.renderRepositoriesList === "function") window.renderRepositoriesList();
     if (typeof window.populateRepoDropdowns === "function") window.populateRepoDropdowns();
-    if (typeof window.navigate === "function") window.navigate("git-desktop");
+    if (typeof window.updateServerStatus === "function") window.updateServerStatus();
+
+    if (typeof window.navigate === "function") {
+      window.navigate("git-desktop");
+    }
+    if (typeof window.loadGitDesktop === "function") {
+      await window.loadGitDesktop(true);
+    }
   } catch (err) {
     if (err.name !== "AbortError") {
       showToast(`Failed to open folder: ${err.message}`, "error");
     }
+  } finally {
+    _isOpeningLocalFolder = false;
   }
 }
 
@@ -1045,6 +1159,7 @@ async function connectSelectedGitHubRepo(name, cloneUrl) {
 // ends
 // Event delegation for data-action attributes
 document.addEventListener("click", (e) => {
+  if (e._gdaHandled) return;
   const target = e.target.closest("[data-action]");
   if (!target) return;
 
@@ -1064,7 +1179,11 @@ document.addEventListener("click", (e) => {
     triggerNativeFolderPicker: () => triggerNativeFolderPicker(),
   };
 
-  actions[action]?.();
+  if (typeof actions[action] === "function") {
+    e._gdaHandled = true;
+    e.stopImmediatePropagation();
+    actions[action]();
+  }
 });
 
 // Window exports
@@ -1086,7 +1205,11 @@ window.connectSpecificFolder = connectSpecificFolder;
 window.connectWorkspaceFolder = connectWorkspaceFolder;
 window.browseToEnteredPath = browseToEnteredPath;
 window.connectEnteredPath = connectEnteredPath;
+window.openLocalFolder = openLocalFolder;
 window.triggerNativeFolderPicker = triggerNativeFolderPicker;
+window.getStoredLocalRepos = getStoredLocalRepos;
+window.saveStoredLocalRepo = saveStoredLocalRepo;
+window.removeStoredLocalRepo = removeStoredLocalRepo;
 window.handleNativeFolderSelected = handleNativeFolderSelected;
 window.setupFolderDropZone = setupFolderDropZone;
 window.initDragAndDrop = initDragAndDrop;

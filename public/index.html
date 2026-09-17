@@ -456,8 +456,9 @@
             <button class="btn btn-primary btn-sm" id="gd-btn-link-local" data-action="linkLocalFolderToGitDesktop" title="Link a local folder on your computer to watch & sync file changes in real-time">
               📂 Link Local Folder
             </button>
-            <span id="gd-local-folder-badge" class="badge badge-accent" style="display:none;font-size:11px;padding:3px 9px;align-items:center;gap:5px;cursor:pointer" title="Click to switch or re-sync folder" data-action="linkLocalFolderToGitDesktop">
+            <span id="gd-local-folder-badge" class="badge badge-accent" style="display:none;font-size:11px;padding:3px 9px;align-items:center;gap:6px" title="Local folder linked">
               🟢 <span id="gd-local-folder-name">Local Synced</span>
+              <button class="btn btn-danger btn-xs" data-action="unlinkLocalFolderFromGitDesktop" style="padding:1px 6px;margin-left:4px;font-size:11px;line-height:1;border-radius:var(--r-sm);cursor:pointer" title="Disconnect this local folder">Disconnect</button>
             </span>
             <button class="btn btn-secondary btn-sm" id="gd-btn-edit-file" data-action="openGitDesktopFileEditor" title="Create or edit a file directly in this repository">
               ✏️ New / Edit File

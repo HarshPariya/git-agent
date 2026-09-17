@@ -430,14 +430,11 @@ export class RepositoryStore {
     repositoryId: string,
     tenantId: string,
   ): Promise<{ repository: Repository; alreadyDisconnected: boolean }> {
-    const repo = this.getRepository(repositoryId, tenantId);
+    const repo = this.getRepository(repositoryId, tenantId) ?? repositories.get(repositoryId);
+    repositories.delete(repositoryId);
+    await markRepositoryDisconnected(repositoryId);
+
     if (!repo) {
-      // Idempotent disconnect: the repository may already have been removed
-      // from the in-memory store (prior successful disconnect, a container
-      // restart that wiped the Map, or a disconnect from another tab/client).
-      // Still ensure the persisted record is marked disconnected so a stale UI
-      // state can never re-surface it, and report success instead of a 404.
-      await markRepositoryDisconnected(repositoryId);
       logger.info("Repository already disconnected (idempotent)", {
         operation: "repo-disconnect",
         metadata: { repositoryId },
@@ -445,8 +442,6 @@ export class RepositoryStore {
       return { repository: { id: repositoryId, status: "disconnected" } as Repository, alreadyDisconnected: true };
     }
 
-    repositories.delete(repositoryId);
-    await markRepositoryDisconnected(repositoryId);
     logger.info("Repository disconnected", { operation: "repo-disconnect", metadata: { repositoryId } });
     return { repository: { ...repo, status: "disconnected" }, alreadyDisconnected: false };
   }
