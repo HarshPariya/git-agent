@@ -1476,7 +1476,12 @@ async function triggerGitFetch() {
 
   showToast("Fetching remote references...", "info");
   try {
-    await api.gitFetch(repo.id);
+    if (window._activeLocalDirHandle && repo.isLocal && window.gitLocalEngine?.fetch) {
+      const gitHubToken = localStorage.getItem("gda_github_pat") || undefined;
+      await window.gitLocalEngine.fetch(window._activeLocalDirHandle, { token: gitHubToken });
+    } else {
+      await api.gitFetch(repo.id);
+    }
     await loadGitDesktop();
     showToast("Fetched latest refs from origin", "success");
   } catch (err) {
@@ -1489,6 +1494,14 @@ async function triggerGitPull() {
   if (!repo) return;
 
   try {
+    if (window._activeLocalDirHandle && repo.isLocal && window.gitLocalEngine?.pull) {
+      const gitHubToken = localStorage.getItem("gda_github_pat") || undefined;
+      await window.gitLocalEngine.pull(window._activeLocalDirHandle, { token: gitHubToken });
+      await loadGitDesktop();
+      showToast("Pulled successfully from remote", "success");
+      return;
+    }
+
     const res = await api.gitPull(repo.id);
 
     const hasConflict = !res.success && (res.error?.includes("conflict") || res.output?.includes("conflict"));
@@ -1840,6 +1853,22 @@ async function executePushFromModal() {
   }
 
   try {
+    if (window._activeLocalDirHandle && repo.isLocal && window.gitLocalEngine?.push) {
+      const gitHubToken = localStorage.getItem("gda_github_pat") || undefined;
+      await window.gitLocalEngine.push(window._activeLocalDirHandle, {
+        remote,
+        branch: targetBranch,
+        token: gitHubToken,
+      });
+      closeModal("modal-push-preview");
+      await loadGitDesktop();
+      if (typeof window.renderPushSummaryView === "function") {
+        await window.renderPushSummaryView(remote, targetBranch, "Local repository pushed successfully to remote.");
+      }
+      showToast(`Successfully pushed to ${remote}/${targetBranch}!`, "success");
+      return;
+    }
+
     const res = await api.gitPush(repo.id, remote, targetBranch, setUpstream, forceWithLease);
     closeModal("modal-push-preview");
     await loadGitDesktop();

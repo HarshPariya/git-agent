@@ -106,9 +106,21 @@ class GitLocalEngine {
       throw new Error("Folder is not a Git repository");
     }
 
-    // Status matrix rows: [filepath, head, workdir, stage]
-    // 0 = absent, 1 = identical, 2 = modified, 3 = modified unstaged
-    const matrix = await window.git.statusMatrix({ fs, dir: "/" });
+    const matrix = await window.git.statusMatrix({
+      fs,
+      dir: "/",
+      filter: (f) =>
+        f !== "node_modules" &&
+        !f.startsWith("node_modules/") &&
+        f !== ".git" &&
+        !f.startsWith(".git/") &&
+        f !== "dist" &&
+        !f.startsWith("dist/") &&
+        f !== ".cache" &&
+        !f.startsWith(".cache/") &&
+        f !== "build" &&
+        !f.startsWith("build/"),
+    });
     const entries = [];
 
     for (const [filepath, head, workdir, stage] of matrix) {
@@ -450,6 +462,59 @@ class GitLocalEngine {
     const fs = this.getFS(dirHandle);
     await fs.promises.writeFile(filePath, newContent, { encoding: "utf8" });
     return { success: true, filePath };
+  }
+
+  /**
+   * Fetch from remote using Git HTTP CORS Proxy
+   */
+  async fetch(dirHandle, { remote = "origin", token } = {}) {
+    const fs = this.getFS(dirHandle);
+    const apiBase = (typeof window !== "undefined" && window.__API_BASE__) || "";
+    const corsProxy = `${apiBase}/api/git/proxy`;
+    return await window.git.fetch({
+      fs,
+      http: window.GitHttp,
+      dir: "/",
+      remote,
+      corsProxy,
+      onAuth: () => (token ? { username: token } : undefined),
+    });
+  }
+
+  /**
+   * Pull from remote using Git HTTP CORS Proxy
+   */
+  async pull(dirHandle, { remote = "origin", token, author } = {}) {
+    const fs = this.getFS(dirHandle);
+    const apiBase = (typeof window !== "undefined" && window.__API_BASE__) || "";
+    const corsProxy = `${apiBase}/api/git/proxy`;
+    return await window.git.pull({
+      fs,
+      http: window.GitHttp,
+      dir: "/",
+      remote,
+      corsProxy,
+      author: author || { name: "Git Agent User", email: "user@gitagent.local" },
+      onAuth: () => (token ? { username: token } : undefined),
+    });
+  }
+
+  /**
+   * Push to remote using Git HTTP CORS Proxy
+   */
+  async push(dirHandle, { remote = "origin", branch, token } = {}) {
+    const fs = this.getFS(dirHandle);
+    const apiBase = (typeof window !== "undefined" && window.__API_BASE__) || "";
+    const corsProxy = `${apiBase}/api/git/proxy`;
+    return await window.git.push({
+      fs,
+      http: window.GitHttp,
+      dir: "/",
+      remote,
+      ref: branch,
+      corsProxy,
+      onAuth: () => (token ? { username: token } : undefined),
+    });
   }
 }
 
