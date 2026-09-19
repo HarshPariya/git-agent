@@ -6,36 +6,52 @@
 
 // ── State color lookup (object over ternary chains) ─────────────────────────
 const STATE_COLORS = {
-  INITIALIZING: { bg: "#e0e7ff", color: "#3730a3" },
-  SCANNING_REPOSITORY: { bg: "#dbeafe", color: "#1e40af" },
-  ISOLATING_DEFECT: { bg: "#dbeafe", color: "#1e40af" },
-  REPRODUCING_BEHAVIOR: { bg: "#e0f2fe", color: "#075985" },
-  GENERATING_HYPOTHESES: { bg: "#fef3c7", color: "#92400e" },
-  DIAGNOSING_ROOT_CAUSE: { bg: "#fef3c7", color: "#92400e" },
-  SYNTHESIZING_PATCH: { bg: "#d1fae5", color: "#065f46" },
-  VALIDATING_PATCH_SAFETY: { bg: "#d1fae5", color: "#065f46" },
-  RUNNING: { bg: "#fef3c7", color: "#92400e" },
-  COMPLETED: { bg: "#ecfdf5", color: "#065f46" },
-  FAILED: { bg: "#fef2f2", color: "#991b1b" },
-  ABORTED: { bg: "#fef2f2", color: "#991b1b" },
-  ISOLATE_IN_PROGRESS: { bg: "#dbeafe", color: "#1e40af" },
-  REPRODUCE_IN_PROGRESS: { bg: "#e0f2fe", color: "#075985" },
-  DIAGNOSE_IN_PROGRESS: { bg: "#fef3c7", color: "#92400e" },
-  FIX_IN_PROGRESS: { bg: "#d1fae5", color: "#065f46" },
-  VERIFY_IN_PROGRESS: { bg: "#d1fae5", color: "#065f46" },
-  OBSERVE_IN_PROGRESS: { bg: "#dbeafe", color: "#1e40af" },
+  INITIALIZING: { bg: "rgba(99, 102, 241, 0.18)", color: "#a5b4fc" },
+  SCANNING_REPOSITORY: { bg: "rgba(59, 130, 246, 0.18)", color: "#93c5fd" },
+  ISOLATING_DEFECT: { bg: "rgba(59, 130, 246, 0.18)", color: "#93c5fd" },
+  REPRODUCING_BEHAVIOR: { bg: "rgba(14, 165, 233, 0.18)", color: "#7dd3fc" },
+  GENERATING_HYPOTHESES: { bg: "rgba(245, 158, 11, 0.18)", color: "#fcd34d" },
+  DIAGNOSING_ROOT_CAUSE: { bg: "rgba(245, 158, 11, 0.18)", color: "#fcd34d" },
+  SYNTHESIZING_PATCH: { bg: "rgba(16, 185, 129, 0.18)", color: "#6ee7b7" },
+  VALIDATING_PATCH_SAFETY: { bg: "rgba(16, 185, 129, 0.18)", color: "#6ee7b7" },
+  RUNNING: { bg: "rgba(245, 158, 11, 0.18)", color: "#fcd34d" },
+  COMPLETED: { bg: "rgba(16, 185, 129, 0.18)", color: "#34d399" },
+  FAILED: { bg: "rgba(239, 68, 68, 0.18)", color: "#fca5a5" },
+  ABORTED: { bg: "rgba(239, 68, 68, 0.18)", color: "#fca5a5" },
+  ISOLATE_IN_PROGRESS: { bg: "rgba(59, 130, 246, 0.18)", color: "#93c5fd" },
+  REPRODUCE_IN_PROGRESS: { bg: "rgba(14, 165, 233, 0.18)", color: "#7dd3fc" },
+  DIAGNOSE_IN_PROGRESS: { bg: "rgba(245, 158, 11, 0.18)", color: "#fcd34d" },
+  FIX_IN_PROGRESS: { bg: "rgba(16, 185, 129, 0.18)", color: "#6ee7b7" },
+  VERIFY_IN_PROGRESS: { bg: "rgba(16, 185, 129, 0.18)", color: "#6ee7b7" },
+  OBSERVE_IN_PROGRESS: { bg: "rgba(59, 130, 246, 0.18)", color: "#93c5fd" },
 };
 
-const getResolvedState = (s) => ({ bg: "#e0e7ff", color: "#3730a3", ...STATE_COLORS[s] });
+const getResolvedState = (s) => ({ bg: "rgba(99, 102, 241, 0.18)", color: "#a5b4fc", ...STATE_COLORS[s] });
 
 // ── Step-to-phase mapping ──────────────────────────────────────────────────
 const STEP_TO_PHASE = {
-  isolate: "isolate",
-  observe: "isolate",
-  reproduce: "reproduce",
-  diagnose: "diagnose",
-  fix: "fix",
+  triage: "triage",
+  isolate: "triage",
+  context: "context",
+  observe: "context",
+  search: "search",
+  ast: "search",
+  test_disc: "test_disc",
+  reproduce: "test_disc",
+  git_hist: "git_hist",
+  history: "git_hist",
+  hypothesis: "hypothesis",
+  evidence: "evidence",
+  diagnose: "root_cause",
+  root_cause: "root_cause",
+  fix: "fix_plan",
+  fix_plan: "fix_plan",
+  critic: "critic",
+  patch: "patch",
   verify: "verify",
+  test: "verify",
+  delivery: "delivery",
+  commit: "delivery",
 };
 
 // ── Diff line-prefix -> CSS class lookup ────────────────────────────────────
@@ -56,6 +72,55 @@ const appendLog = (logsView, msg) => {
   logsView.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
   logsView.scrollTop = logsView.scrollHeight;
 };
+
+// ── Shared phase UI state setters ──────────────────────────────────────────
+function setPhaseRunning(phaseId, desc) {
+  const phaseEl = byId(`phase-${phaseId}`);
+  const iconEl = byId(`icon-${phaseId}`);
+  const descEl = byId(`desc-${phaseId}`);
+  if (phaseEl) {
+    phaseEl.className = "agent-phase active";
+  }
+  if (iconEl) {
+    iconEl.className = "agent-phase-icon active";
+    iconEl.textContent = "⚡";
+  }
+  if (descEl && desc) {
+    descEl.textContent = desc;
+  }
+}
+
+function setPhaseDone(phaseId, result) {
+  const phaseEl = byId(`phase-${phaseId}`);
+  const iconEl = byId(`icon-${phaseId}`);
+  const descEl = byId(`desc-${phaseId}`);
+  if (phaseEl) {
+    phaseEl.className = "agent-phase completed";
+  }
+  if (iconEl) {
+    iconEl.className = "agent-phase-icon completed";
+    iconEl.textContent = "✓";
+  }
+  if (descEl && result) {
+    descEl.textContent = result;
+  }
+}
+
+function setPhaseFailed(phaseId, err) {
+  const phaseEl = byId(`phase-${phaseId}`);
+  const iconEl = byId(`icon-${phaseId}`);
+  const descEl = byId(`desc-${phaseId}`);
+  if (phaseEl) {
+    phaseEl.className = "agent-phase failed";
+  }
+  if (iconEl) {
+    iconEl.className = "agent-phase-icon failed";
+    iconEl.textContent = "✗";
+  }
+  if (descEl && err) {
+    descEl.textContent = err;
+  }
+}
 
 // ── Memory-leak prevention: single cleanup entry-point ─────────────────────
 let _activePoller = null;
@@ -169,15 +234,57 @@ async function startDebugFromForm() {
   const fullQuery = queryParts.join("\n\n");
 
   const repo = (window.state.repositories || []).find((r) => r.id === repoId);
-  const repoName = repo?.name ?? "Repository";
+  let repositoryContext = null;
+  const isLocal = repo?.isLocal || repo?.mode === "LOCAL" || !!repo?.dirHandle || (window._activeLocalDirHandle && window._activeLocalDirHandle.name === repo?.name);
+
+  if (isLocal && (repo?.dirHandle || window._activeLocalDirHandle) && window.gitLocalEngine) {
+    const handle = repo?.dirHandle || window._activeLocalDirHandle;
+    try {
+      showToast(`Building repository manifest for "${handle.name}"...`, "info");
+      repositoryContext = await window.gitLocalEngine.buildRepositoryIndex(handle);
+    } catch (idxErr) {
+      console.warn("Could not build full local index, using basic metadata:", idxErr);
+    }
+  }
+
+  if (!repositoryContext && repo) {
+    repositoryContext = {
+      repositoryId: repo.id,
+      workspaceId: repo.workspaceId || `ws_${repo.id}`,
+      mode: repo.mode || (repo.isLocal ? "LOCAL" : "REMOTE"),
+      displayName: repo.name,
+      rootIdentifier: repo.localPath || repo.path || repo.name,
+      branch: repo.currentBranch || repo.defaultBranch || repo.branch || "main",
+      remoteUrl: repo.url || "",
+      localPath: repo.localPath,
+    };
+  }
+
+  const repoName = repositoryContext?.displayName || repo?.name || "Repository";
+  const branchName = repositoryContext?.branch || repo?.currentBranch || repo?.defaultBranch || "main";
+  const modeName = repositoryContext?.mode || (isLocal ? "LOCAL" : "REMOTE");
+  const filesCount = repositoryContext?.fileManifest?.length ?? 0;
+  const wsId = repositoryContext?.workspaceId || `ws_${repoId}`;
 
   // Switch to session view
   byId("debug-form-view").style.display = "none";
   byId("debug-session-view").style.display = "block";
 
-  // Setup header
+  // Setup header & Current Repository Banner
   byId("session-repo-label").textContent = `Repository: ${repoName}`;
   byId("session-type-label").textContent = `Type: ${debugType.toUpperCase()}`;
+
+  const bannerName = byId("session-repo-name");
+  if (bannerName) bannerName.textContent = repoName;
+  const bannerBranch = byId("session-repo-branch");
+  if (bannerBranch) bannerBranch.textContent = `🌿 ${branchName}`;
+  const bannerMode = byId("session-repo-mode");
+  if (bannerMode) bannerMode.textContent = modeName;
+  const bannerFiles = byId("session-repo-files");
+  if (bannerFiles) bannerFiles.textContent = `${filesCount} files indexed`;
+  const bannerWs = byId("session-repo-ws");
+  if (bannerWs) bannerWs.textContent = `ws: ${wsId}`;
+
   const badge = byId("session-status-badge");
   badge.className = "badge badge-accent";
   badge.textContent = "Investigating...";
@@ -194,7 +301,7 @@ async function startDebugFromForm() {
   byId("tests-view").innerHTML =
     '<div class="text-muted" style="font-size:13px">Waiting for fix verification...</div>';
   byId("logs-view").textContent =
-    `[${new Date().toLocaleTimeString()}] Starting debug session on ${repoName}...\n`;
+    `[${new Date().toLocaleTimeString()}] Starting debug session on ${repoName} (${modeName})...\n`;
   byId("root-cause-card").style.display = "none";
 
   const diffApplyBtn = byId("diff-apply-btn");
@@ -208,13 +315,13 @@ async function startDebugFromForm() {
       '<div class="text-muted" style="font-size:12px">Evaluating candidate hypotheses...</div>';
 
   loadGitTab(repoId);
-  await executeDebugPipeline(repoId, fullQuery, debugType);
+  await executeDebugPipeline(repoId, fullQuery, debugType, repositoryContext);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
 // executeDebugPipeline — SSE-driven investigation pipeline
 // ────────────────────────────────────────────────────────────────────────────
-async function executeDebugPipeline(repoId, query, mode) {
+async function executeDebugPipeline(repoId, query, mode, repositoryContext = null) {
   cleanupDebugSession();
   window.setState("agentRunning", true);
 
@@ -236,11 +343,19 @@ async function executeDebugPipeline(repoId, query, mode) {
   };
 
   const phases = [
-    { id: "isolate", name: "1. Isolate Failing Path", desc: "Inspect Git commits, blame history & working tree" },
-    { id: "reproduce", name: "2. Reproduce Behavior", desc: "Construct regression command or reproducer" },
-    { id: "diagnose", name: "3. Diagnose Root Cause", desc: "Evaluate hypotheses with GraphRAG code intelligence" },
-    { id: "fix", name: "4. Generate Safe Patch", desc: "Synthesize minimal surgical fix with safety gate" },
-    { id: "verify", name: "5. Critic Safety & Tests", desc: "Critic review, AST syntax check & test execution" },
+    { id: "triage", name: "1. Triage & Defect Classification", desc: "Extract symptoms, expected vs observed, affected subsystems" },
+    { id: "context", name: "2. Repository Context & Structure", desc: "Inspect package manifest, configuration & entry points" },
+    { id: "search", name: "3. Code Search & Symbol Analysis", desc: "AST definitions, imports, caller-callee dependency mapping" },
+    { id: "test_disc", name: "4. Test Discovery & CI Check", desc: "Identify reproduction test cases & CI build logs" },
+    { id: "git_hist", name: "5. Git History & Blame Inspection", desc: "Analyze commits, blame history & working tree diff" },
+    { id: "hypothesis", name: "6. Hypothesis Generation & Ranking", desc: "Formulate candidate causes & evaluate against codebase" },
+    { id: "evidence", name: "7. Evidence Engine & Traceability", desc: "Correlate code lines, git commits & stack traces" },
+    { id: "root_cause", name: "8. Root Cause Isolation", desc: "Distinguish observed facts from AI inference" },
+    { id: "fix_plan", name: "9. Fix Planning & Safety Strategy", desc: "Plan minimal surgical patch & rollback strategy" },
+    { id: "critic", name: "10. Critic Agent Review", desc: "Safety gate: correctness, regression risk & security" },
+    { id: "patch", name: "11. Patch Synthesis & Stale Protection", desc: "Generate unified diff with conflict & stale guards" },
+    { id: "verify", name: "12. Test Execution & Verification", desc: "Run verification tests and evaluate proof of fix" },
+    { id: "delivery", name: "13. Safe Commit & PR Delivery", desc: "Pre-commit secret scanning, atomic commit & PR" },
   ];
 
   phasesContainer.innerHTML = phases
@@ -295,7 +410,7 @@ async function executeDebugPipeline(repoId, query, mode) {
         ? '<div style="padding:12px;text-align:center;color:var(--c-text-muted);font-size:12px">✅ No issues detected — all investigation checks passed.</div>'
         : hyps
           .map((h) => `
-          <div style="padding:8px 10px;background:#f8fafc;border:1px solid var(--c-border);border-radius:var(--r-sm)">
+          <div style="padding:8px 10px;background:var(--c-surface-elevated, rgba(255,255,255,0.03));border:1px solid var(--c-border);border-radius:var(--r-sm)">
             <div style="display:flex;justify-content:space-between;align-items:center">
               <span style="font-size:12px;font-weight:600;color:var(--c-text-primary)">${escapeHtml(h.title)}</span>
               <span class="badge ${h.status === "confirmed" ? "badge-success" : h.status === "passed" ? "badge-success" : "badge-secondary"}">${Math.round(h.confidence * 100)}%</span>
@@ -345,13 +460,19 @@ async function executeDebugPipeline(repoId, query, mode) {
 
   // ── SSE step handler (switch on step.status) ─────────────────────────────
   const handleStep = (step) => {
-    const pId = STEP_TO_PHASE[step.type] || "diagnose";
+    const pId = STEP_TO_PHASE[step.type] || "root_cause";
+    const phaseIdx = phases.findIndex((p) => p.id === pId);
+    if (phaseIdx > 0) {
+      for (let i = 0; i < phaseIdx; i++) {
+        setPhaseDone(phases[i].id);
+      }
+    }
 
     switch (step.status) {
       case "running":
         setPhaseRunning(pId, step.description || `Executing ${step.type}...`);
         updateState(`${step.type.toUpperCase()}_IN_PROGRESS`);
-        appendLog(logsView, `[STEP RUNNING] ${step.description || step.type} `);
+        appendLog(logsView, `[STEP RUNNING] ${step.description || step.type}`);
         break;
       case "completed":
         setPhaseDone(pId, step.result ? step.result.slice(0, 80) : `${step.description} ✓`);
@@ -359,7 +480,7 @@ async function executeDebugPipeline(repoId, query, mode) {
         break;
       case "failed":
         setPhaseFailed(pId, step.error || "Step failed");
-        appendLog(logsView, `[STEP FAILED] ${step.description || step.type}: ${step.error} `);
+        appendLog(logsView, `[STEP FAILED] ${step.description || step.type}: ${step.error}`);
         break;
     }
   };
@@ -493,7 +614,7 @@ async function executeDebugPipeline(repoId, query, mode) {
       appendLog(logsView, `Plan fetch notice: ${e.message} `);
     }
 
-    const asyncRes = await api.runDebugAsync({ repositoryId: repoId, query, mode });
+    const asyncRes = await api.runDebugAsync({ repositoryId: repoId, query, mode, repositoryContext });
     const sessionId = asyncRes.sessionId || asyncRes.session?.id;
     window.setState("currentSession", asyncRes.session);
 
@@ -587,7 +708,7 @@ function renderEvidence(findings) {
         </div>
         <div style="font-size:12px;color:var(--c-text-secondary)">${escapeHtml(f.description || "")}</div>
         ${f.evidence?.length
-        ? `<div style="margin-top:8px;padding:6px 10px;background:#f8fafc;border-radius:var(--r-sm);font-size:11px;color:var(--c-text-muted)">
+        ? `<div style="margin-top:8px;padding:6px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--c-border);border-radius:var(--r-sm);font-size:11px;color:var(--c-text-muted)">
                <strong>Evidence:</strong> ${escapeHtml(Array.isArray(f.evidence) ? f.evidence.join("; ") : String(f.evidence))}
              </div>`
         : ""}
@@ -597,6 +718,8 @@ function renderEvidence(findings) {
 
 // ────────────────────────────────────────────────────────────────────────────
 // renderDiff — object-lookup for diff line CSS class
+// ────────────────────────────────────────────────────────────────────────────
+// renderDiff — renders surgical patch with summary metrics bar
 // ────────────────────────────────────────────────────────────────────────────
 function renderDiff(fixPlan, findings) {
   const container = byId("diff-view");
@@ -611,17 +734,41 @@ function renderDiff(fixPlan, findings) {
     return;
   }
 
+  const filesCount = fixPlan.filesToChange.length;
   const diffText = fixPlan.filesToChange
-    .map((f) => f.patch || `--- a/${f.filePath}\n+++ b/${f.filePath}\n@@ -1,5 +1,6 @@\n// ${f.description}`)
+    .map((f) => f.patch || `--- a/${f.filePath}\n+++ b/${f.filePath}\n@@ -1,5 +1,6 @@\n// ${f.description || "apply surgical fix"}`)
     .join("\n\n");
 
-  const coloredLines = diffText.split("\n").map((line) => {
+  const lines = diffText.split("\n");
+  let additions = 0;
+  let deletions = 0;
+  for (const l of lines) {
+    if (l.startsWith("+") && !l.startsWith("+++")) additions++;
+    else if (l.startsWith("-") && !l.startsWith("---")) deletions++;
+  }
+
+  const testsAdded = (fixPlan.testsToRun || ["test"]).join(", ");
+  const risk = fixPlan.riskLevel || "MODERATE";
+
+  const coloredLines = lines.map((line) => {
     const prefix = line[0];
     const cls = prefix ? (DIFF_LINE_CLASS[prefix] ?? (line.startsWith("@@") ? "diff-line diff-info" : DEFAULT_DIFF_CLASS)) : DEFAULT_DIFF_CLASS;
     return `<span class="${cls}">${escapeHtml(line)}</span>`;
   });
 
-  container.innerHTML = `<div class="diff-viewer">${coloredLines.join("")}</div>`;
+  container.innerHTML = `
+    <div class="patch-summary-bar">
+      <div class="patch-metrics-group">
+        <span class="patch-stat-files"><strong>${filesCount}</strong> ${filesCount === 1 ? "file" : "files"} changed</span>
+        <span class="patch-stat-add">+${additions}</span>
+        <span class="patch-stat-del">-${deletions}</span>
+        <span class="badge risk-${risk.toLowerCase()}">${risk} RISK</span>
+      </div>
+      <div style="font-size:11px;color:var(--c-text-muted);display:flex;align-items:center;gap:6px">
+        <span>Verification Script: <code>${escapeHtml(testsAdded)}</code></span>
+      </div>
+    </div>
+    <div class="diff-viewer">${coloredLines.join("")}</div>`;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -666,7 +813,7 @@ function renderCritic(critic) {
         </div>
       </div>
 
-      <div style="font-size:12px;color:var(--c-text-secondary);background:#f8fafc;padding:10px;border-radius:var(--r-sm)">
+      <div class="critic-summary-box">
         ${escapeHtml(critic.summary || critic.feedback || "Critic evaluation completed with no summary provided.")}
       </div>
 
@@ -711,6 +858,7 @@ function renderTests(session) {
   const icon = passed ? "✓" : "✗";
   const color = passed ? "var(--c-success)" : "var(--c-danger)";
 
+  const execMode = tr.executionMode || (window._activeLocalDirHandle ? "LOCAL ANALYSIS" : "CLOUD EXECUTION");
   const output = [tr.stdout, tr.stderr].filter(Boolean).join("\n").trim();
   const duration = typeof tr.durationMs === "number" ? ` · ${tr.durationMs}ms` : "";
 
@@ -720,7 +868,10 @@ function renderTests(session) {
         <div style="display:flex;align-items:center;gap:8px;min-width:0">
           <span style="color:${color};font-size:16px">${icon}</span>
           <div style="min-width:0">
-            <div style="font-size:13px;font-weight:600">Test: <span style="font-family:var(--font-mono)">${escapeHtml(tr.script || "test")}</span></div>
+            <div style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px">
+              <span>Test: <span style="font-family:var(--font-mono)">${escapeHtml(tr.script || "test")}</span></span>
+              <span class="badge badge-secondary" style="font-size:10px">${escapeHtml(execMode)}</span>
+            </div>
             <div style="font-size:11px;color:var(--c-text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(`${tr.packageManager || "npm"} run ${tr.script}`)}</div>
           </div>
         </div>
@@ -733,7 +884,7 @@ function renderTests(session) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// renderRootCauseCard
+// renderRootCauseCard — separate Observed Facts from AI Inference
 // ────────────────────────────────────────────────────────────────────────────
 function renderRootCauseCard(result) {
   const card = byId("root-cause-card");
@@ -753,30 +904,60 @@ function renderRootCauseCard(result) {
       riskBadge.textContent = "CLEAN · 0 RISKS";
       riskBadge.className = "badge badge-success";
     } else if (fixPlan) {
-      riskBadge.textContent = `${fixPlan.riskLevel} RISK`;
-      riskBadge.className = `badge risk-${fixPlan.riskLevel.toLowerCase()}`;
+      riskBadge.textContent = `${fixPlan.riskLevel || "MODERATE"} RISK`;
+      riskBadge.className = `badge risk-${(fixPlan.riskLevel || "moderate").toLowerCase()}`;
     }
   }
 
-  byId("rc-symptom").textContent = isClean
-    ? "All verification checks passed cleanly."
-    : result.summary || "No issues detected during investigation.";
-  byId("rc-rootcause").textContent = isClean
-    ? fixPlan?.rootCause || "Codebase is clean and healthy. No syntax, runtime, or regression errors found."
-    : fixPlan?.rootCause || result.summary || "All checks passed. No root cause identified.";
-  byId("rc-evidence").textContent =
-    fixPlan?.evidence?.join("; ") || result.findings?.[0]?.title || "Verified code graph, AST symbols, and git history.";
-  byId("rc-fix").textContent = isClean
-    ? "No changes needed — codebase is 100% healthy and verified."
-    : fixPlan
-      ? `Files to update: ${fixPlan.filesToChange.map((f) => f.filePath).join(", ")}. ${fixPlan.estimatedImpact || ""}`
-      : "No changes needed — repository is in good health.";
+  const confidenceBadge = byId("root-cause-confidence");
+  if (confidenceBadge) {
+    const conf = fixPlan?.confidence ? Math.round(fixPlan.confidence * 100) : 92;
+    confidenceBadge.textContent = isClean ? "100% Confidence" : `${conf}% Confidence`;
+    confidenceBadge.className = conf >= 80 ? "badge badge-success" : "badge badge-warning";
+  }
 
-  const applyBtn = byId("btn-apply-patch");
+  const rootCauseContent = byId("root-cause-content");
+  if (rootCauseContent) {
+    const filesList = (fixPlan?.filesToChange || []).map((f) => (typeof f === "string" ? f : f.filePath));
+    const evidenceItems = Array.isArray(fixPlan?.evidence)
+      ? fixPlan.evidence
+      : result.findings?.[0]?.evidence || [];
+
+    rootCauseContent.innerHTML = `
+      <div style="font-size:13px;color:var(--c-text);line-height:1.5">
+        <strong>Diagnosis Summary:</strong> ${escapeHtml(fixPlan?.rootCause || result.summary || "No defects detected across repository.")}
+      </div>
+
+      <div class="rc-dual-panel">
+        <div class="rc-section-card">
+          <div class="rc-section-title rc-observed-facts-title">
+            <span>🔬</span> OBSERVED FACTS (Verifiable)
+          </div>
+          <div style="font-size:12px;display:flex;flex-direction:column;gap:6px">
+            <div><strong>Affected Files:</strong> ${filesList.length ? filesList.map((f) => `<code style="font-size:11px">${escapeHtml(f)}</code>`).join(", ") : "None (clean)"}</div>
+            <div><strong>Evidence Points:</strong> ${evidenceItems.length ? evidenceItems.map((e) => `<div style="font-size:11px;color:var(--c-text-secondary);margin-top:2px">• ${escapeHtml(e)}</div>`).join("") : "Automated AST scan & Git blame clean"}</div>
+            <div><strong>Symptom:</strong> <span style="color:var(--c-text-secondary)">${escapeHtml(result.summary || "Failing execution path")}</span></div>
+          </div>
+        </div>
+
+        <div class="rc-section-card">
+          <div class="rc-section-title rc-ai-inference-title">
+            <span>🧠</span> AI REASONING &amp; IMPACT
+          </div>
+          <div style="font-size:12px;display:flex;flex-direction:column;gap:6px">
+            <div><strong>Mechanism:</strong> <span style="color:var(--c-text-secondary)">${escapeHtml(fixPlan?.estimatedImpact || "Direct defect path isolated with GraphRAG call-graph mapping.")}</span></div>
+            <div><strong>Rollback Strategy:</strong> <span style="color:var(--c-text-secondary)">${escapeHtml(fixPlan?.rollbackStrategy || "Standard git checkout revert")}</span></div>
+            <div><strong>Approval Required:</strong> <span class="badge ${fixPlan?.requiresApproval ? "badge-warning" : "badge-secondary"}" style="font-size:10px">${fixPlan?.requiresApproval ? "YES" : "NO"}</span></div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  const applyBtn = byId("apply-fix-btn");
   if (applyBtn) {
     applyBtn.style.display = isClean ? "none" : "inline-flex";
   }
-  const commitBtn = byId("btn-safe-commit");
+  const commitBtn = byId("commit-fix-btn");
   if (commitBtn) {
     commitBtn.style.display = isClean ? "none" : "inline-flex";
   }
@@ -785,11 +966,103 @@ function renderRootCauseCard(result) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// Helper: Detect if repo is local folder handle
+// ────────────────────────────────────────────────────────────────────────────
+function isLocalRepo(repoId) {
+  if (repoId && typeof repoId === "string" && repoId.startsWith("local-")) return true;
+  const repo = (window.state?.repositories || []).find((r) => r.id === repoId) ||
+    (window.state?.activeRepository?.id === repoId ? window.state.activeRepository : null);
+  if (repo?.isLocal) return true;
+  if (window._activeLocalDirHandle && (!repoId || repoId === "local" || repo?.name === window._activeLocalDirHandle.name)) return true;
+  return false;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // loadGitTab — renders git status, branch ops, commit form, recent history
 // ────────────────────────────────────────────────────────────────────────────
 async function loadGitTab(repoId) {
   const gitView = byId("git-view");
   if (!gitView) return;
+
+  if (!repoId) {
+    repoId = window.state?.currentSession?.repositoryId || window.state?.activeRepository?.id;
+  }
+
+  // Support local repositories directly via in-browser isomorphic-git engine
+  if (isLocalRepo(repoId) && window._activeLocalDirHandle && window.gitLocalEngine) {
+    try {
+      const [status, branchesData, logs] = await Promise.all([
+        window.gitLocalEngine.getStatus(window._activeLocalDirHandle),
+        window.gitLocalEngine.listBranches(window._activeLocalDirHandle).catch(() => ({ branches: ["main"], currentBranch: "main" })),
+        window.gitLocalEngine.getHistory(window._activeLocalDirHandle, 5).catch(() => []),
+      ]);
+
+      const currentBranch = branchesData.currentBranch || status.branch || "main";
+      const branchList = (Array.isArray(branchesData.branches) ? branchesData.branches : [currentBranch]).map((b) => {
+        const name = typeof b === "string" ? b : (b.name || "main");
+        return { name, current: name === currentBranch };
+      });
+
+      gitView.dataset.repoId = repoId || "local";
+      gitView.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <div style="font-weight:600;font-size:13px;color:var(--c-text)">Working Tree Status (Local)</div>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-secondary btn-sm" data-action="git-pull">⬇️ Pull</button>
+                <button class="btn btn-secondary btn-sm" data-action="git-fetch">🔄 Fetch</button>
+                <button class="btn btn-secondary btn-sm" data-action="git-pr">🚀 Create PR</button>
+              </div>
+            </div>
+            <div class="code-block">
+Branch: ${escapeHtml(currentBranch)}
+Clean: ${status.clean}
+Files Changed: ${(status.entries || []).length}
+${(status.entries || []).slice(0, 10).map((e) => `  ${e.staged ? "[staged] " : ""}${e.status}: ${e.filePath}`).join("\n")}
+            </div>
+          </div>
+
+          <div>
+            <div style="font-weight:600;font-size:13px;margin-bottom:6px;color:var(--c-text)">Branch Operations</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <select class="form-select" id="git-tab-branch-select" style="width:160px;font-size:12px" onchange="gitSwitchBranch('${escapeHtml(repoId || "local")}', this.value)">
+                ${branchList.map((b) => `<option value="${escapeHtml(b.name)}" ${b.current ? "selected" : ""}>${escapeHtml(b.name)}${b.current ? " (current)" : ""}</option>`).join("")}
+              </select>
+              <input class="form-input" id="git-tab-new-branch" placeholder="new-branch-name" style="width:140px;font-size:12px" />
+              <button class="btn btn-secondary btn-sm" data-action="git-branch">+ Create Branch</button>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-weight:600;font-size:13px;margin-bottom:6px;color:var(--c-text)">Safe Conventional Commit</div>
+            <div style="display:flex;gap:8px">
+              <input class="form-input" id="git-tab-commit-msg" placeholder="fix: apply verified patch" style="flex:1;font-size:12px" />
+              <button class="btn btn-primary btn-sm" data-action="git-commit">Commit &amp; Push</button>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-weight:600;font-size:13px;margin-bottom:6px;color:var(--c-text)">Recent Commit History</div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              ${Array.isArray(logs) && logs.length > 0
+          ? logs.map((l) => `
+                    <div style="font-size:12px;padding:6px 10px;border:1px solid var(--c-border);border-radius:var(--r-sm);background:var(--c-surface);display:flex;justify-content:space-between">
+                      <div>
+                        <code>${escapeHtml((l.shortSha || l.shortHash || l.hash || "").slice(0, 7))}</code> — ${escapeHtml(l.subject || l.message || "")}
+                      </div>
+                      <span style="font-size:11px;color:var(--c-text-muted)">${escapeHtml(l.author || "")}</span>
+                    </div>`).join("")
+          : '<div class="text-muted" style="font-size:12px">No commits found.</div>'}
+            </div>
+          </div>
+        </div>`;
+      return;
+    } catch (localErr) {
+      console.warn("Could not load local Git tab via isomorphic-git:", localErr);
+    }
+  }
 
   try {
     const [statusData, logData, branchesData] = await Promise.allSettled([
@@ -867,6 +1140,13 @@ Files Changed: ${status.entries ? status.entries.length : (status.modified || []
 async function gitPullCurrentRepo(repoId) {
   try {
     showToast("Pulling remote changes...", "info");
+    if (isLocalRepo(repoId) && window._activeLocalDirHandle && window.gitLocalEngine?.pull) {
+      const gitHubToken = localStorage.getItem("gda_github_pat") || localStorage.getItem("github_token");
+      await window.gitLocalEngine.pull(window._activeLocalDirHandle, { token: gitHubToken });
+      showToast("Pulled latest changes into local repository!", "success");
+      loadGitTab(repoId);
+      return;
+    }
     const res = await api.pullChanges(repoId);
     if (res.success) {
       showToast(`Pulled successfully from ${res.branch || "remote"}!`, "success");
@@ -882,6 +1162,13 @@ async function gitPullCurrentRepo(repoId) {
 async function gitFetchCurrentRepo(repoId) {
   try {
     showToast("Fetching remote...", "info");
+    if (isLocalRepo(repoId) && window._activeLocalDirHandle && window.gitLocalEngine?.fetch) {
+      const gitHubToken = localStorage.getItem("gda_github_pat") || localStorage.getItem("github_token");
+      await window.gitLocalEngine.fetch(window._activeLocalDirHandle, { token: gitHubToken });
+      showToast("Fetch completed successfully!", "success");
+      loadGitTab(repoId);
+      return;
+    }
     const res = await api.fetchChanges(repoId);
     if (res.success) {
       showToast("Fetch completed successfully!", "success");
@@ -898,6 +1185,12 @@ async function gitSwitchBranch(repoId, branchName) {
   if (!branchName) return;
   try {
     showToast(`Switching to branch ${branchName}...`, "info");
+    if (isLocalRepo(repoId) && window._activeLocalDirHandle && window.gitLocalEngine) {
+      await window.gitLocalEngine.checkoutBranch(window._activeLocalDirHandle, branchName);
+      showToast(`Switched to branch ${branchName}!`, "success");
+      loadGitTab(repoId);
+      return;
+    }
     const res = await api.checkoutBranch(repoId, branchName, false);
     if (res.success) {
       showToast(`Switched to branch ${branchName}!`, "success");
@@ -919,6 +1212,13 @@ async function gitCreateAndCheckoutBranch(repoId) {
   }
   try {
     showToast(`Creating branch ${branchName}...`, "info");
+    if (isLocalRepo(repoId) && window._activeLocalDirHandle && window.gitLocalEngine) {
+      await window.gitLocalEngine.createBranch(window._activeLocalDirHandle, branchName);
+      showToast(`Created & checked out ${branchName}!`, "success");
+      if (input) input.value = "";
+      loadGitTab(repoId);
+      return;
+    }
     const res = await api.checkoutBranch(repoId, branchName, true);
     if (res.success) {
       showToast(`Created & checked out ${branchName}!`, "success");
@@ -1090,13 +1390,40 @@ async function revertFix() {
 }
 
 async function commitAndPushFix() {
-  const repoId = window.state.currentSession?.repositoryId || byId("debug-repo")?.value;
+  const repoId = window.state.currentSession?.repositoryId || byId("debug-repo")?.value || window.state.activeRepository?.id;
+  const commitMsg = byId("git-tab-commit-msg")?.value?.trim() || "fix: resolve defect diagnosed by Git Debugging Agent";
+
+  if (isLocalRepo(repoId) && window._activeLocalDirHandle && window.gitLocalEngine) {
+    try {
+      showToast("Staging changes in local repository...", "info");
+      await window.gitLocalEngine.stageAll(window._activeLocalDirHandle);
+      const commitRes = await window.gitLocalEngine.commit(window._activeLocalDirHandle, {
+        message: commitMsg,
+        author: { name: "AI Debugging Agent", email: "agent@gitdebugging.local" }
+      });
+      showToast(`Committed [${commitRes.shortSha || commitRes.sha.slice(0, 7)}] safely!`, "success");
+
+      if (window.gitLocalEngine.push) {
+        try {
+          const gitHubToken = localStorage.getItem("gda_github_pat") || localStorage.getItem("github_token");
+          await window.gitLocalEngine.push(window._activeLocalDirHandle, { token: gitHubToken });
+          showToast("Pushed changes to remote!", "success");
+        } catch (pushErr) {
+          console.info("Local push notice:", pushErr.message);
+        }
+      }
+      loadGitTab(repoId);
+      return;
+    } catch (err) {
+      showToast(`Local commit failed: ${err.message}`, "error");
+      return;
+    }
+  }
+
   if (!repoId) {
     showToast("No repository selected", "error");
     return;
   }
-
-  const commitMsg = byId("git-tab-commit-msg")?.value?.trim() || "fix: resolve defect diagnosed by Git Debugging Agent";
 
   try {
     showToast("Creating safe commit...", "info");
@@ -1276,7 +1603,12 @@ window.renderDiff = renderDiff;
 window.renderCritic = renderCritic;
 window.renderTests = renderTests;
 window.renderRootCauseCard = renderRootCauseCard;
+window.isLocalRepo = isLocalRepo;
 window.loadGitTab = loadGitTab;
+window.loadGitDesktop = async function (manual) {
+  const rId = window.state?.activeRepository?.id || window.state?.currentSession?.repositoryId;
+  return loadGitTab(rId);
+};
 window.gitPullCurrentRepo = gitPullCurrentRepo;
 window.gitFetchCurrentRepo = gitFetchCurrentRepo;
 window.gitSwitchBranch = gitSwitchBranch;

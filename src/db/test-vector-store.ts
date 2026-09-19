@@ -3,7 +3,7 @@ import { parseRepository } from "../ingestion/parser.js";
 import { chunkRepository } from "../ingestion/chunker.js";
 import { closeDatabase, testDatabaseConnection } from "./mongodb.js";
 import { initializeSchema } from "./schema.js";
-import { upsertChunks, pgVectorSearch } from "./vector-store.js";
+import { upsertChunks, mongoVectorSearch } from "./vector-store.js";
 
 const SEPARATOR = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
 
@@ -35,14 +35,14 @@ const main = async () => {
   console.warn(`1. Unfiltered Vector Search: "${queryText}"`);
   console.warn(`${SEPARATOR}\n`);
 
-  const allResults = await pgVectorSearch(queryText, { repository: "ai-chatbot", limit: 5 });
+  const allResults = await mongoVectorSearch(queryText, { repository: "ai-chatbot", limit: 5 });
   allResults.forEach(printResult);
 
   console.warn(`\n${SEPARATOR}`);
   console.warn(`2. Filtered Search (chunkType: function, language: typescript): "${queryText}"`);
   console.warn(`${SEPARATOR}\n`);
 
-  const filteredResults = await pgVectorSearch(queryText, {
+  const filteredResults = await mongoVectorSearch(queryText, {
     repository: "ai-chatbot",
     chunkType: "function",
     language: "typescript",

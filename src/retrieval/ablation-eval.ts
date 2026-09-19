@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { CodeRetriever } from "./retriever.js";
 import { retrievalEvalDataset } from "./eval-dataset.js";
-import { pgVectorSearch } from "../db/vector-store.js";
+import { mongoVectorSearch } from "../db/vector-store.js";
 import { graphSearch } from "./graph-search.js";
 import { hybridSearch } from "./hybrid-search.js";
 import { closeDatabase } from "../db/mongodb.js";
@@ -46,7 +46,9 @@ const buildModes = (retriever: CodeRetriever, internals: RetrieverInternals): Mo
   {
     name: "Vector Only",
     run: async (q) =>
-      (await pgVectorSearch(q, { repository: "ai-chatbot", limit: 10 })).map((r) => r.chunk.name ?? r.chunk.filePath),
+      (await mongoVectorSearch(q, { repository: "ai-chatbot", limit: 10 })).map(
+        (r) => r.chunk.name ?? r.chunk.filePath,
+      ),
   },
   {
     name: "Graph Only",
@@ -55,7 +57,7 @@ const buildModes = (retriever: CodeRetriever, internals: RetrieverInternals): Mo
   {
     name: "Hybrid",
     run: async (q) => {
-      const v = await pgVectorSearch(q, { repository: "ai-chatbot", limit: 15 });
+      const v = await mongoVectorSearch(q, { repository: "ai-chatbot", limit: 15 });
       return hybridSearch(q, internals.graph, internals.chunks, v, { limit: 10 }).map((r) => r.name);
     },
   },

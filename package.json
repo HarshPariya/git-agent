@@ -1,5 +1,5 @@
 {
-  "name": "ai-chatbot",
+  "name": "git-agent",
   "version": "2.0.0",
   "description": "Autonomous AI Git Debugging Agent",
   "type": "module",
@@ -14,7 +14,8 @@
     "test:agent": "tsx tests/agent-orchestrator.test.ts",
     "test:api": "tsx tests/api.test.ts",
     "test:guardrails": "tsx tests/guardrails.test.ts",
-    "test:desktop": "tsx tests/git-desktop.test.ts",
+    "test:change-analyzer": "tsx tests/git-change-analyzer.test.ts",
+    "test:e2e-workflow": "tsx tests/e2e-git-workflow.test.ts",
     "rag:parse": "tsx src/ingestion/test-parser.ts",
     "rag:graph": "tsx src/retrieval/test-graph-search.ts",
     "rag:vector": "tsx src/retrieval/test-vector-search.ts",
@@ -53,9 +54,9 @@
   "author": "HarshPariya",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/HarshPariya/ai-chatbot/issues"
+    "url": "https://github.com/HarshPariya/git-agent/issues"
   },
-  "homepage": "https://github.com/HarshPariya/ai-chatbot#readme",
+  "homepage": "https://github.com/HarshPariya/git-agent#readme",
   "dependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",

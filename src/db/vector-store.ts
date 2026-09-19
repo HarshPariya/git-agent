@@ -175,11 +175,11 @@ export const upsertChunks = async (
 };
 
 /**
- * Vector similarity search.
- * Attempts Atlas Vector Search first; falls back to application-level
+ * MongoDB Atlas Vector similarity search.
+ * Attempts Atlas Vector Search ($vectorSearch) first; falls back to application-level
  * cosine similarity for local MongoDB instances.
  */
-export const pgVectorSearch = async (
+export const mongoVectorSearch = async (
   queryText: string,
   filterOrRepo?: string | VectorSearchFilterOptions,
   limitParam = 10,
@@ -255,6 +255,10 @@ export const pgVectorSearch = async (
   scored.sort((a, b) => b.similarity - a.similarity);
   return scored.slice(0, limit).map(({ doc, similarity }) => mapDocToResult(doc, similarity));
 };
+
+export const vectorSearch = mongoVectorSearch;
+/** @deprecated Use mongoVectorSearch or vectorSearch instead */
+export const pgVectorSearch = mongoVectorSearch;
 
 export { type DatabaseHealthStatus };
 export { getDatabaseHealth };

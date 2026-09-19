@@ -1,4 +1,11 @@
-import type { DebugMode, DebugSession, DebugStep, DebugStepType, DebugFinding } from "../types/git.js";
+import type {
+  DebugMode,
+  DebugSession,
+  DebugStep,
+  DebugStepType,
+  DebugFinding,
+  RepositoryContext,
+} from "../types/git.js";
 import { AppError } from "../errors/app-error.js";
 import { logger } from "../logging/logger.js";
 import { callLlm, isLlmAvailable, type LlmMessage } from "../llm/client.js";
@@ -16,6 +23,7 @@ export interface DebugContext {
   readonly sessionId: string;
   readonly mode: DebugMode;
   readonly query: string;
+  readonly repositoryContext?: RepositoryContext | undefined;
 }
 
 export interface DebugStepResult {
@@ -93,7 +101,14 @@ const extendedDataMap = new Map<string, ExtendedSessionData>();
 const sseListeners = new Map<string, Set<(event: SessionStreamEvent) => void>>();
 
 export class DebugAgentPipeline {
-  startSession(repositoryId: string, tenantId: string, userId: string, mode: DebugMode, query: string): DebugSession {
+  startSession(
+    repositoryId: string,
+    tenantId: string,
+    userId: string,
+    mode: DebugMode,
+    query: string,
+    repositoryContext?: RepositoryContext,
+  ): DebugSession {
     const sessionId = `debug-${crypto.randomUUID().slice(0, 8)}`;
     const now = new Date().toISOString();
 
@@ -110,6 +125,7 @@ export class DebugAgentPipeline {
       totalSteps: 0,
       steps: [],
       findings: [],
+      ...(repositoryContext && { repositoryContext }),
     };
 
     const sm = new AgentStateMachine(sessionId);

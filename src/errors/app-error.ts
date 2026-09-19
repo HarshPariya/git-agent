@@ -10,6 +10,7 @@ export type ErrorCode =
   | "SERVICE_UNAVAILABLE"
   | "GITHUB_ERROR"
   | "GIT_ERROR"
+  | "REPOSITORY_REQUIRED"
   | "INTERNAL_ERROR";
 
 export class AppError extends Error {

@@ -102,10 +102,10 @@ graph TD
             V_DASH["views/dashboard.js (System Health & Quick Cards)"]
             V_REPO["views/repositories.js (Workspace Mount & OS Dialog)"]
             V_DEBUG["views/debugging.js (Workspace A: 28-State Agent)"]
-            V_DESK["views/git-desktop.js (Workspace B: Git Controller)"]
+            V_CI["views/ci.js (Continuous Integration & Pipeline Diagnostics)"]
             V_PR["views/pull-requests.js (PR Hub & Merge Engine)"]
             V_ISS["views/issues.js (Issue Triage & Debug Trigger)"]
-            V_CONF["views/conflicts.js (4-Way Conflict Center)"]
+            V_ADM["views/admin.js (Admin Center & System Diagnostics)"]
             V_HIST["views/history.js (Visual Commit Timeline)"]
             V_SETT["views/settings.js (Config, Models, Themes)"]
         end
@@ -117,9 +117,9 @@ graph TD
     INDEX --> STATE
     INDEX --> API_JS
     STATE --> DIFF_COMP & PLAN_COMP
-    STATE --> V_DASH & V_REPO & V_DEBUG & V_DESK & V_PR & V_ISS & V_CONF & V_HIST & V_SETT
+    STATE --> V_DASH & V_REPO & V_DEBUG & V_CI & V_PR & V_ISS & V_ADM & V_HIST & V_SETT
     APP_JS --> STATE
-    APP_JS --> V_DASH & V_REPO & V_DEBUG & V_DESK & V_PR & V_ISS & V_CONF & V_HIST & V_SETT
+    APP_JS --> V_DASH & V_REPO & V_DEBUG & V_CI & V_PR & V_ISS & V_ADM & V_HIST & V_SETT
 ```
 
 ### 2.1 State Management (`public/state.js`)
@@ -143,41 +143,41 @@ graph TD
 
 ### 2.3 The 9 Modular View Controllers (`public/views/`)
 1. **Dashboard (`views/dashboard.js`)**:
-   - High-level system overview, active repository badge, quick-action cards, recent commit feed, and real-time backend health monitor.
+   - High-level system overview, active repository badge, quick-action cards (`Run AI Debugger`, `CI Runs`, `Connect Repository`), and real-time backend health monitor.
 2. **Repositories (`views/repositories.js`)**:
-   - Manages connected workspaces. Supports three mounting methods:
+   - Manages connected workspaces. Supports mounting methods:
      - **Windows Native Dialog (`FolderBrowserDialog`)**: Spawns OS-native folder selection dialog via `POST /api/fs/pick-native-dialog`.
      - **In-App Drive Browser**: Traverses drives (`C:\`, `D:\`, `/`) with Git detection badges via `POST /api/fs/browse`.
      - **GitHub Connect**: Authenticates with Personal Access Token (`ghp_...`) to list remote repositories.
-3. **AI Debugging (`views/debugging.js`) — Workspace A**:
+3. **AI Debugging (`views/debugging.js`) — Autonomous Reasoning Console**:
    - Flagship autonomous debugging console. Connects to `/api/debug/:id/stream` via SSE.
    - Renders 28-state execution pipeline, real-time terminal output, hypothesis confidence bars, root-cause diagnosis, diff preview, and human-in-the-loop Approve/Revert action triggers.
-4. **Git Desktop (`views/git-desktop.js`) — Workspace B**:
-   - Visual Git controller for repository workflows.
-   - Working tree file change table with staged/unstaged/untracked grouping, line addition/deletion counts, and risk badges.
-   - **Branch Switcher Modal**: Lists local and remote branches with search filter, branch creation input, and dirty-tree checkout guards.
-   - **Continuous Diff Viewer**: One-click side-by-side inspection of all unstaged and staged changes.
-   - **Commit Plan Controller**: Orchestrates AI Change Analysis, renders commit group cards, and executes sequential atomic commits.
-   - **Push Preview Modal**: Pre-push security verification modal displaying commits to push, files touched, protected branch check, and secret scans.
-   - **Executive Post-Push Summary Card**: Post-push report detailing commit count, remote branch status, and one-click "Create Pull Request" trigger.
+4. **Issues (`views/issues.js`)**:
+   - GitHub and local issue tracking board.
+   - Displays issue titles, authors, labels, and status badges.
+   - Actionable empty state with one-click "⚡ Run AI Bug Diagnosis" trigger.
 5. **Pull Requests (`views/pull-requests.js`)**:
    - Comprehensive PR hub displaying open, merged, and closed PRs.
-   - Create PR modal with target branch selection (`main`, `development`, etc.), title, and body description.
-   - PR details view with diff inspection and merge execution supporting 3 strategies (`merge`, `squash`, `rebase`).
-6. **Issues (`views/issues.js`)**:
-   - GitHub and local issue tracking board.
-   - Displays issue titles, authors, labels, and state.
-   - One-click "Debug Issue" action that feeds the issue description directly into Workspace A for autonomous investigation.
-7. **Conflicts (`views/conflicts.js`)**:
-   - 4-Way Conflict Center (`BASE | OURS | THEIRS | AI RESOLUTION`).
-   - Side-by-side synchronized diff visualizer with automated test execution before finalizing merges.
-8. **History (`views/history.js`)**:
-   - Visual commit timeline rendering short SHA badges, author avatars, commit messages, and relative timestamps.
-   - Click to inspect commit diffs and parent trees.
-9. **Settings (`views/settings.js`)**:
-   - System configuration: LLM provider (Groq LLaMA 3.3 70B Versatile), API keys, dark/light theme toggle, and system cache clearing.
+   - Shows verified branch target indicators (`head → base`), direct GitHub compare links, and verified merge buttons.
+6. **CI Runs (`views/ci.js`)**:
+   - Continuous Integration pipeline monitor with real-time workflow runs and failure diagnostics.
+   - Dynamic metrics: Total Workflow Runs, Pass Rate, Average Run Duration, and AI Triage Status.
+   - Step-by-step logs, failure diagnostics, and 1-click autonomous fix transitions.
+7. **History (`views/history.js`)**:
+   - High-density session cards with repository badge (`📁 <repo-name>`), session ID (`#<shortId>`), mode pill (`⚡ DEBUG`), and duration.
+   - Real-time client-side search filtering by error text, repository name, or session ID.
+8. **Settings (`views/settings.js`)**:
+   - System configuration: LLM provider (Groq LLaMA 3.3 70B Versatile), GitHub Personal Access Token, and user session management.
+9. **Admin Center (`views/admin.js`)**:
+   - Obsidian glassmorphism telemetry dashboard with system statistics, user administration, and structured activity streams.
 
-### 2.4 Master Application Coordinator (`public/app.js`)
+### 2.4 Multi-Device Responsive Architecture
+- **Responsive Navigation Drawer**: On screen widths below `960px`, the horizontal navbar smoothly transitions into an animated slide-over drawer (`#mobile-nav-drawer`) with backdrop blur (`backdrop-filter: blur(16px)`).
+- **Centered Medium Proportions**: Eliminates oversized voids and edge-hugging elements on mobile (`width: 100%; max-width: 540px; margin: 0 auto;`).
+- **Compact 2x2 Metric Grids**: Transforms 4 giant stacked cards into a clean 2x2 grid on mobile screens.
+- **Touch-Friendly Controls**: Minimum 40px tap targets with verified flex-child constraints (`min-width: 0`).
+
+### 2.5 Master Application Coordinator (`public/app.js`)
 - Exposes top-level navigation, tab switching (`switchTab`), breadcrumb management, global keyboard shortcuts (e.g. `Ctrl+K` for search, `Ctrl+B` for branch switcher), and toast notifications.
 - All view methods are safely attached to `window` ensuring inline `onclick` HTML event handlers work seamlessly.
 

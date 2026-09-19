@@ -16,6 +16,7 @@ flowchart TD
     ACTION -->|4. GitHub Issue / PR| WF4[Automated PR Generation & Review]
     ACTION -->|5. Git Operations| WF5[Controlled Terminal & Push Safeguards]
     ACTION -->|6. Regressions| WF6[Automated Git Bisect Runner]
+    ACTION -->|7. CI Pipelines| WF7[Continuous Integration & AI Failure Diagnosis]
 
     WF1 --> READY([Repository Indexed & Active])
     WF2 --> VERIFIED([Patch Tested & Approved])
@@ -23,6 +24,7 @@ flowchart TD
     WF4 --> PR_CREATED([PR Submitted with Evidence])
     WF5 --> EXECUTED([Safe Command Complete])
     WF6 --> CULPRIT([Regression Commit Isolated])
+    WF7 --> CI_DIAG([CI Log Analyzed & Patch Generated])
 ```
 
 ---
@@ -159,13 +161,13 @@ flowchart TD
 
 ---
 
-## 5. Workflow 4: Git Desktop (Workspace B) & AI Semantic Commit Flow
+## 5. Workflow 4: Working Tree Inspection & AI Semantic Commit Flow
 
-Git Desktop provides a first-class visual repository controller powered by AI semantic code intelligence:
+The repository controller is powered by AI semantic code intelligence for change inspection, diff visualization, and atomic commits:
 
 ```mermaid
 flowchart TD
-    GD_START[Open Git Desktop] --> GD_DETECT[Scan Working Tree Changes]
+    GD_START[Inspect Working Tree Changes] --> GD_DETECT[Scan Working Tree Status]
     GD_DETECT --> GD_TABLE[Render Changed Files Table + Risk Badges]
     
     GD_TABLE --> GD_DIFF[Continuous Diff Viewer: Inspect All Line Changes]
@@ -358,7 +360,52 @@ When code breaks between two known revisions:
 
 ---
 
-## 10. Where to Modify Code (Customization Guide)
+## 10. Workflow 9: Continuous Integration & Automated Pipeline Diagnostics
+
+Continuous Integration (CI) test runs, pipeline step tracking, and automated log diagnoses are managed via the dedicated CI engine:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Developer (or Webhook)
+    participant UI as Web SPA (views/ci.js)
+    participant API as Express API (/api/ci)
+    participant Orch as Debug Orchestrator
+    participant Groq as Groq AI Diagnostics
+    participant Git as Git Engine
+
+    Dev->>UI: Trigger Build or View CI Pipeline
+    UI->>API: POST /api/ci/builds/trigger { branch, commitSha }
+    API->>Git: Execute Automated Verification Steps
+    Note over API,Git: lint -> typecheck -> test -> security
+    API-->>UI: Build Created (status: "running" | "failed" | "passed")
+    
+    alt Build Fails
+        Dev->>UI: Click "AI Diagnose & Fix"
+        UI->>API: POST /api/ci/builds/:id/diagnose
+        API->>Groq: Analyze Error Stack & Test Failures
+        Groq-->>API: RootCauseAnalysis + SuggestedPatch + Confidence
+        API-->>UI: Diagnostic Report & Fix Plan
+        Dev->>UI: One-Click "Apply Remediation Patch"
+        UI->>Orch: Dispatch to Patch Engine & Verify
+    end
+```
+
+### Supported CI Pipeline Capabilities:
+1. **Pipeline Run Monitoring**:
+   - Inspect build status (`passed`, `failed`, `running`).
+   - Per-step status timeline (Lint, Typecheck, Unit Tests, Security Guardrails).
+   - Raw logs viewer with error line highlighting.
+2. **AI Failure Diagnostics**:
+   - One-click trigger from failed CI runs.
+   - Groq-powered stack trace parsing and root cause deduction.
+   - Synthesizes automated file patch suggestions with unified diffs.
+3. **Webhook Integration**:
+   - Accepts external CI events from GitHub Actions or n8n webhooks via `/api/internal/automation/ci-failure`.
+
+---
+
+## 11. Where to Modify Code (Customization Guide)
 
 If you want to modify or extend the system, use this comprehensive reference:
 
@@ -369,17 +416,19 @@ If you want to modify or extend the system, use this comprehensive reference:
 | **Commit Plan Cards** | [`public/components/commit-plan.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/components/commit-plan.js) | Adjust group card layouts, risk badge colors, or commit action buttons. |
 | **Dashboard View** | [`public/views/dashboard.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/dashboard.js) | Modify dashboard metrics, active repo card, or system health gauges. |
 | **Repository Management View** | [`public/views/repositories.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/repositories.js) | Customize native folder picker modal, GitHub connector, or repo cards. |
-| **AI Debugging Console (Workspace A)** | [`public/views/debugging.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/debugging.js) | Modify SSE log streaming, hypothesis meters, or Approve/Revert triggers. |
-| **Git Desktop Controller (Workspace B)** | [`public/views/git-desktop.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/git-desktop.js) | Adjust change tables, branch switcher, push preview modal, or post-push summary card. |
+| **AI Debugging Console** | [`public/views/debugging.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/debugging.js) | Modify SSE log streaming, hypothesis meters, or Approve/Revert triggers. |
+| **Continuous Integration View** | [`public/views/ci.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/ci.js) | Adjust CI pipeline monitors, build triggers, log visualizer, or AI failure diagnostics. |
 | **Pull Requests Hub** | [`public/views/pull-requests.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/pull-requests.js) | Modify PR lists, create PR modal, or merge strategy options. |
 | **Issue Triage View** | [`public/views/issues.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/issues.js) | Customize issue filters, label tags, or one-click "Debug Issue" action. |
-| **4-Way Conflict Center** | [`public/views/conflicts.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/conflicts.js) | Adjust side-by-side 4-way editor, AI resolution selector, or test runners. |
+| **Admin Center & Diagnostics** | [`public/views/admin.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/admin.js) | Modify system diagnostic tables, log viewers, and tenant controls. |
 | **Commit History Timeline** | [`public/views/history.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/history.js) | Modify commit list rendering, author badges, or diff popups. |
 | **Settings & Diagnostics** | [`public/views/settings.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/views/settings.js) | Add configuration options, LLM model switches, or cache clear actions. |
 | **Master Navigation & Router** | [`public/app.js`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/app.js) | Adjust keyboard shortcuts, tab switching, or global notification toasts. |
 | **CSS Theme & Glassmorphic Tokens** | [`public/styles.css`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/styles.css) | Modify HSL color tokens, backdrop filters, typography, or responsive rules. |
 | **HTML Shell & Modal Skeletons** | [`public/index.html`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/public/index.html) | Add new modals, top navigation buttons, or sidebar menu items. |
 | **Express API Routing & Middleware** | [`src/app.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/app.ts) | Register new API routes, JWT security middleware, or error handlers. |
+| **Continuous Integration API** | [`src/api/ci.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/api/ci.ts) | Adjust CI build triggers, pipeline step executions, and log analyzers. |
+| **Multi-Repository Scoping** | [`src/types/repository-context.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/types/repository-context.ts) | Modify repository isolation boundaries, multi-repo routing, and scoped schemas. |
 | **Native OS Dialogs & File Ops** | [`src/api/fs.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/api/fs.ts) | Tweak PowerShell `FolderBrowserDialog` or OS file manager launchers. |
 | **Git Engine & Windows execFile** | [`src/git/engine.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/git/engine.ts) | Adjust Git command executions, risk classifications, or formatting flags. |
 | **Push Safeguards & Branch Protection** | [`src/git/push.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/git/push.ts) | Add protected branch patterns or modify force-push lease checks. |
@@ -389,4 +438,5 @@ If you want to modify or extend the system, use this comprehensive reference:
 | **Patch Engine & Instant Rollback** | [`src/agent/patch-engine.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/agent/patch-engine.ts) | Adjust file snapshot storage or patch application algorithms. |
 | **GraphRAG Code Retrieval** | [`src/retrieval/retriever.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/retrieval/retriever.ts) | Tune hybrid search weights between graph edges and vector embeddings. |
 | **Input & Output Security Guards** | [`src/guardrails/input-guard.ts`](file:///c:/Users/harsh/Desktop/Codage-tasks/Git-Agent/src/guardrails/input-guard.ts) | Update prompt injection regex patterns or secret scrubbing filters. |
+
 

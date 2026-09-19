@@ -43,19 +43,74 @@ class GitLocalEngine {
   }
 
   /**
-   * Detect if selected folder contains a real Git repository
+   * Browser capability detection for File System Access, secure context, and local Git
+   */
+  detectCapabilities() {
+    const hasFSA = typeof window.showDirectoryPicker === "function";
+    const isSecure = window.isSecureContext === true;
+    const hasIndexedDB = typeof window.indexedDB !== "undefined";
+    const hasGit = typeof window.git !== "undefined";
+
+    return {
+      fileSystemAccess: hasFSA,
+      directoryPicker: hasFSA,
+      secureContext: isSecure,
+      indexedDB: hasIndexedDB,
+      browserGit: hasGit,
+      localGitSupported: hasFSA && isSecure && hasGit,
+      remoteGitSupported: true,
+      platform: navigator.userAgentData?.platform || navigator.platform || "unknown",
+      browser: /Chrome|Chromium|Edg/.test(navigator.userAgent) ? "chromium" : (/Safari/.test(navigator.userAgent) ? "safari" : "firefox"),
+    };
+  }
+
+  /**
+   * Detect if selected folder contains a real Git repository with verified Git root
+   * Checks .git directory/worktree file, HEAD, config, objects, and refs
    * @param {FileSystemDirectoryHandle} dirHandle
    */
   async detectRepository(dirHandle) {
     if (!dirHandle) return { isGit: false, reason: "No directory handle provided" };
+
+    let hasGit = false;
+    let isWorktree = false;
+    let gitDirHandle = null;
+
     try {
-      await dirHandle.getDirectoryHandle(".git");
+      gitDirHandle = await dirHandle.getDirectoryHandle(".git");
+      hasGit = true;
     } catch {
+      // Check if .git is a worktree / submodule reference file
+      try {
+        const gitFileHandle = await dirHandle.getFileHandle(".git");
+        const file = await gitFileHandle.getFile();
+        const text = await file.text();
+        if (text.startsWith("gitdir:")) {
+          hasGit = true;
+          isWorktree = true;
+        }
+      } catch {}
+    }
+
+    if (!hasGit) {
       return {
         isGit: false,
         name: dirHandle.name,
         reason: "This folder does not contain a .git directory.",
       };
+    }
+
+    // Verify Git integrity (HEAD and config)
+    if (gitDirHandle) {
+      try {
+        await gitDirHandle.getFileHandle("HEAD");
+      } catch {
+        return {
+          isGit: false,
+          name: dirHandle.name,
+          reason: "Corrupted Git repository: missing .git/HEAD.",
+        };
+      }
     }
 
     const fs = this.getFS(dirHandle);
@@ -82,6 +137,7 @@ class GitLocalEngine {
       branch,
       remotes,
       url: remotes[0]?.url || "",
+      isWorktree,
     };
   }
 
@@ -515,6 +571,233 @@ class GitLocalEngine {
       corsProxy,
       onAuth: () => (token ? { username: token } : undefined),
     });
+  }
+
+  /**
+   * Watch local directory handle for working tree changes (polling + focus detection)
+   */
+  startWatcher(dirHandle, onChange) {
+    this.stopWatcher();
+    if (!dirHandle) return;
+
+    let lastHash = "";
+    const check = async () => {
+      try {
+        const status = await this.getStatus(dirHandle);
+        const hash = JSON.stringify((status.entries || []).map((e) => `${e.filePath}:${e.status}:${e.staged}`));
+        if (hash !== lastHash) {
+          lastHash = hash;
+          if (typeof onChange === "function") {
+            onChange(status);
+          }
+        }
+      } catch {}
+    };
+
+    this._watcherInterval = setInterval(check, 3000);
+    this._focusHandler = () => check();
+    window.addEventListener("focus", this._focusHandler);
+    check();
+  }
+
+  /**
+   * Classify file by role, language, and sensitivity
+   */
+  classifyFile(filePath, size = 0) {
+    const ext = filePath.includes(".") ? "." + filePath.split(".").pop().toLowerCase() : "";
+    const lower = filePath.toLowerCase();
+
+    // 1. Secrets detection
+    if (this.isSensitiveFile(filePath)) {
+      return { type: "SECRET", ext, language: "secret" };
+    }
+
+    // 2. Binary detection
+    if (BINARY_EXTENSIONS.has(ext)) {
+      return { type: "BINARY", ext, language: "binary" };
+    }
+
+    // 3. CI workflows
+    if (lower.includes(".github/workflows/") || lower.includes(".gitlab-ci") || lower.includes("jenkinsfile")) {
+      return { type: "CI", ext, language: "yaml" };
+    }
+
+    // 4. Test files
+    if (
+      /\.(test|spec)\.[a-z0-9]+$/i.test(lower) ||
+      /(?:^|[\\/])(?:tests|test|__tests__)[\\/]/i.test(lower) ||
+      /(?:^|[\\/])test_[a-z0-9_]+\.py$/i.test(lower)
+    ) {
+      return { type: "TEST", ext, language: this.detectLanguageFromExt(ext) };
+    }
+
+    // 5. Config files
+    if (
+      /package\.json|tsconfig.*\.json|vite\.config\.|webpack\.config\.|rollup\.config\.|dockerfile|docker-compose|cargo\.toml|go\.mod|requirements\.txt|pyproject\.toml|\.eslintrc|\.prettierrc/i.test(lower)
+    ) {
+      return { type: "CONFIG", ext, language: this.detectLanguageFromExt(ext) };
+    }
+
+    // 6. Docs
+    if (ext === ".md" || ext === ".markdown" || /readme|license|contributing|changelog/i.test(lower)) {
+      return { type: "DOC", ext, language: "markdown" };
+    }
+
+    // 7. Source files
+    const srcExts = new Set([
+      ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rs",
+      ".cpp", ".c", ".h", ".cs", ".php", ".rb", ".vue", ".svelte", ".html",
+      ".css", ".scss", ".sql", ".json", ".yaml", ".yml", ".toml"
+    ]);
+    if (srcExts.has(ext)) {
+      return { type: "SOURCE", ext, language: this.detectLanguageFromExt(ext) };
+    }
+
+    return { type: "UNKNOWN", ext, language: "unknown" };
+  }
+
+  detectLanguageFromExt(ext) {
+    const map = {
+      ".ts": "typescript", ".tsx": "typescript", ".js": "javascript", ".jsx": "javascript",
+      ".mjs": "javascript", ".cjs": "javascript", ".py": "python", ".go": "go", ".rs": "rust",
+      ".java": "java", ".cpp": "cpp", ".c": "c", ".cs": "csharp", ".php": "php",
+      ".rb": "ruby", ".html": "html", ".css": "css", ".scss": "scss", ".json": "json",
+      ".yaml": "yaml", ".yml": "yaml", ".toml": "toml", ".sql": "sql", ".md": "markdown"
+    };
+    return map[ext] || "unknown";
+  }
+
+  /**
+   * Recursively discover, classify, and build an immutable index for a local directory handle
+   */
+  async buildRepositoryIndex(dirHandle, { maxFiles = 500, maxDepth = 5 } = {}) {
+    if (!dirHandle) throw new Error("Directory handle required for indexing");
+
+    const entries = [];
+    const fileContents = {};
+    const counts = { totalFiles: 0, sourceFiles: 0, testFiles: 0, configFiles: 0, docFiles: 0, ciFiles: 0, ignoredFiles: 0 };
+    const languages = new Set();
+    const ignoredDirs = new Set(["node_modules", ".git", "dist", "build", ".next", ".nuxt", "coverage", ".nyc_output", ".cache", "tmp", "temp", ".idea", ".vscode"]);
+
+    const traverse = async (handle, relPath = "", depth = 0) => {
+      if (depth > maxDepth || entries.length >= maxFiles) return;
+
+      for await (const [name, entry] of handle.entries()) {
+        if (entry.kind === "directory") {
+          if (ignoredDirs.has(name)) {
+            counts.ignoredFiles++;
+            continue;
+          }
+          await traverse(entry, relPath ? `${relPath}/${name}` : name, depth + 1);
+        } else if (entry.kind === "file") {
+          const filePath = relPath ? `${relPath}/${name}` : name;
+          let size = 0;
+          try {
+            const file = await entry.getFile();
+            size = file.size;
+          } catch {}
+
+          const classification = this.classifyFile(filePath, size);
+          if (classification.type === "SECRET") {
+            counts.ignoredFiles++;
+            continue; // Exclude secret from manifest
+          }
+
+          counts.totalFiles++;
+          if (classification.type === "SOURCE") counts.sourceFiles++;
+          if (classification.type === "TEST") counts.testFiles++;
+          if (classification.type === "CONFIG") counts.configFiles++;
+          if (classification.type === "DOC") counts.docFiles++;
+          if (classification.type === "CI") counts.ciFiles++;
+          if (classification.language && classification.language !== "unknown") {
+            languages.add(classification.language);
+          }
+
+          entries.push({
+            path: filePath,
+            type: classification.type,
+            size,
+            language: classification.language,
+          });
+
+          // Pre-fetch text contents of key source/config files for instant deep agent diagnosis
+          if (
+            (classification.type === "SOURCE" || classification.type === "CONFIG") &&
+            Object.keys(fileContents).length < 35 &&
+            size > 0 &&
+            size < 65000
+          ) {
+            try {
+              const fileObj = await entry.getFile();
+              const text = await fileObj.text();
+              fileContents[filePath] = text;
+            } catch {}
+          }
+        }
+      }
+    };
+
+    await traverse(dirHandle);
+
+    // Get live git status and diff
+    let gitSnapshot = null;
+    try {
+      const status = await this.getStatus(dirHandle);
+      const diff = await this.getDiff(dirHandle, "").catch(() => "");
+      let recentCommits = "";
+      try {
+        const fs = this.getFS(dirHandle);
+        const commits = await window.git.log({ fs, dir: "/", depth: 5 });
+        recentCommits = commits
+          .map((c) => `${c.oid.slice(0, 7)} ${c.commit.author.name} — ${c.commit.message.trim()}`)
+          .join("\n");
+      } catch {}
+
+      gitSnapshot = {
+        branch: status.branch || "main",
+        clean: status.clean,
+        changedFiles: (status.entries || []).map((e) => e.filePath),
+        diff: diff.slice(0, 8000),
+        recentCommits,
+      };
+    } catch {}
+
+    const repoName = dirHandle.name;
+    const repoId = "local-" + repoName.toLowerCase().replace(/[^a-z0-9]/g, "-");
+    const workspaceId = "local_ws_" + repoName.toLowerCase().replace(/[^a-z0-9]/g, "-");
+
+    const manifestSummary = {
+      ...counts,
+      detectedLanguages: Array.from(languages),
+    };
+
+    return {
+      repositoryId: repoId,
+      workspaceId,
+      mode: "LOCAL",
+      displayName: repoName,
+      rootIdentifier: repoName,
+      branch: gitSnapshot?.branch || "main",
+      fileManifest: entries,
+      manifestSummary,
+      fileContents,
+      gitSnapshot,
+      indexedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Stop watching local directory
+   */
+  stopWatcher() {
+    if (this._watcherInterval) {
+      clearInterval(this._watcherInterval);
+      this._watcherInterval = null;
+    }
+    if (this._focusHandler) {
+      window.removeEventListener("focus", this._focusHandler);
+      this._focusHandler = null;
+    }
   }
 }
 

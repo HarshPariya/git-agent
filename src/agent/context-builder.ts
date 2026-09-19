@@ -1,9 +1,17 @@
 import fs from "node:fs/promises";
+import syncFs from "node:fs";
 import path from "node:path";
-import { executeGitStatus, executeGitLog, executeGitDiff, executeGitBranches } from "../git/engine.js";
+import {
+  executeGitStatus,
+  executeGitLog,
+  executeGitDiff,
+  executeGitBranches,
+  getExecutionPath,
+} from "../git/engine.js";
 import { repositoryIndexer } from "../graph/repository-indexer.js";
 import { repositoryStore } from "../repositories/repository-store.js";
 import { logger } from "../logging/logger.js";
+import type { RepositoryContext } from "../types/repository-context.js";
 
 /** Stringify only strings; fall back to a default for any other runtime value. */
 const safeStr = (value: unknown, fallback: string): string => (typeof value === "string" ? value : fallback);
@@ -38,15 +46,17 @@ export interface DebugContext {
   readonly issueText: string | undefined;
   readonly prText: string | undefined;
   readonly builtAt: string;
+  readonly repositoryContext?: RepositoryContext;
 }
 
 interface ContextBuildRequest {
   readonly repositoryId: string;
   readonly tenantId: string;
   readonly query: string;
-  readonly stackTrace?: string;
-  readonly issueText?: string;
-  readonly prText?: string;
+  readonly stackTrace?: string | undefined;
+  readonly issueText?: string | undefined;
+  readonly prText?: string | undefined;
+  readonly repositoryContext?: RepositoryContext | undefined;
 }
 
 const IGNORED_DIRS = new Set([
@@ -71,11 +81,18 @@ const MAX_DIR_DEPTH = 3;
 const MAX_FILES_PER_DIR = 40;
 const MAX_TOTAL_FILES = 200;
 
+const SENSITIVE_PATTERN =
+  /(?:^|[\\/])(?:\.env(?:\..+)?|credentials\.json|service_account.*\.json|id_rsa.*|id_ed25519.*|\.(?:pem|key|pkcs12|pfx|kdbx)|token\.json|auth\.json)$/i;
+
 async function scanFilesystem(rootPath: string): Promise<{
   tree: string;
   files: string[];
   packageJson: Record<string, unknown> | null;
 }> {
+  if (!rootPath || !syncFs.existsSync(rootPath)) {
+    return { tree: "", files: [], packageJson: null };
+  }
+
   const files: string[] = [];
   const treeLines: string[] = [];
   let packageJson: Record<string, unknown> | null = null;
@@ -102,7 +119,7 @@ async function scanFilesystem(rootPath: string): Promise<{
 
     for (const name of rawEntries) {
       if (name.startsWith(".") && name !== ".env.example") continue;
-      if (IGNORED_DIRS.has(name)) continue;
+      if (IGNORED_DIRS.has(name) || SENSITIVE_PATTERN.test(name)) continue;
 
       const fullPath = path.join(dir, name);
       try {
@@ -174,23 +191,27 @@ function queryRelevantFiles(files: string[], query: string): string[] {
 
 export class ContextBuilder {
   async build(req: ContextBuildRequest): Promise<DebugContext> {
-    const { repositoryId, tenantId, query } = req;
-    let repositoryName = repositoryId;
-    let localPath: string | undefined;
+    const { repositoryId, tenantId, query, repositoryContext } = req;
+    let repositoryName = repositoryContext?.displayName || repositoryId;
+    let localPath: string | undefined = repositoryContext?.localPath;
 
-    try {
-      const repo = repositoryStore.getRepository(repositoryId, tenantId);
-      if (repo) {
-        repositoryName = repo.name;
-        localPath = repo.localPath;
+    if (!localPath) {
+      try {
+        const repo = repositoryStore.getRepository(repositoryId, tenantId);
+        if (repo) {
+          repositoryName = repo.name;
+          localPath = repo.localPath;
+        } else {
+          localPath = getExecutionPath(repositoryId);
+        }
+      } catch {
+        // Repository lookup failure is not critical
       }
-    } catch {
-      // Repository lookup failure is not critical
     }
 
     const [gitCtx, codeCtx] = await Promise.all([
-      this.buildGitContext(repositoryId),
-      this.buildCodeContext(repositoryId, tenantId, query, localPath),
+      this.buildGitContext(repositoryId, repositoryContext),
+      this.buildCodeContext(repositoryId, tenantId, query, localPath, repositoryContext),
     ]);
 
     return {
@@ -204,12 +225,27 @@ export class ContextBuilder {
       issueText: req.issueText,
       prText: req.prText,
       builtAt: new Date().toISOString(),
+      ...(repositoryContext && { repositoryContext }),
     };
   }
 
-  private async buildGitContext(repositoryId: string): Promise<GitContext> {
+  private async buildGitContext(repositoryId: string, repositoryContext?: RepositoryContext): Promise<GitContext> {
+    if (repositoryContext?.gitSnapshot) {
+      const snap = repositoryContext.gitSnapshot;
+      return {
+        branch: snap.branch || "main",
+        ahead: snap.ahead ?? 0,
+        behind: snap.behind ?? 0,
+        clean: snap.clean ?? true,
+        recentCommits: snap.recentCommits || "",
+        changedFiles: [...(snap.changedFiles || [])],
+        diff: snap.diff || "",
+        branches: snap.branches ? [...snap.branches] : [snap.branch || "main"],
+      };
+    }
+
     const fallback: GitContext = {
-      branch: "unknown",
+      branch: repositoryContext?.branch || "unknown",
       ahead: 0,
       behind: 0,
       clean: true,
@@ -233,7 +269,7 @@ export class ContextBuilder {
       const b = branches.status === "fulfilled" ? branches.value : [];
 
       return {
-        branch: s?.branch ?? "unknown",
+        branch: s?.branch ?? repositoryContext?.branch ?? "unknown",
         ahead: s?.ahead ?? 0,
         behind: s?.behind ?? 0,
         clean: s?.clean ?? true,
@@ -252,33 +288,120 @@ export class ContextBuilder {
     tenantId: string,
     query: string,
     localPath: string | undefined,
+    repositoryContext?: RepositoryContext,
   ): Promise<CodeContext> {
-    try {
-      const graph = await repositoryIndexer.getGraph(repositoryId, tenantId);
+    // If client supplied explicit file manifest (e.g. Local browser repository)
+    if (repositoryContext?.fileManifest && repositoryContext.fileManifest.length > 0) {
+      const manifest = repositoryContext.fileManifest;
+      const validFiles = manifest.filter((f) => f.type !== "SECRET" && f.type !== "BINARY").map((f) => f.path);
+      const relevantFiles = queryRelevantFiles(validFiles, query);
+      const summary = repositoryContext.manifestSummary;
+      const summaryText = summary
+        ? `MANIFEST: ${summary.totalFiles} files (${summary.sourceFiles} source, ${summary.testFiles} test, ${summary.configFiles} config, ${summary.docFiles} doc)`
+        : `Total files indexed: ${validFiles.length}`;
+
+      const codeSnippets: string[] = [];
+      const discoveredSymbols: string[] = [];
+
+      if (repositoryContext.fileContents && typeof repositoryContext.fileContents === "object") {
+        for (const [filePath, content] of Object.entries(repositoryContext.fileContents)) {
+          const truncated =
+            content.length > 15000
+              ? `${content.slice(0, 15000)}\n// ... [truncated ${content.length - 15000} bytes]`
+              : content;
+          codeSnippets.push(`=== FILE: ${filePath} ===\n${truncated}`);
+
+          const matches = content.matchAll(
+            /(?:export\s+(?:default\s+)?(?:class|function|interface|type|const|let|var)|function|class)\s+([A-Za-z0-9_$]+)/g,
+          );
+          for (const m of matches) {
+            if (m[1] && !discoveredSymbols.includes(m[1])) {
+              discoveredSymbols.push(m[1]);
+            }
+          }
+        }
+      }
+
       return {
-        symbols: graph.symbols.slice(0, 20).map((s) => (typeof s.name === "string" ? s.name : "")),
-        graphNodes: graph.nodes.length,
-        graphEdges: graph.edges.length,
-        relevantFiles: [...new Set(graph.nodes.slice(0, 10).map((n) => n.filePath || n.name))],
-        searchResults: `Graph: ${graph.nodes.length} nodes, ${graph.edges.length} edges, ${graph.symbols.length} symbols`,
+        symbols: discoveredSymbols.slice(0, 30),
+        graphNodes: validFiles.length,
+        graphEdges: 0,
+        relevantFiles,
+        searchResults: [
+          `REPOSITORY CONTEXT: ${repositoryContext.displayName} (${repositoryContext.mode})`,
+          summaryText,
+          "",
+          "=== RELEVANT WORKSPACE FILES ===",
+          relevantFiles.join("\n") || validFiles.slice(0, 15).join("\n"),
+          ...(codeSnippets.length > 0 ? ["", "=== EXAMINED SOURCE CODE FILES ===", codeSnippets.join("\n\n")] : []),
+        ].join("\n"),
       };
-    } catch {
-      // GraphRAG unavailable — fall through to filesystem scan
     }
 
-    if (!localPath) {
+    try {
+      const graph = await repositoryIndexer.getGraph(repositoryId, tenantId);
+      if (graph.nodes.length > 0) {
+        return {
+          symbols: graph.symbols.slice(0, 20).map((s) => (typeof s.name === "string" ? s.name : "")),
+          graphNodes: graph.nodes.length,
+          graphEdges: graph.edges.length,
+          relevantFiles: [...new Set(graph.nodes.slice(0, 10).map((n) => n.filePath || n.name))],
+          searchResults: `Graph: ${graph.nodes.length} nodes, ${graph.edges.length} edges, ${graph.symbols.length} symbols`,
+        };
+      }
+    } catch {
+      // GraphRAG unavailable — fall through to verified filesystem scan
+    }
+
+    if (!localPath || !syncFs.existsSync(localPath)) {
       return {
         symbols: [],
         graphNodes: 0,
         graphEdges: 0,
         relevantFiles: [],
-        searchResults: "No local path available — connect a repository to enable filesystem analysis.",
+        searchResults: `Repository workspace "${repositoryId}" has no local filesystem path registered.`,
       };
     }
 
     try {
       const { tree, files, packageJson } = await scanFilesystem(localPath);
       const relevantFiles = queryRelevantFiles(files, query);
+
+      // Prioritize files: query matches first, then top key source files
+      const priorityFiles = [...relevantFiles];
+      const sourceFileRegex = /\.(ts|js|tsx|jsx|py|go|rs|json)$/i;
+      for (const f of files) {
+        if (priorityFiles.length >= 15) break;
+        if (!priorityFiles.includes(f) && sourceFileRegex.test(f) && !f.includes(".test.") && !f.includes(".spec.")) {
+          priorityFiles.push(f);
+        }
+      }
+
+      // Read real source file contents from disk
+      const codeSnippets: string[] = [];
+      const discoveredSymbols: string[] = [];
+      for (const relFile of priorityFiles) {
+        const fullPath = path.join(localPath, relFile);
+        try {
+          const content = await fs.readFile(fullPath, "utf-8");
+          const truncated =
+            content.length > 12000
+              ? `${content.slice(0, 12000)}\n// ... [truncated ${content.length - 12000} bytes]`
+              : content;
+          codeSnippets.push(`=== FILE: ${relFile} ===\n${truncated}`);
+
+          const matches = content.matchAll(
+            /(?:export\s+(?:default\s+)?(?:class|function|interface|type|const|let|var)|function|class)\s+([A-Za-z0-9_$]+)/g,
+          );
+          for (const m of matches) {
+            if (m[1] && !discoveredSymbols.includes(m[1])) {
+              discoveredSymbols.push(m[1]);
+            }
+          }
+        } catch {
+          // File read error - skip
+        }
+      }
 
       const pkgSummary = packageJson
         ? [
@@ -292,24 +415,28 @@ export class ContextBuilder {
         : "No package.json found.";
 
       const searchResults = [
-        `FILESYSTEM SCAN (GraphRAG not indexed):`,
-        `Total files: ${files.length}`,
+        `FILESYSTEM SCAN (Real source files read & analyzed from workspace):`,
+        `Total files in workspace: ${files.length}`,
+        `Source files inspected: ${codeSnippets.length}`,
         "",
         "=== DIRECTORY TREE ===",
-        tree.slice(0, 3000),
+        tree.slice(0, 2000),
         "",
         "=== PACKAGE INFO ===",
         pkgSummary,
         "",
         `=== RELEVANT FILES (matched query: "${query.slice(0, 60)}") ===`,
         relevantFiles.length > 0 ? relevantFiles.join("\n") : files.slice(0, 15).join("\n"),
+        "",
+        "=== EXAMINED SOURCE CODE FILES ===",
+        codeSnippets.join("\n\n"),
       ].join("\n");
 
       return {
-        symbols: [],
-        graphNodes: 0,
+        symbols: discoveredSymbols.slice(0, 30),
+        graphNodes: files.length,
         graphEdges: 0,
-        relevantFiles,
+        relevantFiles: priorityFiles,
         searchResults,
       };
     } catch (err) {
@@ -366,7 +493,13 @@ export const contextBuilder = new ContextBuilder();
 export async function buildDebugContext(
   repositoryId: string,
   query: string,
-  options: { tenantId?: string; stackTrace?: string; issueText?: string; prText?: string } = {},
+  options: {
+    tenantId?: string | undefined;
+    stackTrace?: string | undefined;
+    issueText?: string | undefined;
+    prText?: string | undefined;
+    repositoryContext?: RepositoryContext | undefined;
+  } = {},
 ): Promise<DebugContext> {
   return contextBuilder.build({
     repositoryId,
@@ -375,6 +508,7 @@ export async function buildDebugContext(
     ...(options.stackTrace !== undefined && { stackTrace: options.stackTrace }),
     ...(options.issueText !== undefined && { issueText: options.issueText }),
     ...(options.prText !== undefined && { prText: options.prText }),
+    ...(options.repositoryContext !== undefined && { repositoryContext: options.repositoryContext }),
   });
 }
 

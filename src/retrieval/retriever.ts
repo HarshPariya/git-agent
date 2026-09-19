@@ -6,7 +6,7 @@ import { extractEntities } from "../graph/entity-extractor.js";
 import { extractRelationships } from "../graph/relationship-extractor.js";
 import { buildGraph, type CodeGraph } from "../graph/graph-builder.js";
 import { computeRepositoryHash, loadGraphCache, saveGraphCache } from "../graph/graph-cache.js";
-import { pgVectorSearch, upsertChunks, type VectorSearchFilterOptions } from "../db/vector-store.js";
+import { mongoVectorSearch, upsertChunks, type VectorSearchFilterOptions } from "../db/vector-store.js";
 import type { VectorSearchResult } from "./vector-search.js";
 import { hybridSearch, type HybridSearchOptions } from "./hybrid-search.js";
 import { rerankResults, type RerankedResult } from "./reranker.js";
@@ -307,7 +307,7 @@ export class CodeRetriever {
 
     try {
       const startVector = Date.now();
-      vectorResults = await pgVectorSearch(sanitizedQuery, {
+      vectorResults = await mongoVectorSearch(sanitizedQuery, {
         repository: options.filterOptions?.repository ?? this.repositoryName,
         limit: 15,
       });

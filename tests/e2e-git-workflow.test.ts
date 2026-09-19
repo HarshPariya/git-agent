@@ -57,8 +57,8 @@ async function runE2EWorkflowTests() {
     "export const gitController = { status: () => 'ok' };\n",
   );
   await fs.writeFile(
-    path.join(localRepoDir, "public", "views", "git-desktop.js"),
-    "console.log('Git Desktop View v2.0');\n",
+    path.join(localRepoDir, "public", "views", "debugging.js"),
+    "console.log('AI Debugging View v2.0');\n",
   );
   await fs.writeFile(path.join(localRepoDir, "docs", "workflows.md"), "# Git Workflows\nDescribes commit planning.\n");
   await execAsync('git add "src/api/git-controller.ts"', { cwd: localRepoDir });

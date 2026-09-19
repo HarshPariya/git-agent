@@ -26,15 +26,34 @@ function saveStoredLocalRepo(repo) {
     path: repo.path || repo.name,
     localPath: repo.localPath || repo.name,
     status: "connected",
+    filesCount: repo.filesCount || repo.fileManifest?.length || 0,
+    manifestSummary: repo.manifestSummary || null,
+    fileManifest: repo.fileManifest || [],
+    fileContents: repo.fileContents || {},
     updatedAt: repo.updatedAt || new Date().toISOString(),
   };
   list.unshift(serializable);
-  localStorage.setItem("gda_local_repos", JSON.stringify(list));
+  try {
+    localStorage.setItem("gda_local_repos", JSON.stringify(list));
+  } catch {
+    // If quota exceeded due to large fileContents, save with trimmed contents
+    const compact = { ...serializable, fileContents: {} };
+    const compactList = list.map((r) => (r.id === repo.id ? compact : r));
+    try {
+      localStorage.setItem("gda_local_repos", JSON.stringify(compactList));
+    } catch {}
+  }
 }
 
 function removeStoredLocalRepo(repoId) {
   if (!repoId) return;
-  const list = getStoredLocalRepos().filter((r) => r.id !== repoId);
+  const target = String(repoId).toLowerCase().trim();
+  const list = getStoredLocalRepos().filter((r) => {
+    if (!r) return false;
+    const rId = String(r.id || "").toLowerCase().trim();
+    const rName = String(r.name || "").toLowerCase().trim();
+    return rId !== target && rName !== target;
+  });
   localStorage.setItem("gda_local_repos", JSON.stringify(list));
 }
 
@@ -152,8 +171,7 @@ function renderRepositoriesList() {
             ? `<button class="btn btn-secondary btn-sm" disabled style="opacity:0.85">✓ Active</button>`
             : `<button class="btn btn-secondary btn-sm" data-action="selectActiveRepo" data-value="${escapeHtml(r.id)}">Set Active</button>`
           }
-        <button class="btn btn-secondary btn-sm" data-action="openRepoInGitDesktop" data-value="${escapeHtml(r.id)}">🖥️ Git Desktop</button>
-        <button class="btn btn-primary btn-sm" data-action="quickDebugRepo" data-value="${escapeHtml(r.id)}">⚡ Debug</button>
+        <button class="btn btn-primary btn-sm" data-action="openRepoInDebugger" data-value="${escapeHtml(r.id)}">⚡ AI Debugger</button>
         <button class="btn btn-secondary btn-sm" data-action="syncRepo" data-value="${escapeHtml(r.id)}">🔄 Sync</button>
         <button class="btn btn-danger btn-sm" data-action="disconnectRepo" data-value="${escapeHtml(r.id)}">Disconnect</button>
       </div>
@@ -165,6 +183,23 @@ function renderRepositoriesList() {
 }
 
 async function setActiveRepository(repo) {
+  // Prevent repository switch during active debug investigation
+  if (window.state.agentRunning && window.state.currentSession) {
+    const currentSessionRepoId = window.state.currentSession.repositoryContext?.repositoryId || window.state.currentSession.repositoryId;
+    const currentSessionRepoName = window.state.currentSession.repositoryContext?.displayName || currentSessionRepoId;
+    if (repo && repo.id !== currentSessionRepoId) {
+      const proceed = confirm(
+        `This active investigation belongs to "${currentSessionRepoName}".\n\nDo you want to stop the current debugging session to switch to "${repo.name}"?`
+      );
+      if (!proceed) {
+        return;
+      }
+      if (typeof window.exitDebugSession === "function") {
+        window.exitDebugSession();
+      }
+    }
+  }
+
   window.setState("activeRepository", repo);
   if (repo) {
     localStorage.setItem('gda_active_repo_id', repo.id);
@@ -175,6 +210,10 @@ async function setActiveRepository(repo) {
   const label = document.getElementById('header-active-repo-name');
   if (label) {
     label.textContent = repo?.name || 'Select Local Repository';
+  }
+  const mobileLabel = document.getElementById('mobile-active-repo-name');
+  if (mobileLabel) {
+    mobileLabel.textContent = repo?.name || 'Select Local Repository';
   }
 
   const badge = document.getElementById('header-active-repo');
@@ -188,8 +227,8 @@ async function setActiveRepository(repo) {
 
   // Automatically fetch live branch and status across all views
   if (!repo) {
-    if (window.state.currentPage === "git-desktop" && typeof window.loadGitDesktop === "function") {
-      window.loadGitDesktop();
+    if (window.state.currentPage === "debug" && typeof window.loadGitTab === "function") {
+      window.loadGitTab("");
     }
     return;
   }
@@ -243,9 +282,9 @@ async function setActiveRepository(repo) {
     console.warn("Could not fetch git status for active repo:", e);
   }
 
-  // Refresh active page if Git Desktop is visible
-  if (window.state.currentPage === "git-desktop" && typeof window.loadGitDesktop === "function") {
-    window.loadGitDesktop();
+  // Refresh active page if AI Debugger is visible
+  if (window.state.currentPage === "debug" && typeof window.loadGitTab === "function" && repo?.id) {
+    window.loadGitTab(repo.id);
   }
 }
 
@@ -258,9 +297,12 @@ async function selectActiveRepo(repoId) {
   }
 }
 
-async function openRepoInGitDesktop(repoId) {
+async function openRepoInDebugger(repoId) {
   await selectActiveRepo(repoId);
-  navigate("git-desktop");
+  navigate("debug");
+  if (typeof window.loadGitTab === "function") {
+    window.loadGitTab(repoId);
+  }
 }
 
 function openActiveRepoPicker() {
@@ -338,7 +380,7 @@ async function indexRepo(repoId) {
 
 async function disconnectRepo(repoId) {
   if (!repoId) return;
-  const repo = (window.state.repositories || []).find((r) => r.id === repoId) ||
+  const repo = (window.state.repositories || []).find((r) => r.id === repoId || r.name === repoId) ||
     (window.state.activeRepository?.id === repoId ? window.state.activeRepository : null);
   const repoName = repo?.name || repoId;
 
@@ -359,19 +401,24 @@ async function disconnectRepo(repoId) {
       if (typeof window.removeStoredDirHandle === "function") {
         await window.removeStoredDirHandle("active_dir").catch(() => {});
       }
-      removeStoredLocalRepo(repoId);
-
-      const badge = document.getElementById("gd-local-folder-badge");
-      const nameEl = document.getElementById("gd-local-folder-name");
-      if (badge) badge.style.display = "none";
-      if (nameEl) nameEl.textContent = "Local Synced";
     }
 
-    const updatedRepos = (window.state.repositories || []).filter((r) => r.id !== repoId);
+    // Purge local storage immediately by both ID and Name
+    removeStoredLocalRepo(repoId);
+    if (repo?.name) removeStoredLocalRepo(repo.name);
+
+    // If backend repo, inform backend
+    try {
+      await api.disconnectRepository(repoId);
+    } catch (backendErr) {
+      console.warn("Backend disconnect warning:", backendErr);
+    }
+
+    const updatedRepos = (window.state.repositories || []).filter((r) => r.id !== repoId && r.name !== repoName);
     window.setState("repositories", updatedRepos);
     if (typeof window.updateServerStatus === "function") window.updateServerStatus();
 
-    if (window.state.activeRepository?.id === repoId) {
+    if (window.state.activeRepository?.id === repoId || window.state.activeRepository?.name === repoName) {
       const nextRepo = updatedRepos[0] || null;
       await setActiveRepository(nextRepo);
       if (!nextRepo) {
@@ -385,31 +432,28 @@ async function disconnectRepo(repoId) {
     }
     populateRepoDropdowns();
 
-    // If server repo, inform backend. If local repo, best-effort without failing user disconnect.
-    if (!isLocal) {
-      try {
-        await api.disconnectRepository(repoId);
-      } catch (backendErr) {
-        console.warn("Backend disconnect warning:", backendErr);
-      }
-    } else {
-      try {
-        await api.disconnectRepository(repoId);
-      } catch (_) {}
-    }
-
     showToast(`Repository "${repoName}" disconnected successfully`, "info");
 
-    await loadRepositories();
+    // Cleanly refresh from backend excluding the disconnected repo
+    try {
+      const serverData = await api.listRepositories().catch(() => ({ repositories: [] }));
+      const serverRepos = (Array.isArray(serverData) ? serverData : serverData.repositories || [])
+        .filter((r) => r.id !== repoId && r.name !== repoName);
+      const localRepos = getStoredLocalRepos();
+      const finalRepos = [...localRepos, ...serverRepos.filter((sr) => !localRepos.some((lr) => lr.id === sr.id || lr.name === sr.name))];
+      window.setState("repositories", finalRepos);
+      renderRepositoriesList();
+      populateRepoDropdowns();
+    } catch {}
+
     if (typeof window.loadDashboardStats === "function") {
       await window.loadDashboardStats();
     }
-    if (window.state.currentPage === "git-desktop" && typeof window.loadGitDesktop === "function") {
-      await window.loadGitDesktop(true);
+    if (window.state.currentPage === "debug" && typeof window.loadGitTab === "function") {
+      window.loadGitTab(window.state.activeRepository?.id || "");
     }
   } catch (err) {
     showToast(`Failed to disconnect: ${err.message}`, "error");
-    await loadRepositories();
   } finally {
     window._disconnectingRepos.delete(repoId);
   }
@@ -548,6 +592,10 @@ async function openLocalFolder() {
     }
 
     window._activeLocalDirHandle = dirHandle;
+    showToast(`Indexing workspace files for "${dirHandle.name}"...`, "info");
+    const indexResult = await window.gitLocalEngine.buildRepositoryIndex(dirHandle).catch(() => null);
+    const filesCount = indexResult?.manifestSummary?.totalFiles || indexResult?.fileManifest?.length || 0;
+
     const localRepo = {
       id: "local-" + dirHandle.name.toLowerCase().replace(/[^a-z0-9]/g, "-"),
       name: dirHandle.name,
@@ -561,6 +609,10 @@ async function openLocalFolder() {
       path: dirHandle.name,
       localPath: dirHandle.name,
       status: "connected",
+      filesCount,
+      fileManifest: indexResult?.fileManifest || [],
+      manifestSummary: indexResult?.manifestSummary || null,
+      fileContents: indexResult?.fileContents || {},
       updatedAt: new Date().toISOString(),
     };
 
@@ -594,10 +646,10 @@ async function openLocalFolder() {
     if (typeof window.updateServerStatus === "function") window.updateServerStatus();
 
     if (typeof window.navigate === "function") {
-      window.navigate("git-desktop");
+      window.navigate("debug");
     }
-    if (typeof window.loadGitDesktop === "function") {
-      await window.loadGitDesktop(true);
+    if (typeof window.loadGitTab === "function" && localRepo?.id) {
+      window.loadGitTab(localRepo.id);
     }
   } catch (err) {
     if (err.name !== "AbortError") {
@@ -687,10 +739,8 @@ async function handleNativeFolderSelected(event) {
 }
 
 function openFolderBrowser(targetPath = "") {
-  openModal("modal-folder-browser");
-  const pathInput = document.getElementById("folder-path-input");
-  if (pathInput && targetPath) {
-    pathInput.value = targetPath;
+  if (typeof openLocalFolder === "function") {
+    return openLocalFolder();
   }
 }
 
@@ -866,7 +916,7 @@ async function connectSpecificFolder(name, localPath, dirHandle = null) {
       const prsSelect = document.getElementById("prs-repo-select");
       if (prsSelect) prsSelect.value = res.repository.id;
       if (typeof window.navigate === "function") {
-        window.navigate("git-desktop");
+        window.navigate("debug");
       }
     }
   } catch (err) {
@@ -918,7 +968,7 @@ async function connectWorkspaceFolder() {
     if (res.repository) {
       await setActiveRepository(res.repository);
       if (typeof window.navigate === "function") {
-        window.navigate("git-desktop");
+        window.navigate("debug");
       }
     }
   } catch (err) {
@@ -987,7 +1037,7 @@ async function loadGitHubStatus() {
         githubIcon.textContent = "✓";
       }
       if (githubBtn) {
-        githubBtn.textContent = `✓ @${status.username}`;
+        githubBtn.innerHTML = `✓ <span class="btn-text">@${escapeHtml(status.username)}</span>`;
         githubBtn.className = "btn btn-secondary btn-sm";
         githubBtn.dataset.action = "navigateToSettings";
         githubBtn.removeAttribute('onclick');
@@ -1005,7 +1055,7 @@ async function loadGitHubStatus() {
         githubIcon.textContent = "🔗";
       }
       if (githubBtn) {
-        githubBtn.innerHTML = `${githubSvg} Connect GitHub`;
+        githubBtn.innerHTML = `${githubSvg} <span class="btn-text">Connect GitHub</span>`;
         githubBtn.dataset.action = "showGitHubConnectModal";
         githubBtn.removeAttribute('onclick');
       }
@@ -1149,7 +1199,7 @@ async function connectSelectedGitHubRepo(name, cloneUrl) {
       const prsSelect = document.getElementById("prs-repo-select");
       if (prsSelect) prsSelect.value = res.repository.id;
       if (typeof window.navigate === "function") {
-        window.navigate("git-desktop");
+        window.navigate("debug");
       }
     }
   } catch (err) {
@@ -1166,7 +1216,8 @@ document.addEventListener("click", (e) => {
   const { action, value, extra } = target.dataset;
   const actions = {
     selectActiveRepo: () => selectActiveRepo(value),
-    openRepoInGitDesktop: () => openRepoInGitDesktop(value),
+    openRepoInDebugger: () => openRepoInDebugger(value),
+    openRepoInGitDesktop: () => openRepoInDebugger(value),
     syncRepo: () => syncRepo(value),
     disconnectRepo: () => disconnectRepo(value),
     browseToDirectory: () => browseToDirectory(value),
@@ -1191,7 +1242,8 @@ window.loadRepositories = loadRepositories;
 window.renderRepositoriesList = renderRepositoriesList;
 window.setActiveRepository = setActiveRepository;
 window.selectActiveRepo = selectActiveRepo;
-window.openRepoInGitDesktop = openRepoInGitDesktop;
+window.openRepoInDebugger = openRepoInDebugger;
+window.openRepoInGitDesktop = openRepoInDebugger;
 window.openActiveRepoPicker = openActiveRepoPicker;
 window.populateRepoDropdowns = populateRepoDropdowns;
 window.quickDebugRepo = quickDebugRepo;
@@ -1225,3 +1277,19 @@ window.filterGitHubRepos = filterGitHubRepos;
 window.connectSelectedGitHubRepo = connectSelectedGitHubRepo;
 window.openGitHubModalFromBrowser = openGitHubModalFromBrowser;
 window.connectGitHubUrl = connectGitHubUrl;
+
+window.startLocalDirectoryWatcher = function (dirHandle) {
+  if (!window.gitLocalEngine?.startWatcher) return;
+  window.gitLocalEngine.startWatcher(dirHandle, (status) => {
+    const activeRepo = window.state?.activeRepository;
+    if (activeRepo?.isLocal && typeof window.loadGitTab === "function" && window.state?.currentPage === "debug") {
+      window.loadGitTab(activeRepo.id);
+    }
+  });
+};
+
+window.stopLocalDirectoryWatcher = function () {
+  if (window.gitLocalEngine?.stopWatcher) {
+    window.gitLocalEngine.stopWatcher();
+  }
+};

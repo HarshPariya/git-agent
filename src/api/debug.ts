@@ -58,6 +58,111 @@ const isValidStepType = (value: unknown): value is StepType =>
   value === "verify" ||
   value === "observe";
 
+import { repositoryStore } from "../repositories/repository-store.js";
+import { logger } from "../logging/logger.js";
+import type {
+  RepositoryContext,
+  RepositoryFileEntry,
+  RepositoryGitSnapshot,
+  RepositoryManifest,
+} from "../types/git.js";
+
+interface DebugAuditEntry {
+  userId: string;
+  tenantId: string;
+  repositoryId: string;
+  workspaceId: string;
+  sessionId?: string;
+  operation: string;
+  timestamp: string;
+  result: "success" | "failure";
+  details?: Record<string, unknown>;
+}
+
+const auditLog = (entry: DebugAuditEntry): void => {
+  logger.info("DEBUG_AUDIT", {
+    operation: "debug-audit",
+    metadata: { ...entry },
+  });
+};
+
+const resolveOrValidateRepoContext = (repoId: string, tenantId: string, clientContext?: unknown): RepositoryContext => {
+  if (!repoId || !repoId.trim()) {
+    throw new AppError("repositoryId is required", "REPOSITORY_REQUIRED", 400);
+  }
+
+  // If client provided explicit RepositoryContext (e.g. for LOCAL browser folder mode)
+  if (typeof clientContext === "object" && clientContext !== null) {
+    const raw = clientContext as Record<string, unknown>;
+    const mode = raw.mode === "LOCAL" ? "LOCAL" : "REMOTE";
+    const displayName = typeof raw.displayName === "string" ? raw.displayName : repoId;
+    const branch = typeof raw.branch === "string" ? raw.branch : "main";
+    const workspaceId = typeof raw.workspaceId === "string" ? raw.workspaceId : `ws_${repoId}`;
+
+    return {
+      repositoryId: repoId,
+      workspaceId,
+      mode,
+      displayName,
+      rootIdentifier: typeof raw.rootIdentifier === "string" ? raw.rootIdentifier : repoId,
+      branch,
+      remoteUrl: typeof raw.remoteUrl === "string" ? raw.remoteUrl : undefined,
+      localPath: typeof raw.localPath === "string" ? raw.localPath : undefined,
+      fileManifest: Array.isArray(raw.fileManifest) ? (raw.fileManifest as readonly RepositoryFileEntry[]) : undefined,
+      fileContents:
+        typeof raw.fileContents === "object" && raw.fileContents !== null
+          ? (raw.fileContents as Record<string, string>)
+          : undefined,
+      manifestSummary:
+        typeof raw.manifestSummary === "object" && raw.manifestSummary !== null
+          ? (raw.manifestSummary as unknown as RepositoryManifest)
+          : undefined,
+      gitSnapshot:
+        typeof raw.gitSnapshot === "object" && raw.gitSnapshot !== null
+          ? (raw.gitSnapshot as unknown as RepositoryGitSnapshot)
+          : undefined,
+      indexedAt: typeof raw.indexedAt === "string" ? raw.indexedAt : new Date().toISOString(),
+    };
+  }
+
+  // Otherwise, lookup in server repositoryStore
+  const repo = repositoryStore.getRepository(repoId, tenantId);
+  if (repo) {
+    return {
+      repositoryId: repo.id,
+      workspaceId: `ws_${repo.id}`,
+      mode: "REMOTE",
+      displayName: repo.name,
+      rootIdentifier: repo.localPath,
+      branch: repo.currentBranch || repo.defaultBranch || "main",
+      remoteUrl: repo.url,
+      localPath: repo.localPath,
+      indexedAt: new Date().toISOString(),
+    };
+  }
+
+  // Check if it's registered directly on server disk
+  try {
+    const execPath = getExecutionPath(repoId);
+    return {
+      repositoryId: repoId,
+      workspaceId: `ws_${repoId}`,
+      mode: "REMOTE",
+      displayName: repoId,
+      rootIdentifier: execPath,
+      branch: "main",
+      localPath: execPath,
+      indexedAt: new Date().toISOString(),
+    };
+  } catch {
+    throw new AppError(
+      `Repository "${repoId}" not found or unauthorized for tenant ${tenantId}. Select or connect the repository first.`,
+      "REPOSITORY_REQUIRED",
+      404,
+    );
+  }
+};
+
 export async function startDebugSessionHandler(
   request: Request,
   response: Response,
@@ -69,9 +174,23 @@ export async function startDebugSessionHandler(
     const repoId = requireString(body, "repositoryId");
     const query = requireString(body, "query");
     const mode = optionalMode(body) ?? "debug";
+    const repoContext = resolveOrValidateRepoContext(repoId, context.tenantId, body.repositoryContext);
 
-    const session = debugAgentPipeline.startSession(repoId, context.tenantId, context.userId, mode, query);
+    const session = debugAgentPipeline.startSession(repoId, context.tenantId, context.userId, mode, query, repoContext);
     await persistDebugSession(session);
+
+    auditLog({
+      userId: context.userId,
+      tenantId: context.tenantId,
+      repositoryId: repoContext.repositoryId,
+      workspaceId: repoContext.workspaceId,
+      sessionId: session.id,
+      operation: "start_session",
+      timestamp: new Date().toISOString(),
+      result: "success",
+      details: { mode, query: query.slice(0, 80) },
+    });
+
     response.status(201).json(session);
   } catch (error) {
     next(error);
@@ -98,11 +217,24 @@ export async function executeDebugStepHandler(request: Request, response: Respon
         sessionId: session.id,
         mode: session.mode,
         query,
+        repositoryContext: session.repositoryContext,
       },
       stepType,
       description,
       () => Promise.resolve("Step completed"),
     );
+
+    auditLog({
+      userId: context.userId,
+      tenantId: context.tenantId,
+      repositoryId: session.repositoryId,
+      workspaceId: session.repositoryContext?.workspaceId ?? `ws_${session.repositoryId}`,
+      sessionId: session.id,
+      operation: `step_${stepType}`,
+      timestamp: new Date().toISOString(),
+      result: "success",
+      details: { stepType, description },
+    });
 
     response.status(200).json(result);
   } catch (error) {
@@ -117,6 +249,7 @@ export async function runDebugHandler(request: Request, response: Response, next
     const repoId = requireString(body, "repositoryId");
     const query = requireString(body, "query");
     const mode = optionalMode(body);
+    const repoContext = resolveOrValidateRepoContext(repoId, context.tenantId, body.repositoryContext);
 
     const result = await debugOrchestrator.execute({
       repositoryId: repoId,
@@ -124,6 +257,19 @@ export async function runDebugHandler(request: Request, response: Response, next
       userId: context.userId,
       query,
       ...(mode !== undefined && { mode }),
+      repositoryContext: repoContext,
+    });
+
+    auditLog({
+      userId: context.userId,
+      tenantId: context.tenantId,
+      repositoryId: repoContext.repositoryId,
+      workspaceId: repoContext.workspaceId,
+      sessionId: result.session.id,
+      operation: "run_debug_sync",
+      timestamp: new Date().toISOString(),
+      result: "success",
+      details: { mode, query: query.slice(0, 80) },
     });
 
     const extended = debugAgentPipeline.getExtendedData(result.session.id);
@@ -148,6 +294,7 @@ export async function runDebugAsyncHandler(request: Request, response: Response,
     const repoId = requireString(body, "repositoryId");
     const query = requireString(body, "query");
     const mode = optionalMode(body);
+    const repoContext = resolveOrValidateRepoContext(repoId, context.tenantId, body.repositoryContext);
 
     const session = await debugOrchestrator.startAsync({
       repositoryId: repoId,
@@ -155,6 +302,19 @@ export async function runDebugAsyncHandler(request: Request, response: Response,
       userId: context.userId,
       query,
       ...(mode !== undefined && { mode }),
+      repositoryContext: repoContext,
+    });
+
+    auditLog({
+      userId: context.userId,
+      tenantId: context.tenantId,
+      repositoryId: repoContext.repositoryId,
+      workspaceId: repoContext.workspaceId,
+      sessionId: session.id,
+      operation: "run_debug_async",
+      timestamp: new Date().toISOString(),
+      result: "success",
+      details: { mode, query: query.slice(0, 80) },
     });
 
     response.status(200).json({ sessionId: session.id, session, streamUrl: `/api/debug/${session.id}/stream` });
@@ -353,7 +513,14 @@ export function planTaskHandler(request: Request, response: Response, next: Next
     const body = getRequestBody(request);
     const query = requireString(body, "query");
     const repositoryId = optionalString(body, "repositoryId");
-    const executionPath = repositoryId ? getExecutionPath(repositoryId) : undefined;
+    let executionPath: string | undefined;
+    if (repositoryId) {
+      try {
+        executionPath = getExecutionPath(repositoryId);
+      } catch {
+        executionPath = repositoryId;
+      }
+    }
     const plan = generateInvestigationPlan(query, executionPath);
     response.status(200).json(plan);
   } catch (error) {

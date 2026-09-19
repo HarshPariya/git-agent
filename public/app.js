@@ -4,7 +4,7 @@
  * - State: /state.js
  * - Components: /components/diff-viewer.js, /components/commit-plan.js
  * - Views: /views/dashboard.js, /views/repositories.js, /views/debugging.js,
- *          /views/git-desktop.js, /views/pull-requests.js, /views/issues.js,
+ *          /views/pull-requests.js, /views/issues.js, /views/ci.js,
  *          /views/conflicts.js, /views/history.js, /views/settings.js
  */
 
@@ -286,7 +286,8 @@ function showApp(user, freshLogin = false) {
     navigate("dashboard");
   } else {
     // Page refresh — restore the page the user was on
-    const savedPage = localStorage.getItem("gda_current_page");
+    const rawPage = localStorage.getItem("gda_current_page");
+    const savedPage = rawPage === "git-desktop" ? "debug" : rawPage;
     if (savedPage && document.getElementById(`page-${savedPage}`)) {
       navigate(savedPage);
     }
@@ -425,37 +426,37 @@ function initNavigation() {
 
 // Page-specific fresh loaders — keyed by page ID
 const PAGE_LOADERS = {
-  dashboard: () => typeof loadDashboardStats === "function" && loadDashboardStats(),
-  repositories: () => typeof loadRepositories === "function" && loadRepositories(),
-  "git-desktop": () => typeof loadGitDesktop === "function" && loadGitDesktop(),
-  debug: () => typeof populateRepoDropdowns === "function" && populateRepoDropdowns(),
+  dashboard: () => (typeof window.loadDashboardStats === "function" ? window.loadDashboardStats() : (typeof loadDashboardStats === "function" && loadDashboardStats())),
+  repositories: () => (typeof window.loadRepositories === "function" ? window.loadRepositories() : (typeof loadRepositories === "function" && loadRepositories())),
+  ci: () => (typeof window.loadCiRuns === "function" ? window.loadCiRuns() : (typeof loadCiRuns === "function" && loadCiRuns())),
+  debug: () => (typeof window.populateRepoDropdowns === "function" ? window.populateRepoDropdowns() : (typeof populateRepoDropdowns === "function" && populateRepoDropdowns())),
   issues: () => {
-    if (typeof populateRepoDropdowns === "function") populateRepoDropdowns();
-    if (typeof loadIssues === "function") loadIssues();
+    if (typeof window.populateRepoDropdowns === "function") window.populateRepoDropdowns();
+    if (typeof window.loadIssues === "function") window.loadIssues();
   },
   prs: () => {
-    if (typeof populateRepoDropdowns === "function") populateRepoDropdowns();
-    if (typeof loadPRs === "function") loadPRs();
+    if (typeof window.populateRepoDropdowns === "function") window.populateRepoDropdowns();
+    if (typeof window.loadPRs === "function") window.loadPRs();
   },
   conflicts: () => {
-    if (typeof populateRepoDropdowns === "function") populateRepoDropdowns();
-    if (typeof loadConflictsPage === "function") loadConflictsPage();
+    if (typeof window.populateRepoDropdowns === "function") window.populateRepoDropdowns();
+    if (typeof window.loadConflictsPage === "function") window.loadConflictsPage();
   },
-  history: () => typeof loadHistory === "function" && loadHistory(),
+  history: () => (typeof window.loadHistory === "function" ? window.loadHistory() : (typeof loadHistory === "function" && loadHistory())),
   settings: () => {
-    if (typeof loadGitHubStatus === "function") loadGitHubStatus();
-    if (typeof initSettingsView === "function") initSettingsView();
+    if (typeof window.loadGitHubStatus === "function") window.loadGitHubStatus();
+    if (typeof window.initSettingsView === "function") window.initSettingsView();
   },
-  admin: () => typeof loadAdminPanel === "function" && loadAdminPanel(),
-  "user-panel": () => typeof loadUserPanel === "function" && loadUserPanel(),
+  admin: () => (typeof window.loadAdminPanel === "function" ? window.loadAdminPanel() : (typeof loadAdminPanel === "function" && loadAdminPanel())),
+  "user-panel": () => (typeof window.loadUserPanel === "function" ? window.loadUserPanel() : (typeof loadUserPanel === "function" && loadUserPanel())),
 };
 
 function navigate(pageId) {
   window.setState("currentPage", pageId);
   localStorage.setItem("gda_current_page", pageId);
 
-  // Update nav highlighting
-  document.querySelectorAll(".header-nav-item").forEach((item) => {
+  // Update nav highlighting across desktop nav and mobile drawer
+  document.querySelectorAll(".header-nav-item, .mobile-nav-item").forEach((item) => {
     item.classList.toggle("active", item.getAttribute("data-page") === pageId);
   });
 
@@ -463,6 +464,14 @@ function navigate(pageId) {
   document.querySelectorAll(".page").forEach((page) => {
     page.classList.toggle("active", page.id === `page-${pageId}`);
   });
+
+  // Auto-close mobile drawer if open
+  const drawer = document.getElementById("mobile-nav-drawer");
+  const backdrop = document.getElementById("mobile-nav-backdrop");
+  if (drawer && drawer.classList.contains("open")) {
+    drawer.classList.remove("open");
+    if (backdrop) backdrop.classList.remove("open");
+  }
 
   // Page-specific fresh loads
   PAGE_LOADERS[pageId]?.();
@@ -486,6 +495,10 @@ function switchTab(tabName) {
   document.querySelectorAll(".tab-panel").forEach((panel) => {
     panel.classList.toggle("active", panel.getAttribute("data-tab") === tabName);
   });
+  if (tabName === "git" && typeof window.loadGitTab === "function") {
+    const repoId = window.state?.currentSession?.repositoryId || window.state?.activeRepository?.id;
+    window.loadGitTab(repoId);
+  }
 }
 
 // ============================================================
@@ -581,59 +594,74 @@ function initUserMenu() {
 
 function initMobileMenu() {
   const toggle = document.getElementById("mobile-nav-toggle");
-  const nav = document.querySelector(".header-nav");
+  const drawer = document.getElementById("mobile-nav-drawer");
   const backdrop = document.getElementById("mobile-nav-backdrop");
-  if (!toggle || !nav) return;
+  const closeBtn = document.getElementById("mobile-nav-close");
+  if (!toggle) return;
+
+  function syncMobileDrawerRepo() {
+    const mobileRepoName = document.getElementById("mobile-active-repo-name");
+    if (mobileRepoName) {
+      const activeRepo = window.state?.activeRepository;
+      mobileRepoName.textContent = activeRepo ? activeRepo.name : "No repo selected";
+    }
+  }
 
   function closeMenu() {
-    nav.classList.remove("mobile-open");
-    toggle.textContent = "☰";
+    if (drawer) drawer.classList.remove("open");
+    if (backdrop) backdrop.classList.remove("open");
     toggle.setAttribute("aria-expanded", "false");
-    if (backdrop) backdrop.classList.remove("active");
   }
 
   function openMenu() {
-    nav.classList.add("mobile-open");
-    toggle.textContent = "✕";
+    syncMobileDrawerRepo();
+    if (drawer) drawer.classList.add("open");
+    if (backdrop) backdrop.classList.add("open");
     toggle.setAttribute("aria-expanded", "true");
-    if (backdrop) backdrop.classList.add("active");
   }
 
   toggle.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (nav.classList.contains("mobile-open")) {
+    if (drawer && drawer.classList.contains("open")) {
       closeMenu();
     } else {
       openMenu();
     }
   });
 
+  if (closeBtn) {
+    closeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeMenu();
+    });
+  }
+
   if (backdrop) {
     backdrop.addEventListener("click", closeMenu);
   }
 
-  // Close mobile menu when any nav item is clicked
-  nav.querySelectorAll(".header-nav-item").forEach((item) => {
-    item.addEventListener("click", closeMenu);
+  // Handle mobile drawer navigation clicks
+  document.querySelectorAll(".mobile-nav-item").forEach((item) => {
+    item.addEventListener("click", (e) => {
+      e.preventDefault();
+      const pageId = item.getAttribute("data-page");
+      if (pageId) {
+        navigate(pageId);
+        closeMenu();
+      }
+    });
   });
 
-  // Close mobile menu on Escape key
+  // Close mobile drawer on Escape key
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && nav.classList.contains("mobile-open")) {
-      closeMenu();
-    }
-  });
-
-  // Close on outside click
-  document.addEventListener("click", (e) => {
-    if (nav.classList.contains("mobile-open") && !nav.contains(e.target) && !toggle.contains(e.target)) {
+    if (e.key === "Escape" && drawer && drawer.classList.contains("open")) {
       closeMenu();
     }
   });
 
   // Clean up on desktop resize
   window.addEventListener("resize", () => {
-    if (window.innerWidth > 900 && nav.classList.contains("mobile-open")) {
+    if (window.innerWidth > 900 && drawer && drawer.classList.contains("open")) {
       closeMenu();
     }
   });

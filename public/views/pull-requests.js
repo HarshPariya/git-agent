@@ -9,18 +9,27 @@ async function loadPRs() {
   const container = document.getElementById("prs-list");
   if (!container) return;
 
+  if (typeof window.populateRepoDropdowns === "function" && (!repoSelect || repoSelect.options.length <= 1)) {
+    window.populateRepoDropdowns();
+  }
+
   const repoId = repoSelect?.value || window.state?.activeRepository?.id;
   const stateVal = stateFilter?.value || "open";
 
   if (!repoId) {
     container.innerHTML = `
-      <div class="empty-state">
+      <div class="empty-state" style="padding:48px 24px">
         <div class="empty-icon">🔀</div>
         <div class="empty-title">Select a repository</div>
-        <div class="empty-desc">Choose a connected repository to view pull requests.</div>
+        <div class="empty-desc">Choose a connected repository to view, review, and merge pull requests.</div>
+        <button class="btn btn-primary btn-sm" data-action="openFolderBrowser" style="margin-top:12px">📁 Connect Repository</button>
       </div>
     `;
     return;
+  }
+
+  if (repoSelect && repoSelect.value !== repoId) {
+    repoSelect.value = repoId;
   }
 
   const repo = (window.state.repositories || []).find((r) => r.id === repoId) || window.state.activeRepository;

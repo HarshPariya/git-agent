@@ -1,4 +1,5 @@
-import type { DebugMode, DebugSession, DebugFinding } from "../types/git.js";
+import fs from "node:fs";
+import type { DebugMode, DebugSession, DebugFinding, RepositoryContext } from "../types/git.js";
 import { debugAgentPipeline } from "./debug-agent.js";
 import {
   executeGitStatus,
@@ -17,22 +18,24 @@ import { runRepositoryScript, listScriptsForRepository } from "../api/scripts.js
 import { conflictAnalyzer } from "../git/conflicts.js";
 import { hypothesisEngine } from "./hypothesis-engine.js";
 import { detectRegression } from "../git/bisect.js";
+import { AppError } from "../errors/app-error.js";
 
-interface OrchestratorContext {
+export interface OrchestratorContext {
   readonly repositoryId: string;
   readonly tenantId: string;
   readonly userId: string;
   readonly query: string;
-  readonly mode?: DebugMode;
+  readonly mode?: DebugMode | undefined;
+  readonly repositoryContext?: RepositoryContext | undefined;
 }
 
-interface DebugOrchestratorResult {
+export interface DebugOrchestratorResult {
   readonly session: DebugSession;
   readonly summary: string;
   readonly findings: readonly DebugFinding[];
 }
 
-type ModeHandler = (ctx: OrchestratorContext, session: DebugSession) => Promise<void>;
+export type ModeHandler = (ctx: OrchestratorContext, session: DebugSession) => Promise<void>;
 
 const createDebugContext = (ctx: OrchestratorContext, session: DebugSession, mode: DebugMode) => ({
   repositoryId: ctx.repositoryId,
@@ -41,6 +44,7 @@ const createDebugContext = (ctx: OrchestratorContext, session: DebugSession, mod
   sessionId: session.id,
   mode,
   query: ctx.query,
+  repositoryContext: ctx.repositoryContext ?? session.repositoryContext,
 });
 
 const hasFailedStep = (session: DebugSession): boolean => session.steps.some((s) => s.status === "failed");
@@ -151,10 +155,21 @@ const getSettings = async (ctx: OrchestratorContext): Promise<string> => {
 const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
   debug: async (ctx, session) => {
     const dc = createDebugContext(ctx, session, "debug");
-    const repoPath = getExecutionPath(ctx.repositoryId);
+    const repoCtx = session.repositoryContext ?? ctx.repositoryContext;
+    let repoPath = repoCtx?.localPath;
+    if (!repoPath) {
+      try {
+        repoPath = getExecutionPath(ctx.repositoryId);
+      } catch {
+        repoPath = repoCtx?.displayName ?? ctx.repositoryId;
+      }
+    }
 
     debugAgentPipeline.transitionState(session.id, "SCANNING_REPOSITORY", "Building multi-source debug context");
-    const multiContext = await buildDebugContext(ctx.repositoryId, ctx.query, { tenantId: ctx.tenantId });
+    const multiContext = await buildDebugContext(ctx.repositoryId, ctx.query, {
+      tenantId: ctx.tenantId,
+      repositoryContext: repoCtx,
+    });
     debugAgentPipeline.setExtendedData(session.id, { context: multiContext });
 
     const investigationPlan = generateInvestigationPlan(ctx.query, multiContext.localPath ?? repoPath);
@@ -169,13 +184,26 @@ const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
 
     debugAgentPipeline.transitionState(session.id, "ISOLATING_DEFECT", "Tracing defect boundaries");
     await debugAgentPipeline.executeStep(dc, "isolate", "Identify the failing code path or behavior", async () => {
-      const [status, log] = await Promise.all([
-        executeGitStatus(ctx.repositoryId),
-        executeGitLog(ctx.repositoryId, { count: 3 }),
-      ]);
-      const branch = log[0]?.branch ?? status.branch ?? "main";
-      const fileCount = multiContext.git.changedFiles.length;
-      return `Task Classified: ${investigationPlan.taskClass} (${investigationPlan.estimatedComplexity})\nRepository: ${ctx.repositoryId} | Branch: ${branch}\nWorking tree: ${status.clean ? "Clean" : `${status.entries.length} modified files`}\nChanged files tracked by git: ${fileCount}\nRelevant code files: ${multiContext.code.relevantFiles.length}\nQuery: ${ctx.query}`;
+      let branch = repoCtx?.branch ?? multiContext.git.branch ?? "main";
+      let isClean = multiContext.git.clean;
+      let modifiedCount = multiContext.git.changedFiles.length;
+
+      if (!repoCtx?.gitSnapshot) {
+        try {
+          const [status, log] = await Promise.all([
+            executeGitStatus(ctx.repositoryId),
+            executeGitLog(ctx.repositoryId, { count: 3 }),
+          ]);
+          branch = log[0]?.branch ?? status.branch ?? branch;
+          isClean = status.clean;
+          modifiedCount = status.entries.length;
+        } catch {
+          // Keep multiContext git snapshot
+        }
+      }
+
+      const repoDisplayName = repoCtx?.displayName ?? ctx.repositoryId;
+      return `Task Classified: ${investigationPlan.taskClass} (${investigationPlan.estimatedComplexity})\nRepository: ${repoDisplayName} | Branch: ${branch}\nWorking tree: ${isClean ? "Clean" : `${modifiedCount} modified files`}\nChanged files tracked by git: ${modifiedCount}\nRelevant code files: ${multiContext.code.relevantFiles.length}\nQuery: ${ctx.query}`;
     });
 
     if (hasFailedStep(session)) return;
@@ -201,13 +229,14 @@ const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
     }
 
     debugAgentPipeline.transitionState(session.id, "DIAGNOSING_ROOT_CAUSE", "Evaluating best hypothesis");
-    const isErrorCheckQuery = /error|issue|bug|problem|warn|fault|wrong|health/i.test(ctx.query);
-    const isClean = hypotheses.length === 0 || (isErrorCheckQuery && multiContext.git.changedFiles.length === 0);
+    const isExplicitHealthCheck =
+      /^(is (the )?code(base)? (clean|healthy|ok)|check health|health check|repo status)$/i.test(ctx.query.trim());
+    const isClean = isExplicitHealthCheck && hypotheses.length === 0;
 
     let topHypothesis: (typeof hypotheses)[0] | undefined;
     let rootCauseDesc: string;
 
-    if (isClean && hypotheses.length === 0) {
+    if (isClean) {
       rootCauseDesc =
         "Codebase Status: Clean & Healthy. No syntax, runtime, or regression errors detected across analyzed code files.";
       topHypothesis = {
@@ -222,24 +251,29 @@ const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
       };
     } else {
       topHypothesis = hypotheses[0];
+      const targetFile = multiContext.code.relevantFiles[0] || (multiContext.git.changedFiles[0] ?? "src/index.ts");
+      const targetSymbol = multiContext.code.symbols[0]
+        ? ` in function/symbol \`${multiContext.code.symbols[0]}\``
+        : "";
+
       rootCauseDesc = topHypothesis
-        ? `${topHypothesis.title}: ${topHypothesis.description}`
-        : `Identified issue from query: "${ctx.query}" based on working tree inspection.`;
+        ? `${topHypothesis.title}: ${topHypothesis.description} Discovered in \`${targetFile}\`${targetSymbol}.`
+        : `Identified defect in \`${targetFile}\`${targetSymbol} matching query: "${ctx.query}".`;
     }
 
     await debugAgentPipeline.executeStep(dc, "diagnose", "Trace code and diagnose root cause", () => {
       const finding: DebugFinding = {
         id: `finding-${Date.now()}`,
         step: 3,
-        type: isClean && hypotheses.length === 0 ? "clean" : "bug",
+        type: isClean ? "clean" : "bug",
         title: topHypothesis?.title ?? "Defect Location Diagnosed",
         description: rootCauseDesc,
         evidence: topHypothesis?.rationale ? [topHypothesis.rationale] : [rootCauseDesc],
-        confidence: topHypothesis?.confidence ?? (isClean ? 1.0 : 0.8),
+        confidence: topHypothesis?.confidence ?? (isClean ? 1.0 : 0.85),
       };
       debugAgentPipeline.addFindingToSession(session.id, finding);
       return Promise.resolve(
-        `Root Cause Diagnosed: ${rootCauseDesc}\nHypotheses evaluated: ${hypotheses.length} (Confidence: ${Math.round((topHypothesis?.confidence ?? (isClean ? 1.0 : 0.8)) * 100)}%)`,
+        `Root Cause Diagnosed: ${rootCauseDesc}\nHypotheses evaluated: ${hypotheses.length} (Confidence: ${Math.round((topHypothesis?.confidence ?? (isClean ? 1.0 : 0.85)) * 100)}%)`,
       );
     });
 
@@ -247,7 +281,7 @@ const createModeHandlers = (): Record<DebugMode, ModeHandler> => ({
 
     debugAgentPipeline.transitionState(session.id, "SYNTHESIZING_PATCH", "Generating evidence-based fix plan");
     let fixPlan: FixPlan;
-    if (isClean && hypotheses.length === 0) {
+    if (isClean) {
       fixPlan = {
         id: `fix-clean-${Date.now().toString(16)}`,
         problem: "Health check inquiry: verify codebase health",
@@ -874,22 +908,24 @@ export class DebugOrchestrator {
   startAsync(ctx: OrchestratorContext): Promise<DebugSession> {
     const { query } = ctx;
     const mode = ctx.mode ?? this.routeMode(query);
-    this.ensureRepositoryPath(ctx.repositoryId);
+    const repoCtx = this.ensureRepositoryContext(ctx);
 
-    const session = debugAgentPipeline.startSession(ctx.repositoryId, ctx.tenantId, ctx.userId, mode, query);
+    const session = debugAgentPipeline.startSession(ctx.repositoryId, ctx.tenantId, ctx.userId, mode, query, repoCtx);
 
     setImmediate(
       () =>
         void (async () => {
           try {
-            await executeGitStatus(ctx.repositoryId).catch((err: unknown) => {
-              logger.warn("Git status check failed during async debug execution", {
-                operation: "debug-orchestrator-async",
-                metadata: { repositoryId: ctx.repositoryId, error: err instanceof Error ? err.message : String(err) },
+            if (repoCtx.mode === "REMOTE" || (repoCtx.localPath && fs.existsSync(repoCtx.localPath))) {
+              await executeGitStatus(ctx.repositoryId).catch((err: unknown) => {
+                logger.warn("Git status check failed during async debug execution", {
+                  operation: "debug-orchestrator-async",
+                  metadata: { repositoryId: ctx.repositoryId, error: err instanceof Error ? err.message : String(err) },
+                });
               });
-            });
+            }
 
-            await this.handlers[mode]({ ...ctx, query }, session);
+            await this.handlers[mode]({ ...ctx, query, repositoryContext: repoCtx }, session);
 
             const finalSession = debugAgentPipeline.getSession(session.id, ctx.tenantId);
             const completedSteps = finalSession.steps.filter((s) => s.status === "completed");
@@ -946,13 +982,16 @@ export class DebugOrchestrator {
   async execute(ctx: OrchestratorContext): Promise<DebugOrchestratorResult> {
     const { query } = ctx;
     const mode = ctx.mode ?? this.routeMode(query);
-    this.ensureRepositoryPath(ctx.repositoryId);
+    const repoCtx = this.ensureRepositoryContext(ctx);
 
-    const session = debugAgentPipeline.startSession(ctx.repositoryId, ctx.tenantId, ctx.userId, mode, query);
-    await executeGitStatus(ctx.repositoryId);
+    const session = debugAgentPipeline.startSession(ctx.repositoryId, ctx.tenantId, ctx.userId, mode, query, repoCtx);
+
+    if (repoCtx.mode === "REMOTE" || (repoCtx.localPath && fs.existsSync(repoCtx.localPath))) {
+      await executeGitStatus(ctx.repositoryId);
+    }
 
     try {
-      await this.handlers[mode]({ ...ctx, query }, session);
+      await this.handlers[mode]({ ...ctx, query, repositoryContext: repoCtx }, session);
 
       const finalSession = debugAgentPipeline.getSession(session.id, ctx.tenantId);
       const completedSteps = finalSession.steps.filter((s) => s.status === "completed");
@@ -978,16 +1017,37 @@ export class DebugOrchestrator {
     }
   }
 
-  private ensureRepositoryPath(repositoryId: string): void {
-    const knownPath = getExecutionPath(repositoryId);
-    if (knownPath !== repositoryId) return;
+  private ensureRepositoryContext(ctx: OrchestratorContext): RepositoryContext {
+    if (!ctx.repositoryId || !ctx.repositoryId.trim()) {
+      throw new AppError("A valid repository must be selected before starting debugging", "REPOSITORY_REQUIRED", 400);
+    }
 
-    const workspacePath = process.cwd();
-    registerRepositoryPath(repositoryId, workspacePath);
-    logger.info("Orchestrator: repo path not found, using workspace fallback", {
-      operation: "orchestrator-fallback",
-      metadata: { repositoryId, fallbackPath: workspacePath },
-    });
+    if (ctx.repositoryContext) {
+      if (ctx.repositoryContext.localPath && fs.existsSync(ctx.repositoryContext.localPath)) {
+        registerRepositoryPath(ctx.repositoryId, ctx.repositoryContext.localPath);
+      }
+      return ctx.repositoryContext;
+    }
+
+    // Try finding registered workspace path or local store
+    try {
+      const execPath = getExecutionPath(ctx.repositoryId);
+      return {
+        repositoryId: ctx.repositoryId,
+        workspaceId: `ws_${ctx.repositoryId}`,
+        mode: "REMOTE",
+        displayName: ctx.repositoryId,
+        rootIdentifier: execPath,
+        branch: "main",
+        localPath: execPath,
+      };
+    } catch {
+      throw new AppError(
+        `Repository "${ctx.repositoryId}" is not accessible or not connected. Please connect or select this repository first.`,
+        "REPOSITORY_REQUIRED",
+        400,
+      );
+    }
   }
 
   private routeMode(query: string): DebugMode {

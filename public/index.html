@@ -6,11 +6,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <meta name="description"
     content="Git Debugging Agent — AI-powered Git repository analysis, automated root cause detection, and intelligent fix generation." />
-  <meta name="theme-color" content="#ffffff" />
+  <meta name="theme-color" content="#060907" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <title>Git Debug Agent</title>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>AI Git Debugging Agent</title>
   <!-- Favicons — compatible with all browsers, Vercel static serving, and data-URI fallbacks -->
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="alternate icon" href="/favicon.ico" />
@@ -126,11 +126,12 @@
       <nav class="header-nav">
         <div class="header-nav-item active" data-page="dashboard" id="nav-dashboard">Dashboard</div>
         <div class="header-nav-item" data-page="repositories" id="nav-repositories">Repositories</div>
-        <div class="header-nav-item" data-page="git-desktop" id="nav-git-desktop">Git Desktop</div>
-        <div class="header-nav-item" data-page="debug" id="nav-debug">AI Debugging</div>
+        <div class="header-nav-item nav-primary-item" data-page="debug" id="nav-debug">
+          <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#10b981;box-shadow:0 0 8px #10b981;margin-right:6px"></span>AI Debugging
+        </div>
         <div class="header-nav-item" data-page="issues" id="nav-issues">Issues</div>
         <div class="header-nav-item" data-page="prs" id="nav-prs">Pull Requests</div>
-        <div class="header-nav-item" data-page="conflicts" id="nav-conflicts">Conflicts</div>
+        <div class="header-nav-item" data-page="ci" id="nav-ci">CI Runs</div>
         <div class="header-nav-item" data-page="history" id="nav-history">History</div>
         <div class="header-nav-item" data-page="settings" id="nav-settings">Settings</div>
         <div class="header-nav-item" data-page="admin" id="nav-admin" style="display:none">
@@ -170,6 +171,78 @@
     <!-- Mobile Navigation Backdrop Overlay -->
     <div id="mobile-nav-backdrop" class="mobile-nav-backdrop"></div>
 
+    <!-- Mobile Navigation Drawer -->
+    <aside id="mobile-nav-drawer" class="mobile-nav-drawer" aria-label="Mobile Navigation">
+      <div class="mobile-drawer-header">
+        <div class="header-logo" data-action="navigate" data-value="dashboard">
+          <div class="header-logo-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="4 17 10 11 4 5" />
+              <line x1="12" y1="19" x2="20" y2="19" />
+            </svg>
+          </div>
+          <span>Git Debug Agent</span>
+        </div>
+        <button class="mobile-drawer-close" id="mobile-nav-close" aria-label="Close navigation">✕</button>
+      </div>
+
+      <div class="mobile-drawer-body">
+        <div class="mobile-drawer-section">
+          <div class="mobile-drawer-label">Active Workspace</div>
+          <div class="active-repo-badge mobile-repo-badge" id="mobile-active-repo" data-action="openActiveRepoPicker">
+            <div class="active-repo-dot"></div>
+            <span id="mobile-active-repo-name">No repo selected</span>
+            <span style="font-size:10px;color:var(--c-text-muted);margin-left:auto">▾</span>
+          </div>
+        </div>
+
+        <div class="mobile-drawer-section">
+          <div class="mobile-drawer-label">Platform Navigation</div>
+          <nav class="mobile-drawer-nav">
+            <div class="mobile-nav-item active" data-page="dashboard"><span class="m-icon">📊</span> Dashboard</div>
+            <div class="mobile-nav-item" data-page="repositories"><span class="m-icon">📁</span> Repositories</div>
+            <div class="mobile-nav-item mobile-nav-highlight" data-page="debug"><span class="m-icon">⚡</span> AI Debugging</div>
+            <div class="mobile-nav-item" data-page="issues"><span class="m-icon">📋</span> Issues</div>
+            <div class="mobile-nav-item" data-page="prs"><span class="m-icon">🔀</span> Pull Requests</div>
+            <div class="mobile-nav-item" data-page="ci"><span class="m-icon">🚀</span> CI Runs</div>
+            <div class="mobile-nav-item" data-page="history"><span class="m-icon">📜</span> History</div>
+            <div class="mobile-nav-item" data-page="settings"><span class="m-icon">⚙️</span> Settings</div>
+            <div class="mobile-nav-item" data-page="admin" id="mobile-nav-admin" style="display:none"><span class="m-icon" style="color:var(--c-warning)">★</span> Admin Center</div>
+          </nav>
+        </div>
+
+        <div class="mobile-drawer-section">
+          <div class="mobile-drawer-label">GitHub Integration</div>
+          <div style="display:flex;gap:8px;align-items:center;padding:10px 12px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-md)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0">
+              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
+            </svg>
+            <span id="mobile-drawer-github-name" style="font-size:12px;color:var(--c-text-secondary);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Not connected</span>
+            <button class="btn btn-secondary btn-sm" data-action="showGitHubConnectModal" style="padding:4px 8px;font-size:11px;flex-shrink:0">Link</button>
+          </div>
+        </div>
+
+        <div class="mobile-drawer-section">
+          <div class="mobile-drawer-label">User Account</div>
+          <div style="display:flex;gap:8px;align-items:center;padding:10px 12px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-md)">
+            <div style="width:26px;height:26px;border-radius:50%;background:var(--c-accent-light);border:1px solid var(--c-accent-border);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">👤</div>
+            <div style="flex:1;min-width:0">
+              <div id="mobile-drawer-user-name" style="font-size:11.5px;font-weight:600;color:var(--c-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Developer</div>
+              <div style="font-size:10px;color:var(--c-accent)">Active Session</div>
+            </div>
+            <button class="btn btn-secondary btn-sm" data-action="logout" style="padding:4px 8px;font-size:11px;flex-shrink:0">Logout</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="mobile-drawer-footer">
+        <div class="status-pill" style="width:100%;justify-content:center">
+          <div class="status-dot online"></div>
+          <span>Connected to Engine</span>
+        </div>
+      </div>
+    </aside>
+
     <!-- PAGES -->
     <div class="main-layout">
 
@@ -192,17 +265,16 @@
             </div>
           </div>
 
-          <div class="action-card" data-action="navigate" data-value="git-desktop">
+          <div class="action-card" data-action="navigate" data-value="ci">
             <div>
-              <div class="action-card-icon" style="color:#4f46e5">🖥️</div>
-              <div class="action-card-title">Open Git Desktop</div>
+              <div class="action-card-icon" style="color:#10b981">⚡</div>
+              <div class="action-card-title">CI Runs & Build Health</div>
               <div class="action-card-desc">
-                Inspect working tree changes, trigger AI semantic change grouping, review Conventional Commit plans, and
-                commit all.
+                Inspect continuous integration builds, track failing step traces, and trigger autonomous AI fix workflows.
               </div>
             </div>
-            <div class="action-card-footer" style="color:#4f46e5">
-              <span>Open Git Desktop</span>
+            <div class="action-card-footer" style="color:#10b981">
+              <span>View CI Runs</span>
               <span>→</span>
             </div>
           </div>
@@ -229,9 +301,9 @@
             <div class="stat-label">Connected Repositories</div>
             <div class="stat-value" id="stat-repos">0</div>
           </div>
-          <div class="stat-card" data-action="navigate" data-value="git-desktop" style="cursor:pointer">
-            <div class="stat-label">Current Changes</div>
-            <div class="stat-value" id="stat-changes">0 files</div>
+          <div class="stat-card" data-action="navigate" data-value="ci" style="cursor:pointer">
+            <div class="stat-label">CI Builds</div>
+            <div class="stat-value" id="stat-changes">0 runs</div>
           </div>
           <div class="stat-card" data-action="navigate" data-value="debug" style="cursor:pointer">
             <div class="stat-label">Debug Sessions</div>
@@ -418,267 +490,7 @@
         </div>
       </div>
 
-      <!-- ===================== WORKSPACE B — GIT DESKTOP ===================== -->
-      <div id="page-git-desktop" class="page">
-        <!-- Git Desktop Repository Header -->
-        <div class="git-desktop-header card" style="margin-bottom:16px;padding:14px 18px">
-        <div class="git-desktop-repo-info git-meta-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-            <div class="git-repo-pill" data-action="openActiveRepoPicker" title="Switch active repository"
-              style="cursor:pointer">
-              <span class="git-repo-icon">🌿</span>
-              <span id="gd-repo-name" class="git-repo-name" style="font-weight:700">Select a repository</span>
-              <span style="font-size:10px;color:var(--c-text-muted)">▾</span>
-            </div>
-            <div class="git-meta-item" data-action="openBranchSwitcherModal" style="cursor:pointer"
-              title="Click to switch or create branch">
-              <span class="git-meta-label">Branch:</span>
-              <span id="gd-branch-name" class="badge badge-accent"
-                style="cursor:pointer;display:inline-flex;align-items:center;gap:4px">
-                main <span style="font-size:9px">▾</span>
-              </span>
-            </div>
-            <div class="git-meta-item">
-              <span class="git-meta-label">Remote:</span>
-              <span id="gd-remote-name" class="git-meta-val">origin</span>
-            </div>
-            <div class="git-meta-item">
-              <span class="git-meta-label">Sync:</span>
-              <span id="gd-ahead-behind" class="badge" style="background:#f1f5f9;color:#334155">↑ 0 · ↓ 0</span>
-            </div>
-            <div class="git-meta-item">
-              <span class="git-meta-label">Working Tree:</span>
-              <span id="gd-working-status" class="badge badge-success">Clean</span>
-            </div>
-          </div>
 
-          <!-- Git Desktop Main Actions Toolbar -->
-          <div class="git-desktop-actions" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-            <button class="btn btn-primary btn-sm" id="gd-btn-link-local" data-action="linkLocalFolderToGitDesktop" title="Link a local folder on your computer to watch & sync file changes in real-time">
-              📂 Link Local Folder
-            </button>
-            <span id="gd-local-folder-badge" class="badge badge-accent" style="display:none;font-size:11px;padding:3px 9px;align-items:center;gap:6px" title="Local folder linked">
-              🟢 <span id="gd-local-folder-name">Local Synced</span>
-              <button class="btn btn-danger btn-xs" data-action="unlinkLocalFolderFromGitDesktop" style="padding:1px 6px;margin-left:4px;font-size:11px;line-height:1;border-radius:var(--r-sm);cursor:pointer" title="Disconnect this local folder">Disconnect</button>
-            </span>
-            <button class="btn btn-secondary btn-sm" id="gd-btn-edit-file" data-action="openGitDesktopFileEditor" title="Create or edit a file directly in this repository">
-              ✏️ New / Edit File
-            </button>
-            <button class="btn btn-secondary btn-sm" id="gd-btn-refresh" data-action="refreshGitDesktop" title="Refresh Git status and working tree">
-              🔄 Refresh
-            </button>
-            <button class="btn btn-secondary btn-sm" id="gd-btn-analyze" data-action="triggerAIAnalyzeChanges">
-              ⚡ AI Analyze Changes
-            </button>
-            <button class="btn btn-secondary btn-sm" id="gd-btn-fetch" data-action="triggerGitFetch">
-              📥 Fetch origin
-            </button>
-            <button class="btn btn-secondary btn-sm" id="gd-btn-pull" data-action="triggerGitPull">
-              ⬇️ Pull
-            </button>
-            <button class="btn btn-secondary btn-sm" id="gd-btn-sync" data-action="triggerGitSync">
-              🔄 Sync
-            </button>
-            <button class="btn btn-secondary btn-sm" id="gd-btn-push" data-action="openPushPreviewModal">
-              ⬆️ Push origin
-            </button>
-            <button class="btn btn-secondary btn-sm" id="gd-btn-ship" data-action="triggerAIShip">
-              🚀 AI Ship
-            </button>
-            <button class="btn btn-secondary btn-sm" id="gd-btn-stash-manager" data-action="openGitStashModal" title="Manage Git Stashes (List, Pop, Drop, Inspect)">
-              📦 Stashes <span id="gd-stash-count" class="badge badge-accent" style="margin-left:2px;font-size:10px">0</span>
-            </button>
-            <button class="btn btn-secondary btn-sm" id="gd-btn-stash" data-action="triggerGitStash" title="Quick stash uncommitted changes">
-              + Stash
-            </button>
-            <button class="btn btn-secondary btn-sm" id="gd-btn-stash-pop" data-action="triggerGitStashPop" title="Pop the most recently stashed changes back into working tree">
-              📤 Pop
-            </button>
-            <button class="btn btn-secondary btn-sm" id="gd-btn-undo-commit" data-action="triggerGitUndoCommit" title="Undo the most recent commit (soft reset HEAD~1, preserving working changes)">
-              ↩️ Undo Commit
-            </button>
-            <button class="btn btn-ghost btn-sm" id="gd-btn-discard-all" data-action="discardAllGitChanges" title="Discard all uncommitted changes in working tree">
-              🗑️ Discard All
-            </button>
-          </div>
-        </div>
-
-        <!-- Git Desktop 2-Column Working Layout (GitHub Desktop Style) -->
-        <div class="git-desktop-grid">
-          <!-- Left Column: Changes, Commit Plan & History with Commit Box -->
-          <div class="card git-left-panel" style="padding:0;overflow:hidden;display:flex;flex-direction:column">
-            <!-- Left Tabs: Changes vs Commit Plan vs History -->
-            <div class="tabs git-left-tabs"
-              style="padding:0 12px;border-bottom:1px solid var(--c-border);background:var(--c-surface-hover)">
-              <div class="tab-item active" id="gd-tab-changes" data-action="switchGitDesktopLeftTab"
-                data-value="changes">
-                Changes <span class="badge badge-accent" id="gd-changes-count"
-                  style="margin-left:4px;font-size:10px">0</span>
-              </div>
-              <div class="tab-item" id="gd-tab-commit-plan" data-action="switchGitDesktopLeftTab"
-                data-value="commit-plan">
-                🤖 Commit Plan
-              </div>
-              <div class="tab-item" id="gd-tab-history" data-action="switchGitDesktopLeftTab" data-value="history">
-                History
-              </div>
-            </div>
-
-            <!-- Panel A: Changes List + Bottom Commit Box -->
-            <div id="gd-panel-changes" style="display:flex;flex-direction:column">
-              <!-- Filter tabs & Select All -->
-              <div
-                style="padding:10px 14px;border-bottom:1px solid var(--c-border-subtle);display:flex;justify-content:space-between;align-items:center;background:#fff">
-                <div style="font-size:12px;font-weight:600;color:var(--c-text-secondary)">Changed Files</div>
-                <div class="git-filter-tabs">
-                  <button class="git-filter-tab active" data-filter="all" data-action="filterChangedFiles"
-                    data-value="all">All</button>
-                  <button class="git-filter-tab" data-filter="staged" data-action="filterChangedFiles"
-                    data-value="staged">Staged</button>
-                  <button class="git-filter-tab" data-filter="unstaged" data-action="filterChangedFiles"
-                    data-value="unstaged">Unstaged</button>
-                </div>
-              </div>
-
-              <!-- Changed Files List -->
-              <div id="gd-changes-list" class="git-changes-table-container"
-                style="max-height:360px;min-height:180px;overflow-y:auto">
-                <div class="empty-state" style="padding:32px 16px">
-                  <div class="empty-icon">✓</div>
-                  <div class="empty-title">Working tree is clean</div>
-                  <div class="empty-desc">No unstaged or modified files detected.</div>
-                </div>
-              </div>
-
-              <!-- GitHub Desktop Native Commit Box -->
-              <div class="git-desktop-commit-box"
-                style="padding:14px;border-top:1px solid var(--c-border);background:var(--c-surface)">
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-                  <div id="gd-author-avatar"
-                    style="width:20px;height:20px;border-radius:50%;background:var(--c-accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">
-                    GI</div>
-                  <span id="gd-author-name" style="font-size:12px;font-weight:600;color:var(--c-text)">Git User</span>
-                  <span style="font-size:10px;color:var(--c-text-muted)">Commit Author</span>
-                </div>
-                <!-- Auto-generate row -->
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-                  <span style="font-size:10.5px;font-weight:600;color:var(--c-text-muted);letter-spacing:.5px">COMMIT
-                    MESSAGE</span>
-                  <button type="button" id="gd-auto-generate-btn" class="btn btn-ghost btn-sm"
-                    data-action="generateAutoCommitMessage" data-value="true"
-                    style="padding:2px 8px;font-size:11px;border:1px solid var(--c-border);border-radius:var(--r-sm)">
-                    ✨ Auto-Generate
-                  </button>
-                </div>
-                <input class="form-input" id="gd-commit-summary" placeholder="Summary (required)"
-                  style="font-size:13px;padding:8px 10px;margin-bottom:6px;width:100%" />
-                <textarea class="form-input form-textarea" id="gd-commit-desc" rows="2"
-                  placeholder="Description (optional)"
-                  style="font-size:12px;padding:6px 10px;margin-bottom:8px;width:100%;resize:vertical;min-height:48px"></textarea>
-                <button class="btn btn-primary btn-sm full-width" id="gd-btn-commit" data-action="commitFromGitDesktop"
-                  style="padding:8px 12px;font-weight:600">
-                  Commit to <span id="gd-commit-branch-label" style="font-weight:700;margin-left:2px">main</span>
-                </button>
-              </div>
-            </div>
-
-            <!-- Panel B: Commit History List -->
-            <div id="gd-panel-history" style="display:none;max-height:560px;overflow-y:auto">
-              <div id="gd-history-list" style="display:flex;flex-direction:column;gap:1px;padding:8px">
-                <div class="text-muted" style="text-align:center;padding:24px;font-size:12px">Loading commit history...
-                </div>
-              </div>
-            </div>
-
-            <!-- Panel C: AI Commit Plan Panel -->
-            <div id="gd-panel-commit-plan"
-              style="display:none;max-height:560px;overflow-y:auto;padding:12px;display:none;flex-direction:column;gap:10px">
-              <div
-                style="display:flex;justify-content:space-between;align-items:center;padding-bottom:4px;border-bottom:1px solid var(--c-border-subtle)">
-                <div>
-                  <div style="font-size:12px;font-weight:700;color:var(--c-text)">Atomic Conventional Commits</div>
-                  <div id="gd-ai-summary" style="font-size:11px;color:var(--c-text-secondary);margin-top:1px">
-                    Auto-grouped changes</div>
-                </div>
-                <button class="btn btn-primary btn-sm" id="gd-btn-commit-all" data-action="triggerAICommitAll"
-                  style="display:none;font-size:11px;padding:3px 8px;white-space:nowrap">
-                  ⚡ Commit All
-                </button>
-              </div>
-              <div id="gd-commit-plan-container" style="display:flex;flex-direction:column;gap:8px">
-                <div class="empty-state" style="padding:24px 16px">
-                  <div class="empty-title" style="font-size:12px">Click "⚡ AI Analyze Changes" above to generate atomic
-                    commit groupings</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Right Column: Diff Inspector (Full Vertical Height) -->
-          <div class="git-right-panel" style="display:flex;flex-direction:column">
-            <!-- Selected File Diff Card -->
-            <div class="card" style="padding:0;overflow:hidden">
-              <div class="card-header"
-                style="padding:10px 16px;border-bottom:1px solid var(--c-border);background:var(--c-surface-hover);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-                <div style="display:flex;align-items:center;gap:10px;min-width:0">
-                  <span style="font-size:14px">📄</span>
-                  <div style="min-width:0">
-                    <div id="gd-diff-filepath"
-                      style="font-weight:700;font-size:13px;font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                      Select a file to inspect diff</div>
-                    <div id="gd-diff-meta" style="font-size:11px;color:var(--c-text-muted)">Changes preview &amp; syntax
-                      highlighting</div>
-                  </div>
-                </div>
-                <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-                  <!-- OS Direct Open Actions -->
-                  <button class="btn btn-ghost btn-sm" id="gd-btn-reveal-os" data-action="openCurrentFileInOs"
-                    data-value="reveal" title="Reveal file in Windows File Explorer"
-                    style="padding:4px 8px;font-size:11px;display:none">
-                    📂 Reveal
-                  </button>
-                  <button class="btn btn-ghost btn-sm" id="gd-btn-open-editor" data-action="openCurrentFileInOs"
-                    data-value="edit" title="Open file directly in VS Code / default editor"
-                    style="padding:4px 8px;font-size:11px;display:none">
-                    📝 Open Editor
-                  </button>
-                  <span id="gd-diff-status-badge" class="badge badge-secondary" style="display:none">STATUS</span>
-                  <div class="tabs" style="padding:0;background:transparent;border:none">
-                    <button class="btn btn-secondary btn-sm" id="gd-tab-btn-diff" data-action="switchGitDesktopTab" data-value="gd-diff" style="padding:4px 10px;font-size:11px">File Diff</button>
-                    <button class="btn btn-ghost btn-sm" id="gd-tab-btn-all-diff" data-action="switchGitDesktopTab" data-value="gd-all-diff" style="padding:4px 10px;font-size:11px">📑 All Changes (<span id="gd-all-diff-count">0</span>)</button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Diff Viewer Body (Single Selected File) -->
-              <div id="panel-gd-diff" class="tab-panel active" style="padding:0">
-                <div id="gd-diff-viewer" class="github-diff-viewer diff-viewer"
-                  style="min-height:300px;max-height:640px;overflow-y:auto;overflow-x:auto;font-family:var(--font-mono);font-size:12px;background:#ffffff;padding:12px;-webkit-overflow-scrolling:touch">
-                  <div class="empty-state" style="padding:48px 20px">
-                    <div class="empty-icon">🔍</div>
-                    <div class="empty-title">Select any changed file on the left</div>
-                    <div class="empty-desc">Unified additions, deletions, and AST symbols will render with clean GitHub
-                      diff colors.</div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- All Changes Diff Body (Continuous unified diff for ALL modified files) -->
-              <div id="panel-gd-all-diff" class="tab-panel" style="display:none;padding:0">
-                <div id="gd-all-diff-viewer" class="github-diff-viewer diff-viewer"
-                  style="min-height:300px;max-height:640px;overflow-y:auto;overflow-x:auto;font-family:var(--font-mono);font-size:12px;background:#ffffff;padding:12px;-webkit-overflow-scrolling:touch">
-                  <div class="empty-state" style="padding:48px 20px">
-                    <div class="empty-icon">📑</div>
-                    <div class="empty-title">All Changed Files Diff</div>
-                    <div class="empty-desc">Unified continuous diff across every modified file in the working tree.
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          </div>
-        </div>
-      </div>
 
       <!-- ===================== WORKSPACE A — AI DEBUGGING ===================== -->
       <div id="page-debug" class="page">
@@ -699,12 +511,12 @@
               <form id="debug-form" style="display:flex;flex-direction:column;gap:14px">
                 <div class="form-group">
                   <label class="form-label" for="debug-repo">Target Repository</label>
-                  <div style="display:flex;gap:8px">
-                    <select class="form-select" id="debug-repo" style="flex:1">
+                  <div style="display:flex;gap:8px;align-items:center;width:100%">
+                    <select class="form-select" id="debug-repo" style="flex:1;min-width:0;width:100%">
                       <option value="">Select repository...</option>
                     </select>
                     <button type="button" class="btn btn-secondary btn-sm"
-                      data-action="openFolderBrowser">Browse...</button>
+                      data-action="openFolderBrowser" style="flex-shrink:0;white-space:nowrap">Browse...</button>
                   </div>
                 </div>
 
@@ -800,7 +612,25 @@
 
         <!-- Active Debug Session View -->
         <div id="debug-session-view" style="display:none">
-          <div class="debug-layout">
+            <!-- Current Repository Banner -->
+            <div class="current-repo-banner" id="session-repo-banner" style="background:var(--c-surface-elevated);border:1px solid var(--c-border);border-left:4px solid var(--c-accent);border-radius:var(--r-md);padding:12px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;box-shadow:var(--shadow-sm)">
+              <div style="display:flex;align-items:center;gap:12px;min-width:0">
+                <div style="width:36px;height:36px;border-radius:var(--r-sm);background:var(--c-accent-light);color:var(--c-accent);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;border:1px solid var(--c-accent-border)">
+                  📁
+                </div>
+                <div style="min-width:0">
+                  <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;font-weight:700;color:var(--c-accent)">CURRENT REPOSITORY</div>
+                  <div style="font-size:16px;font-weight:700;color:var(--c-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="session-repo-name">—</div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span class="badge badge-secondary" id="session-repo-branch" style="font-family:var(--font-mono);font-size:11.5px">🌿 main</span>
+                <span class="badge badge-accent" id="session-repo-mode" style="font-size:11px">LOCAL</span>
+                <span class="badge badge-success" id="session-repo-files" style="font-size:11px">0 files indexed</span>
+                <span class="badge" id="session-repo-ws" style="font-family:var(--font-mono);font-size:10.5px;background:var(--c-surface);color:var(--c-text-muted);border:1px solid var(--c-border)">ws: —</span>
+              </div>
+            </div>
+
             <!-- Header bar -->
             <div class="debug-header-bar">
               <button class="btn btn-secondary btn-sm" data-action="exitDebugSession">← Back</button>
@@ -810,7 +640,7 @@
               </div>
               <div style="display:flex;align-items:center;gap:8px">
                 <span class="badge" id="session-agent-state"
-                  style="background:#e0e7ff;color:#3730a3;font-family:var(--font-mono);font-size:11px">INITIALIZING</span>
+                  style="background:rgba(99,102,241,0.18);color:#a5b4fc;font-family:var(--font-mono);font-size:11px;border:1px solid rgba(99,102,241,0.3)">INITIALIZING</span>
                 <div id="session-status-badge" class="badge badge-accent">Investigating...</div>
               </div>
               <button class="btn btn-danger btn-sm" id="abort-session-btn"
@@ -818,7 +648,7 @@
             </div>
 
             <!-- Agent Developer Steering Bar -->
-            <div class="agent-steer-bar" style="margin-bottom:14px;background:#f8fafc;border:1px solid var(--c-border);border-radius:var(--r-md);padding:8px 14px;display:flex;align-items:center;gap:10px">
+            <div class="agent-steer-bar" style="margin-bottom:14px;background:var(--c-surface-elevated);border:1px solid var(--c-border);border-radius:var(--r-md);padding:8px 14px;display:flex;align-items:center;gap:10px;box-shadow:var(--shadow-sm)">
               <span style="font-size:12px;font-weight:600;color:var(--c-accent);display:flex;align-items:center;gap:5px;white-space:nowrap">
                 🧭 Developer Steer:
               </span>
@@ -854,7 +684,7 @@
                     <div class="card-title">Agent Execution Timeline</div>
                     <div class="spinner" id="agent-spinner"></div>
                   </div>
-                  <div id="agent-phases" style="display:flex;flex-direction:column;gap:8px">
+                  <div id="agent-phases">
                     <!-- Stepper injected here -->
                   </div>
                 </div>
@@ -870,119 +700,117 @@
                 </div>
               </div>
 
-              <!-- Right: Tabbed Inspection -->
-              <div class="card" style="padding:0;overflow:hidden">
-                <div class="tabs">
-                  <div class="tab-item active" data-tab="evidence">Evidence Chain</div>
-                  <div class="tab-item" data-tab="diff">Diff Viewer</div>
-                  <div class="tab-item" data-tab="critic">Critic Review</div>
-                  <div class="tab-item" data-tab="conflicts">Merge Conflicts</div>
-                  <div class="tab-item" data-tab="tests">Test Results</div>
-                  <div class="tab-item" data-tab="git">Git & Commit</div>
-                  <div class="tab-item" data-tab="logs">Execution Log</div>
-                </div>
-
-                <div class="tab-panel active" data-tab="evidence" style="padding:20px">
-                  <div id="evidence-list" style="display:flex;flex-direction:column;gap:12px">
-                    <div class="text-muted" style="font-size:13px">Investigating repository context...</div>
-                  </div>
-                </div>
-
-                <div class="tab-panel" data-tab="diff" style="padding:20px">
-                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                    <div style="font-size:12px;font-weight:600;color:var(--c-text-secondary)">
-                      SURGICAL PATCH PREVIEW
+              <!-- Right: Root Cause Diagnosis & Tabbed Inspection -->
+              <div class="debug-right-col" style="display:flex;flex-direction:column;gap:16px;min-width:0">
+                <!-- Root Cause Diagnosis Card (Featured at top of inspection) -->
+                <div id="root-cause-card" class="card"
+                  style="display:none;background:var(--c-surface-card);border:1px solid var(--c-accent-border);box-shadow:0 4px 20px rgba(0,0,0,0.5)">
+                  <div class="card-header">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <div class="card-title" style="color:var(--c-accent);font-size:14px">🎯 Root Cause Diagnosis</div>
+                      <span class="badge badge-accent" id="rc-risk">LOW RISK</span>
                     </div>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap">
-                      <button class="btn btn-primary btn-sm" id="diff-apply-btn" data-action="applyFix">🔧 Apply Patch</button>
-                      <button class="btn btn-secondary btn-sm" id="diff-edit-btn" data-action="openPatchEditorModal" title="Edit this proposed patch before applying">✏️ Edit Patch</button>
-                      <button class="btn btn-secondary btn-sm" id="diff-export-md-btn" data-action="exportPostMortemMarkdown" title="Download Markdown post-mortem report">📄 Export Report (.md)</button>
-                      <button class="btn btn-danger btn-sm" id="diff-revert-btn" data-action="revertFix" style="display:none">↩️ Revert Patch</button>
-                      <button class="btn btn-secondary btn-sm" id="diff-commit-btn" data-action="commitAndPushFix">📝 Commit & Push</button>
-                      <button class="btn btn-secondary btn-sm" id="diff-pr-btn" data-action="openCreatePRModal">🚀 Create PR</button>
+                    <div class="badge badge-success" id="root-cause-confidence">High Confidence (92%)</div>
+                  </div>
+                  <div id="root-cause-content" style="font-size:13px;display:flex;flex-direction:column;gap:8px">
+                    <div><strong>Symptom:</strong> <span id="rc-symptom">Failing execution path detected</span></div>
+                    <div><strong>Root Cause:</strong> <span id="rc-rootcause"></span></div>
+                    <div><strong>Evidence:</strong> <span id="rc-evidence"></span></div>
+                    <div><strong>Fix Plan:</strong> <span id="rc-fix"></span></div>
+                  </div>
+                  <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+                    <button class="btn btn-primary" id="apply-fix-btn" data-action="applyFix">🔧 Apply Verified Patch</button>
+                    <button class="btn btn-danger" id="revert-fix-btn" data-action="revertFix" style="display:none">↩️ Revert Patch</button>
+                    <button class="btn btn-secondary" id="commit-fix-btn" data-action="commitAndPushFix">📝 Safe Commit &amp; Push</button>
+                    <button class="btn btn-secondary" id="create-pr-btn" data-action="openCreatePRModal">🚀 Create Pull Request</button>
+                    <button class="btn btn-secondary" data-action="requestDetails">Review Evidence</button>
+                  </div>
+                </div>
+
+                <!-- Tabbed Inspection Card -->
+                <div class="card" style="padding:0;overflow:hidden">
+                  <div class="tabs">
+                    <div class="tab-item active" data-tab="evidence">Evidence Chain</div>
+                    <div class="tab-item" data-tab="diff">Diff Viewer</div>
+                    <div class="tab-item" data-tab="critic">Critic Review</div>
+                    <div class="tab-item" data-tab="conflicts">Merge Conflicts</div>
+                    <div class="tab-item" data-tab="tests">Test Results</div>
+                    <div class="tab-item" data-tab="git">Git &amp; Commit</div>
+                    <div class="tab-item" data-tab="logs">Execution Log</div>
+                  </div>
+
+                  <div class="tab-panel active" data-tab="evidence" style="padding:20px">
+                    <div id="evidence-list" style="display:flex;flex-direction:column;gap:12px">
+                      <div class="text-muted" style="font-size:13px">Investigating repository context...</div>
                     </div>
                   </div>
-                  <div id="diff-view">
-                    <div class="text-muted" style="font-size:13px">No changes generated yet.</div>
-                  </div>
-                </div>
 
-                <div class="tab-panel" data-tab="critic" style="padding:20px">
-                  <div id="critic-view">
-                    <div class="text-muted" style="font-size:13px">Waiting for critic evaluation...</div>
-                  </div>
-                </div>
-
-                <div class="tab-panel" data-tab="conflicts" style="padding:20px">
-                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                    <div style="font-size:12px;font-weight:600;color:var(--c-text-secondary)">
-                      3-WAY MERGE CONFLICT RESOLVER
+                  <div class="tab-panel" data-tab="diff" style="padding:20px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                      <div style="font-size:12px;font-weight:600;color:var(--c-text-secondary)">
+                        SURGICAL PATCH PREVIEW
+                      </div>
+                      <div style="display:flex;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary btn-sm" id="diff-apply-btn" data-action="applyFix">🔧 Apply Patch</button>
+                        <button class="btn btn-secondary btn-sm" id="diff-edit-btn" data-action="openPatchEditorModal" title="Edit this proposed patch before applying">✏️ Edit Patch</button>
+                        <button class="btn btn-secondary btn-sm" id="diff-export-md-btn" data-action="exportPostMortemMarkdown" title="Download Markdown post-mortem report">📄 Export Report (.md)</button>
+                        <button class="btn btn-danger btn-sm" id="diff-revert-btn" data-action="revertFix" style="display:none">↩️ Revert Patch</button>
+                        <button class="btn btn-secondary btn-sm" id="diff-commit-btn" data-action="commitAndPushFix">📝 Commit &amp; Push</button>
+                        <button class="btn btn-secondary btn-sm" id="diff-pr-btn" data-action="openCreatePRModal">🚀 Create PR</button>
+                      </div>
                     </div>
-                    <button class="btn btn-primary btn-sm" id="resolve-conflicts-btn" data-action="resolveConflicts">
-                      ⚡ AI Semantic Resolve All
-                    </button>
-                  </div>
-                  <div id="conflicts-view">
-                    <div class="text-muted" style="font-size:13px">No merge conflicts detected.</div>
-                  </div>
-                </div>
-
-                <div class="tab-panel" data-tab="tests" style="padding:20px">
-                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                    <div style="font-size:12px;font-weight:600;color:var(--c-text-secondary)">
-                      TEST VERIFICATION &amp; LIVE TERMINAL STREAM
+                    <div id="diff-view">
+                      <div class="text-muted" style="font-size:13px">No changes generated yet.</div>
                     </div>
-                    <span id="test-status-pill" class="badge badge-accent">Ready</span>
                   </div>
-                  <div id="tests-terminal" style="background:#0f172a;color:#38bdf8;padding:12px 16px;border-radius:var(--r-md);font-family:var(--font-mono);font-size:12px;height:240px;overflow-y:auto;white-space:pre-wrap;border:1px solid #334155;margin-bottom:14px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.5)">
-                    <div style="color:#64748b">// Live test execution output will stream here in real-time...</div>
-                  </div>
-                  <div id="tests-view">
-                    <div class="text-muted" style="font-size:13px">Waiting for fix verification...</div>
-                  </div>
-                </div>
 
-                <div class="tab-panel" data-tab="git" style="padding:20px">
-                  <div id="git-view">
-                    <div class="text-muted" style="font-size:13px">Loading Git state...</div>
+                  <div class="tab-panel" data-tab="critic" style="padding:20px">
+                    <div id="critic-view">
+                      <div class="text-muted" style="font-size:13px">Waiting for critic evaluation...</div>
+                    </div>
+                  </div>
+
+                  <div class="tab-panel" data-tab="conflicts" style="padding:20px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                      <div style="font-size:12px;font-weight:600;color:var(--c-text-secondary)">
+                        3-WAY MERGE CONFLICT RESOLVER
+                      </div>
+                      <button class="btn btn-primary btn-sm" id="resolve-conflicts-btn" data-action="resolveConflicts">
+                        ⚡ AI Semantic Resolve All
+                      </button>
+                    </div>
+                    <div id="conflicts-view">
+                      <div class="text-muted" style="font-size:13px">No merge conflicts detected.</div>
+                    </div>
+                  </div>
+
+                  <div class="tab-panel" data-tab="tests" style="padding:20px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                      <div style="font-size:12px;font-weight:600;color:var(--c-text-secondary)">
+                        TEST VERIFICATION &amp; LIVE TERMINAL STREAM
+                      </div>
+                      <span id="test-status-pill" class="badge badge-accent">Ready</span>
+                    </div>
+                    <div id="tests-terminal" style="background:#0b0f14;color:#38bdf8;padding:12px 16px;border-radius:var(--r-md);font-family:var(--font-mono);font-size:12px;height:220px;overflow-y:auto;white-space:pre-wrap;border:1px solid var(--c-border);margin-bottom:14px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.5)">
+                      <div style="color:#64748b">// Live test execution output will stream here in real-time...</div>
+                    </div>
+                    <div id="tests-view">
+                      <div class="text-muted" style="font-size:13px">Waiting for fix verification...</div>
+                    </div>
+                  </div>
+
+                  <div class="tab-panel" data-tab="git" style="padding:20px">
+                    <div id="git-view">
+                      <div class="text-muted" style="font-size:13px">Loading Git state...</div>
+                    </div>
+                  </div>
+
+                  <div class="tab-panel" data-tab="logs" style="padding:20px">
+                    <div id="logs-view" class="code-block" style="height:320px;overflow-y:auto;white-space:pre-wrap">
+                      Waiting for agent output...
+                    </div>
                   </div>
                 </div>
-
-                <div class="tab-panel" data-tab="logs" style="padding:20px">
-                  <div id="logs-view" class="code-block" style="height:320px;overflow-y:auto;white-space:pre-wrap">
-                    Waiting for agent output...
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Root Cause Diagnosis Card -->
-            <div id="root-cause-card" class="card"
-              style="display:none;background:var(--c-accent-light);border-color:var(--c-accent-border);margin-top:16px">
-              <div class="card-header">
-                <div style="display:flex;align-items:center;gap:8px">
-                  <div class="card-title" style="color:var(--c-accent)">🎯 Root Cause Diagnosis</div>
-                  <span class="badge badge-accent" id="rc-risk">LOW RISK</span>
-                </div>
-                <div class="badge badge-success" id="root-cause-confidence">High Confidence (92%)</div>
-              </div>
-              <div id="root-cause-content" style="font-size:13px;display:flex;flex-direction:column;gap:8px">
-                <div><strong>Symptom:</strong> <span id="rc-symptom">Failing execution path detected</span></div>
-                <div><strong>Root Cause:</strong> <span id="rc-rootcause"></span></div>
-                <div><strong>Evidence:</strong> <span id="rc-evidence"></span></div>
-                <div><strong>Fix Plan:</strong> <span id="rc-fix"></span></div>
-              </div>
-              <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
-                <button class="btn btn-primary" id="apply-fix-btn" data-action="applyFix">🔧 Apply Verified
-                  Patch</button>
-                <button class="btn btn-danger" id="revert-fix-btn" data-action="revertFix" style="display:none">↩️
-                  Revert
-                  Patch</button>
-                <button class="btn btn-secondary" id="commit-fix-btn" data-action="commitAndPushFix">📝 Safe Commit &
-                  Push</button>
-                <button class="btn btn-secondary" id="create-pr-btn" data-action="openCreatePRModal">🚀 Create Pull
-                  Request</button>
-                <button class="btn btn-secondary" data-action="requestDetails">Review Evidence</button>
               </div>
             </div>
           </div>
@@ -996,15 +824,18 @@
             <div class="section-title">Repository Issues</div>
             <div class="section-subtitle">Issues tracked across connected repositories</div>
           </div>
-          <div style="display:flex;gap:10px;align-items:center">
-            <select class="form-select" id="issues-repo-select" style="width:220px" data-action="loadIssues">
+          <div class="section-toolbar">
+            <select class="form-select form-select-repo" id="issues-repo-select" data-action="loadIssues">
               <option value="">Select repository...</option>
             </select>
-            <select class="form-select" id="issues-state-filter" style="width:110px" data-action="loadIssues">
+            <select class="form-select form-select-filter" id="issues-state-filter" data-action="loadIssues">
               <option value="open">Open</option>
               <option value="closed">Closed</option>
               <option value="all">All</option>
             </select>
+            <button class="btn btn-primary btn-sm" data-action="openNewIssueModal" style="display:flex;align-items:center;gap:6px">
+              ＋ New Issue
+            </button>
           </div>
         </div>
         <div class="card" style="padding:0;overflow:hidden">
@@ -1025,11 +856,11 @@
             <div class="section-title">Pull Requests</div>
             <div class="section-subtitle">Review, audit, and analyze PR diffs with AI</div>
           </div>
-          <div style="display:flex;gap:10px;align-items:center">
-            <select class="form-select" id="prs-repo-select" style="width:220px" data-action="loadPRs">
+          <div class="section-toolbar">
+            <select class="form-select form-select-repo" id="prs-repo-select" data-action="loadPRs">
               <option value="">Select repository...</option>
             </select>
-            <select class="form-select" id="prs-state-filter" style="width:110px" data-action="loadPRs">
+            <select class="form-select form-select-filter" id="prs-state-filter" data-action="loadPRs">
               <option value="open">Open</option>
               <option value="closed">Closed</option>
             </select>
@@ -1045,6 +876,63 @@
               <div class="empty-icon">🔀</div>
               <div class="empty-title">Select a repository</div>
               <div class="empty-desc">Choose a connected repository to view pull requests.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== CI / CD RUNS & BUILD PIPELINES ===================== -->
+      <div id="page-ci" class="page">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Continuous Integration &amp; Pipelines</div>
+            <div class="section-subtitle">Real-time workflow runs, automated test validation &amp; AI-assisted failure triage</div>
+          </div>
+          <div class="section-toolbar">
+            <select class="form-select form-select-repo" id="ci-repo-select" data-action="refreshCiRuns">
+              <option value="">All Connected Repositories</option>
+            </select>
+            <select class="form-select form-select-filter" id="ci-status-filter" data-action="filterCiRuns">
+              <option value="all">All Statuses</option>
+              <option value="passed">Passed ✓</option>
+              <option value="failed">Failed ✕</option>
+              <option value="running">In Progress ⏳</option>
+            </select>
+            <button class="btn btn-primary btn-sm" data-action="triggerManualCiBuild" style="display:flex;align-items:center;gap:6px">
+              ⚡ Trigger New Run
+            </button>
+            <button class="btn btn-secondary btn-sm" data-action="refreshCiRuns" title="Refresh runs">
+              ↻ Refresh
+            </button>
+          </div>
+        </div>
+
+        <!-- CI Metrics Summary Cards -->
+        <div class="grid-4" style="margin-bottom:20px">
+          <div class="stat-card">
+            <div class="stat-label">Total Workflow Runs</div>
+            <div class="stat-value" id="ci-stat-total">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Pass Rate</div>
+            <div class="stat-value" id="ci-stat-pass-rate" style="color:var(--c-success-text)">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Average Run Duration</div>
+            <div class="stat-value" id="ci-stat-avg-duration">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">AI Triage Status</div>
+            <div class="stat-value" style="color:var(--c-accent)">Active</div>
+          </div>
+        </div>
+
+        <!-- CI Builds List -->
+        <div id="ci-builds-list" style="display:flex;flex-direction:column;gap:10px">
+          <div class="card" style="padding:0;overflow:hidden">
+            <div class="empty-state" style="padding:32px 20px">
+              <div class="spinner" style="margin:0 auto 10px"></div>
+              <div style="font-weight:600;font-size:13px;color:var(--c-text-muted)">Loading CI pipeline workflow runs...</div>
             </div>
           </div>
         </div>
@@ -1082,6 +970,14 @@
           <div>
             <div class="section-title">Debug History</div>
             <div class="section-subtitle">Chronological record of debugging sessions and agent runs</div>
+          </div>
+          <div class="section-toolbar">
+            <div class="search-input-wrapper">
+              <input type="text" class="form-input form-input-sm" id="history-search-input" placeholder="Search sessions by title, repo, or error..." style="min-width:240px" />
+            </div>
+            <button class="btn btn-secondary btn-sm" data-action="refreshHistory" title="Refresh history">
+              ↻ Refresh
+            </button>
           </div>
         </div>
         <div class="card" style="padding:0;overflow:hidden">
@@ -1250,8 +1146,9 @@
         <!-- Admin Banner -->
         <div class="admin-banner">
           <div class="admin-banner-text">
+            <div class="admin-banner-tag">★ System Administration &amp; Governance</div>
             <h2>Admin Control Center</h2>
-            <p>Monitor all users, activity, and system health across the platform</p>
+            <p>Monitor multi-tenant platform health, all registered users, active workspaces, and global audit activity.</p>
           </div>
           <div class="admin-banner-badge">★ Administrator</div>
         </div>
@@ -1624,7 +1521,7 @@
         <div>
           <div style="font-weight:600;font-size:12px;margin-bottom:6px">OUTGOING COMMITS:</div>
           <div id="push-commits-list"
-            style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;border:1px solid var(--c-border);border-radius:var(--r-md);padding:8px;background:#fff">
+            style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;border:1px solid var(--c-border);border-radius:var(--r-md);padding:8px;background:var(--c-surface)">
             <div class="text-muted" style="font-size:12px">Loading outgoing commits...</div>
           </div>
         </div>
@@ -1653,7 +1550,7 @@
 
       <!-- Branch list container -->
       <div id="branch-list-container"
-        style="max-height:260px;overflow-y:auto;border:1px solid var(--c-border);border-radius:var(--r-md);background:#fff;display:flex;flex-direction:column">
+        style="max-height:260px;overflow-y:auto;border:1px solid var(--c-border);border-radius:var(--r-md);background:var(--c-surface);display:flex;flex-direction:column">
         <div class="text-muted" style="text-align:center;padding:20px;font-size:12px">Loading branches...</div>
       </div>
 
@@ -1707,7 +1604,7 @@
       <div class="modal-desc">Save, restore, inspect, or drop uncommitted working tree changes.</div>
 
       <!-- Create New Stash Box -->
-      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:var(--r-md);padding:12px;margin-bottom:14px">
+      <div style="background:var(--c-surface-elevated);border:1px solid var(--c-border);border-radius:var(--r-md);padding:12px;margin-bottom:14px">
         <div style="font-weight:600;font-size:12px;margin-bottom:6px;color:var(--c-text)">Create New Stash</div>
         <div style="display:flex;gap:8px">
           <input class="form-input" id="new-stash-msg-input" placeholder="Stash description (e.g. 'WIP auth refactor before branch switch')" style="flex:1;font-size:12px" />
@@ -1720,7 +1617,7 @@
         <span>Stashed Changes (<span id="stash-modal-count">0</span>)</span>
         <button class="btn btn-ghost btn-sm" data-action="refreshGitStashes" style="font-size:11px;padding:2px 8px">🔄 Refresh</button>
       </div>
-      <div id="stash-list-container" style="max-height:240px;overflow-y:auto;border:1px solid var(--c-border);border-radius:var(--r-md);background:#fff;display:flex;flex-direction:column">
+      <div id="stash-list-container" style="max-height:240px;overflow-y:auto;border:1px solid var(--c-border);border-radius:var(--r-md);background:var(--c-surface);display:flex;flex-direction:column">
         <div class="text-muted" style="text-align:center;padding:20px;font-size:12px">No stashed changes found.</div>
       </div>
 
@@ -1783,7 +1680,7 @@
   <script src="/views/dashboard.js?v=2.1.0"></script>
   <script src="/views/repositories.js?v=2.1.0"></script>
   <script src="/views/debugging.js?v=2.1.0"></script>
-  <script src="/views/git-desktop.js?v=2.1.0"></script>
+  <script src="/views/ci.js?v=2.2.0"></script>
   <script src="/views/pull-requests.js?v=2.1.0"></script>
   <script src="/views/issues.js?v=2.1.0"></script>
   <script src="/views/conflicts.js?v=2.1.0"></script>

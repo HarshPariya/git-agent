@@ -71,18 +71,6 @@ const validateRepositoryAccess = async (repoId: string, tenantId?: string): Prom
       repo = repositoryStore.getRepository(repoId, tenantId);
     }
     if (!repo) {
-      const cwdBase = path.basename(process.cwd()).toLowerCase();
-      if (repoId.includes("default") || repoId.includes("git-agent") || repoId.includes(cwdBase)) {
-        repo = await repositoryStore.connectRepository({
-          tenantId: tenantId || "tenant-default",
-          userId: "user-default",
-          name: "Git-Agent",
-          url: process.env.GIT_REPO_URL || "https://github.com/HarshPariya/git-agent.git",
-          localPath: process.cwd(),
-        });
-      }
-    }
-    if (!repo) {
       throw new AppError(`Repository "${repoId}" not found or unauthorized`, "NOT_FOUND", 404);
     }
     const execPath = await repositoryStore.ensureWorkspace(repoId, tenantId);

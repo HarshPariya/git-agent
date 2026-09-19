@@ -1,4 +1,7 @@
+# Dependencies
 node_modules/
+
+# Environment and Secrets
 .env
 .env.*
 **/.env
@@ -9,9 +12,41 @@ node_modules/
 *.key
 credentials.json
 service_account*.json
+
+# Build Outputs & Compilation Caches
 dist/
 build/
 coverage/
 .cache/
+*.tsbuildinfo
+
+# Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# IDE & Editor Directories
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Temporary Files & Scratch Dirs
 scratch/
+.tmp/
+tmp/
+
+# AI Agent & Assistant Caches
+.claude/
+.gemini/
+.system_generated/

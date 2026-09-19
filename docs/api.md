@@ -315,7 +315,7 @@ Uses the Groq LLM with strict Conventional Commit prompting and domain-aware fal
   ```json
   {
     "summary": "feat(git): add commit, branch switcher, and push preview modal",
-    "description": "- src/api/git.ts: add commit message generator and checkout branch endpoints\n- public/views/git-desktop.js: integrate push preview modal and target branch selector\n- docs/api.md: document new REST endpoints and request schemas",
+    "description": "- src/api/git.ts: add commit message generator and checkout branch endpoints\n- public/views/ci.js: integrate push preview modal and target branch selector\n- docs/api.md: document new REST endpoints and request schemas",
     "branch": "feature/git-agent"
   }
   ```
@@ -540,4 +540,55 @@ Retrieves open or closed issues directly from the GitHub REST API for connected 
 
 ### `GET /api/github/repos/:owner/:repo/pulls` *(Protected)*
 Retrieves pull requests directly from GitHub with diff and review statuses.
+
+---
+
+## 7. Continuous Integration & Pipeline Endpoints
+
+### `GET /api/ci/builds` *(Protected)*
+Retrieves workflow runs across all connected repositories or filtered by specific repository ID and status.
+- **Query Parameters**:
+  - `repositoryId` (optional): Filter runs belonging to a specific workspace.
+  - `status` (optional): Filter by `passed`, `failed`, or `running`.
+- **Response `200 OK`**:
+  ```json
+  {
+    "builds": [
+      {
+        "id": "build-8f4a2b1",
+        "repositoryId": "repo-765125fd",
+        "branch": "main",
+        "commitHash": "8f4a2b19e283",
+        "triggerType": "push",
+        "triggeredBy": "developer",
+        "status": "passed",
+        "durationMs": 92000,
+        "startedAt": "2026-09-19T09:30:00Z",
+        "steps": [
+          { "name": "Install dependencies", "status": "success", "durationMs": 14000 },
+          { "name": "Compile TypeScript", "status": "success", "durationMs": 28000 },
+          { "name": "Run automated test suites", "status": "success", "durationMs": 50000 }
+        ]
+      }
+    ]
+  }
+  ```
+
+### `GET /api/ci/builds/:id` *(Protected)*
+Retrieves detailed step-by-step logs, execution traces, and telemetry for an individual build run.
+
+### `POST /api/ci/builds/trigger` *(Protected)*
+Triggers a live CI verification run for the specified repository workspace.
+- **Request Body**:
+  ```json
+  {
+    "repositoryId": "repo-765125fd",
+    "branch": "main",
+    "triggerType": "manual"
+  }
+  ```
+
+### `POST /api/ci/builds/:id/diagnose` *(Protected)*
+Launches an autonomous AI root-cause investigation for a failing CI build run, locating failing test traces and proposing fixes.
+
 

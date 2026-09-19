@@ -1,7 +1,9 @@
+import fs from "node:fs";
 import type { Repository, RepositoryIndexStatus, CodeSymbol, CodeGraphNode, CodeGraphEdge } from "../types/git.js";
 import { AppError } from "../errors/app-error.js";
 import { graphBuilder } from "./graph-builder.js";
-import { executeGitStatus } from "../git/engine.js";
+import { executeGitStatus, getExecutionPath } from "../git/engine.js";
+import { repositoryStore } from "../repositories/repository-store.js";
 
 const indexStatuses = new Map<string, RepositoryIndexStatus>();
 
@@ -17,15 +19,27 @@ export interface IndexingResult {
 
 const ensureConnected = async (repositoryId: string, tenantId: string): Promise<Repository> => {
   try {
+    let localPath = "";
+    const existing = repositoryStore.getRepository(repositoryId, tenantId);
+    if (existing && existing.localPath) {
+      localPath = existing.localPath;
+    } else {
+      localPath = getExecutionPath(repositoryId);
+    }
+
+    if (!localPath || !fs.existsSync(localPath)) {
+      throw new AppError(`Repository "${repositoryId}" local workspace path not found`, "REPOSITORY_REQUIRED", 400);
+    }
+
     const { branch } = await executeGitStatus(repositoryId);
     return {
       id: repositoryId,
       tenantId,
       userId: "",
-      name: repositoryId,
-      url: "",
-      localPath: "",
-      defaultBranch: "main",
+      name: existing?.name ?? repositoryId,
+      url: existing?.url ?? "",
+      localPath,
+      defaultBranch: existing?.defaultBranch ?? "main",
       currentBranch: branch,
       status: "connected",
       lastSyncAt: new Date().toISOString(),
@@ -33,6 +47,7 @@ const ensureConnected = async (repositoryId: string, tenantId: string): Promise<
       protectedBranches: [],
     };
   } catch (err) {
+    if (err instanceof AppError) throw err;
     throw new AppError(
       `Cannot index repository: ${err instanceof Error ? err.message : "Unknown error"}`,
       "VALIDATION_ERROR",

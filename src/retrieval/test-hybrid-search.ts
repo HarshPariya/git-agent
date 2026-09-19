@@ -3,7 +3,7 @@ import { chunkRepository } from "../ingestion/chunker.js";
 import { extractEntities } from "../graph/entity-extractor.js";
 import { extractRelationships } from "../graph/relationship-extractor.js";
 import { buildGraph } from "../graph/graph-builder.js";
-import { pgVectorSearch, upsertChunks } from "../db/vector-store.js";
+import { mongoVectorSearch, upsertChunks } from "../db/vector-store.js";
 import { closeDatabase, testDatabaseConnection } from "../db/mongodb.js";
 import { initializeSchema } from "../db/schema.js";
 import { hybridSearch } from "./hybrid-search.js";
@@ -37,7 +37,7 @@ const main = async (): Promise<void> => {
   console.warn(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nQuery: "${query}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 
   if (connected) {
-    vectorResults = await pgVectorSearch(query, { repository: "ai-chatbot", limit: 15 });
+    vectorResults = await mongoVectorSearch(query, { repository: "ai-chatbot", limit: 15 });
   }
 
   const results = hybridSearch(query, graph, chunks, vectorResults, { limit: 10 });

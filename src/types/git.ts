@@ -101,6 +101,9 @@ export interface Repository {
   readonly protectedBranches: readonly ProtectedBranch[];
 }
 
+import type { RepositoryContext } from "./repository-context.js";
+export * from "./repository-context.js";
+
 export type DebugMode =
   "debug" | "issues" | "prs" | "ci" | "conflicts" | "history" | "changes" | "graphrag" | "agent-runs" | "settings";
 
@@ -118,6 +121,7 @@ export interface DebugSession {
   readonly totalSteps: number;
   readonly steps: readonly DebugStep[];
   readonly findings: readonly DebugFinding[];
+  readonly repositoryContext?: RepositoryContext | undefined;
 }
 
 export interface DebugStep {

@@ -8,65 +8,104 @@ const statusBadge = (status) => {
   return `badge ${map[status] || 'badge-accent'}`;
 };
 
+let _allHistorySessions = [];
+
+function renderHistoryCards(sessions, container) {
+  if (!sessions.length) {
+    const searchInput = document.getElementById("history-search-input");
+    const isSearching = searchInput && searchInput.value.trim() !== "";
+    container.innerHTML = `
+      <div class="empty-state" style="padding:48px 24px">
+        <div class="empty-icon">${isSearching ? "🔍" : "📜"}</div>
+        <div class="empty-title">${isSearching ? "No matching debug sessions" : "No history yet"}</div>
+        <div class="empty-desc">${isSearching ? "Try searching for a different keyword, error, or repository." : "Completed debug sessions will appear here."}</div>
+        ${!isSearching ? `<button class="btn btn-primary btn-sm" data-action="navigate" data-value="debug" style="margin-top:12px">⚡ Start Debugging</button>` : ""}
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = sessions.map((s) => {
+    const repoName = s.repositoryId || (window.state?.activeRepository?.name) || "Repository";
+    const shortId = s.id ? s.id.slice(0, 8) : "session";
+    const mode = (s.mode || "debug").toUpperCase();
+    const query = s.query || s.description || "Automated Bug Diagnosis";
+    const dateStr = s.createdAt ? new Date(s.createdAt).toLocaleString() : "Recently";
+    const duration = s.durationMs ? `${Math.round(s.durationMs / 1000)}s` : null;
+
+    return `
+      <div class="history-item-card">
+        <div class="history-card-left">
+          <div class="history-card-icon">⚡</div>
+          <div class="history-card-details">
+            <div class="history-card-header-row">
+              <span class="history-repo-tag">📁 ${escapeHtml(repoName)}</span>
+              <span class="history-session-id">#${escapeHtml(shortId)}</span>
+              <span class="history-mode-pill">${escapeHtml(mode)}</span>
+            </div>
+            <div class="history-query-text" title="${escapeHtml(query)}">${escapeHtml(query)}</div>
+            <div class="history-meta-row">
+              <span>🕒 ${escapeHtml(dateStr)}</span>
+              ${duration ? `<span>⏱️ ${escapeHtml(duration)}</span>` : ""}
+              ${s.fixStatus ? `<span class="badge badge-accent">${escapeHtml(s.fixStatus)}</span>` : ""}
+            </div>
+          </div>
+        </div>
+        <div class="history-card-actions">
+          <span class="${statusBadge(s.status)}">
+            ${escapeHtml(s.status || "active")}
+          </span>
+          <button class="btn btn-secondary btn-sm" data-action="reopenDebugSession" data-value="${escapeHtml(s.id)}" style="display:flex;align-items:center;gap:5px">
+            🔍 Reopen
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
 async function loadHistory() {
   const container = document.getElementById("history-list");
   if (!container) return;
 
   // Show skeleton loading
   container.innerHTML = [1, 2, 3].map(() => `
-    <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--c-border-subtle)">
+    <div style="display:flex;align-items:center;gap:14px;padding:16px 20px;border-bottom:1px solid var(--c-border-subtle)">
+      <div class="skeleton" style="width:36px;height:36px;border-radius:var(--r-md)"></div>
       <div style="flex:1;min-width:0">
-        <div class="skeleton skeleton-text" style="width:200px;height:14px;margin-bottom:6px"></div>
+        <div class="skeleton skeleton-text" style="width:240px;height:14px;margin-bottom:6px"></div>
         <div class="skeleton skeleton-text" style="width:160px;height:12px"></div>
       </div>
-      <div class="skeleton" style="width:64px;height:18px;border-radius:var(--r-full)"></div>
+      <div class="skeleton" style="width:72px;height:24px;border-radius:var(--r-full)"></div>
     </div>
   `).join("");
 
   try {
     const data = await api.listDebugSessions();
-    const sessions = Array.isArray(data) ? data : data.sessions || [];
+    _allHistorySessions = Array.isArray(data) ? data : data.sessions || [];
+    renderHistoryCards(_allHistorySessions, container);
 
-    if (!sessions.length) {
-      container.innerHTML = `
-        <div class="empty-state" style="padding:48px 24px">
-          <div class="empty-icon">📜</div>
-          <div class="empty-title">No history yet</div>
-          <div class="empty-desc">Completed debug sessions will appear here.</div>
-          <button class="btn btn-primary btn-sm" data-action="navigate" data-value="debug" style="margin-top:12px">Start Debugging</button>
-        </div>`;
-      return;
+    // Setup live search input listener once
+    const searchInput = document.getElementById("history-search-input");
+    if (searchInput && !searchInput._listenerAttached) {
+      searchInput._listenerAttached = true;
+      searchInput.addEventListener("input", (e) => {
+        const query = e.target.value.toLowerCase().trim();
+        if (!query) {
+          renderHistoryCards(_allHistorySessions, container);
+          return;
+        }
+        const filtered = _allHistorySessions.filter((s) => {
+          const q = (s.query || s.description || "").toLowerCase();
+          const r = (s.repositoryId || "").toLowerCase();
+          const id = (s.id || "").toLowerCase();
+          const m = (s.mode || "").toLowerCase();
+          return q.includes(query) || r.includes(query) || id.includes(query) || m.includes(query);
+        });
+        renderHistoryCards(filtered, container);
+      });
     }
-
-    container.innerHTML = sessions.map((s) => `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--c-border-subtle);gap:16px">
-        <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
-          <div style="width:36px;height:36px;border-radius:var(--r-md);background:var(--c-bg-tertiary);color:var(--c-text-secondary);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">
-            🔍
-          </div>
-          <div style="overflow:hidden;min-width:0">
-            <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-              ${escapeHtml(s.query || s.description || "Debug Session")}
-            </div>
-            <div style="font-size:11px;color:var(--c-text-muted);display:flex;align-items:center;gap:4px">
-              <span>${escapeHtml(s.mode || "debug")}</span>
-              <span style="color:var(--c-border-strong)">·</span>
-              <span>${s.createdAt ? new Date(s.createdAt).toLocaleString() : "Recently"}</span>
-            </div>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
-          <span class="${statusBadge(s.status)}">
-            ${escapeHtml(s.status || "active")}
-          </span>
-          <button class="btn btn-secondary btn-sm" data-action="reopenDebugSession" data-value="${escapeHtml(s.id)}">
-            🔍 Reopen
-          </button>
-        </div>
-      </div>
-    `).join("");
   } catch (err) {
-    container.innerHTML = `<div class="text-muted" style="text-align:center;padding:20px">Failed to load history: ${escapeHtml(err.message)}</div>`;
+    container.innerHTML = `<div class="text-muted" style="text-align:center;padding:32px 20px">Failed to load history: ${escapeHtml(err.message)}</div>`;
   }
 }
 
@@ -125,7 +164,7 @@ async function reopenDebugSession(sessionId) {
         ];
 
       hypothesesContainer.innerHTML = hyps.map((h) => `
-        <div style="padding:8px 10px;background:#f8fafc;border:1px solid var(--c-border);border-radius:var(--r-sm)">
+        <div style="padding:8px 10px;background:var(--c-surface-elevated, rgba(255,255,255,0.03));border:1px solid var(--c-border);border-radius:var(--r-sm)">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <span style="font-size:12px;font-weight:600;color:var(--c-text-primary)">${escapeHtml(h.title)}</span>
             <span class="badge ${h.status === "confirmed" ? "badge-success" : "badge-secondary"}">${Math.round(h.confidence * 100)}%</span>
@@ -267,7 +306,13 @@ async function loadGitDesktopHistory() {
 }
 
 // Event delegation via data-action — object lookup replaces if/else
-const historyActions = { reopenDebugSession };
+const historyActions = {
+  reopenDebugSession,
+  refreshHistory: () => {
+    showToast("Refreshing history...", "info");
+    loadHistory();
+  },
+};
 document.addEventListener('click', (e) => {
   const target = e.target.closest('[data-action]');
   if (!target) return;

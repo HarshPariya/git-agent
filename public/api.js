@@ -125,6 +125,30 @@ class ApiClient {
     }
   }
 
+  async get(endpoint, options = {}) {
+    return this.request(endpoint, { ...options, method: "GET" });
+  }
+
+  async post(endpoint, body = {}, options = {}) {
+    return this.request(endpoint, {
+      ...options,
+      method: "POST",
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    });
+  }
+
+  async put(endpoint, body = {}, options = {}) {
+    return this.request(endpoint, {
+      ...options,
+      method: "PUT",
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    });
+  }
+
+  async delete(endpoint, options = {}) {
+    return this.request(endpoint, { ...options, method: "DELETE" });
+  }
+
   // Auth
   async login(email, password) {
     const data = await this.request("/api/auth/login", {

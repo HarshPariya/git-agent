@@ -26,13 +26,17 @@ export function registerRepositoryPath(repositoryId: string, localPath: string):
 }
 
 export function getExecutionPath(repositoryOrPath: string): string {
-  if (!repositoryOrPath) return process.cwd();
+  if (!repositoryOrPath || !repositoryOrPath.trim()) {
+    throw new AppError("Repository context is required for Git operations", "REPOSITORY_REQUIRED", 400);
+  }
   const mapped = repositoryPaths.get(repositoryOrPath);
   if (mapped && fs.existsSync(mapped)) return mapped;
-  if (fs.existsSync(repositoryOrPath)) return repositoryOrPath;
-  const cwdGit = path.join(process.cwd(), ".git");
-  if (fs.existsSync(cwdGit)) return process.cwd();
-  return process.cwd();
+  if (fs.existsSync(repositoryOrPath)) return path.resolve(repositoryOrPath);
+  throw new AppError(
+    `Repository workspace for "${repositoryOrPath}" not found or inaccessible`,
+    "REPOSITORY_REQUIRED",
+    400,
+  );
 }
 
 const GIT_OPERATION_CATALOG: readonly GitOperation[] = [

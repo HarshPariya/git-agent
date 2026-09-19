@@ -20,10 +20,11 @@ const SUITES: TestSuite[] = [
   { name: "Agent Orchestration & State Machine", command: "npx tsx tests/agent-orchestrator.test.ts" },
   { name: "Express API & Service Endpoints", command: "npx tsx tests/api.test.ts" },
   { name: "Guardrails, Security & Limits", command: "npx tsx tests/guardrails.test.ts" },
-  { name: "Git Desktop & Commit Plan Engine", command: "npx tsx tests/git-desktop.test.ts" },
-  { name: "E2E Git Desktop Workflow & Synchronization", command: "npx tsx tests/e2e-git-desktop-workflow.test.ts" },
+  { name: "AI Semantic Commit Plan & Change Analyzer", command: "npx tsx tests/git-change-analyzer.test.ts" },
+  { name: "E2E Git Workflow & Synchronization", command: "npx tsx tests/e2e-git-workflow.test.ts" },
   { name: "Multi-Tenant Isolation & Restart Recovery", command: "npx tsx tests/tenant-and-recovery.test.ts" },
   { name: "n8n Automation & Internal Endpoints", command: "npx tsx tests/n8n-automation.test.ts" },
+  { name: "Repository Scoping & Workspace Isolation", command: "npx tsx tests/repository-scoping-isolation.test.ts" },
   { name: "Production System E2E Smoke Test", command: "npx tsx tests/smoke.test.ts" },
 ];
 

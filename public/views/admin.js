@@ -104,18 +104,39 @@ function renderUserRow(user) {
   </div>`;
 }
 
+function formatActivitySummary(entry) {
+  const d = entry.details;
+  if (!d || typeof d !== "object" || Object.keys(d).length === 0) return "";
+  const parts = [];
+  if (d.repositoryId) parts.push(`<span class="admin-detail-pill">📁 ${escapeHtml(d.repositoryId)}</span>`);
+  if (d.branch) parts.push(`<span class="admin-detail-pill">🌿 ${escapeHtml(d.branch)}</span>`);
+  if (d.mode) parts.push(`<span class="admin-detail-pill">⚡ ${escapeHtml(String(d.mode).toUpperCase())}</span>`);
+  if (d.status) parts.push(`<span class="badge ${d.status === "completed" || d.status === "success" ? "badge-success" : "badge-secondary"}">${escapeHtml(d.status)}</span>`);
+  if (d.message) parts.push(`<span style="color:var(--c-text-muted);font-style:italic">"${escapeHtml(String(d.message).slice(0, 70))}"</span>`);
+  if (d.query) parts.push(`<span style="color:var(--c-text-muted)">"${escapeHtml(String(d.query).slice(0, 70))}"</span>`);
+  if (!parts.length) {
+    const formatted = Object.entries(d)
+      .filter(([k]) => k !== "token" && k !== "password" && k !== "secret")
+      .slice(0, 3)
+      .map(([k, v]) => `<span class="admin-detail-pill">${escapeHtml(k)}: <strong>${escapeHtml(String(v).slice(0, 35))}</strong></span>`)
+      .join(" ");
+    return formatted;
+  }
+  return parts.join(" ");
+}
+
 function renderActivityRow(entry) {
   const label = ACTIVITY_LABELS[entry.action] || entry.action;
-  const details = entry.details ? Object.entries(entry.details).map(([k, v]) => `${k}: ${v}`).join(", ") : "";
+  const summaryHtml = formatActivitySummary(entry);
   return `<div class="admin-activity-item" data-action="adminViewActivity" data-value="${escapeHtml(JSON.stringify({ action: entry.action, userId: entry.userId, email: entry.email, timestamp: entry.timestamp, details: entry.details || {} }))}">
     <div class="admin-activity-top">
       <span class="admin-activity-action">${escapeHtml(label)}</span>
       <span class="admin-activity-time">${formatTimestamp(entry.timestamp)}</span>
     </div>
     <div class="admin-activity-user">
-      ${escapeHtml(entry.email || entry.userId)}
+      👤 ${escapeHtml(entry.email || entry.userId)}
     </div>
-    ${details ? `<div class="admin-activity-detail"> — ${escapeHtml(details)}</div>` : ""}
+    ${summaryHtml ? `<div class="admin-activity-detail-pills">${summaryHtml}</div>` : ""}
   </div>`;
 }
 
