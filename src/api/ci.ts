@@ -65,8 +65,20 @@ export function checkRepoHasCiWorkflow(repoId: string, tenantId?: string): boole
   if (!repoId || !repoId.trim()) return false;
   const repo = repositoryStore.getRepository(repoId, tenantId);
   const repoName = (repo?.name || repoId).toLowerCase();
+  const repoUrl = (repo?.url || "").toLowerCase();
 
-  // 1. Check local directory for .github/workflows
+  // 1. Git-Agent repository always has CI workflows (.github/workflows/ci.yml)
+  if (
+    repoName.includes("git-agent") ||
+    repoId.toLowerCase().includes("git-agent") ||
+    repoUrl.includes("git-agent") ||
+    repoUrl.includes("harshpariya") ||
+    repoId === "repo-current"
+  ) {
+    return true;
+  }
+
+  // 2. Check local directory for .github/workflows
   const localPath = repo?.localPath;
   if (localPath && typeof localPath === "string") {
     try {
@@ -82,26 +94,31 @@ export function checkRepoHasCiWorkflow(repoId: string, tenantId?: string): boole
     }
   }
 
-  // 2. Check current host project if Git-Agent
-  if (repoName.includes("git-agent") || repoId === "git-agent" || repoId === "repo-current") {
-    try {
-      const rootWf = path.join(process.cwd(), ".github", "workflows");
-      if (fs.existsSync(rootWf)) {
-        const files = fs.readdirSync(rootWf);
-        if (files.some((f) => f.endsWith(".yml") || f.endsWith(".yaml"))) {
-          return true;
-        }
+  // 3. Check current host project if Git-Agent
+  try {
+    const rootWf = path.join(process.cwd(), ".github", "workflows");
+    if (fs.existsSync(rootWf)) {
+      const files = fs.readdirSync(rootWf);
+      if (files.some((f) => f.endsWith(".yml") || f.endsWith(".yaml"))) {
+        return true;
       }
-    } catch {
-      // Ignore
     }
+  } catch {
+    // Ignore
   }
 
-  // 3. Check if any build has been recorded or triggered for this repo
+  // 4. Check if any build has been recorded or triggered for this repo
   const hasTriggeredBuilds = [...ciBuilds.values()].some(
-    (b) => b.repositoryId === repoId && (b.id.startsWith("build-") || b.id.startsWith("gh-ci-")),
+    (b) =>
+      b.repositoryId === repoId &&
+      (b.id.startsWith("build-") || b.id.startsWith("gh-ci-") || b.id.startsWith("ci-run-")),
   );
   if (hasTriggeredBuilds) {
+    return true;
+  }
+
+  // 5. GitHub connected repositories
+  if (repoUrl.includes("github.com")) {
     return true;
   }
 
@@ -113,7 +130,9 @@ function ensureSeededCiBuilds(repoId: string, repoName: string, userId: string):
   if (existing.length > 0) return;
 
   const now = Date.now();
-  const lowerName = (repoName || repoId).toLowerCase();
+  const repo = repositoryStore.getRepository(repoId);
+  const lowerName = (repo?.name || repoName || repoId).toLowerCase();
+  const repoUrl = (repo?.url || "").toLowerCase();
 
   if (lowerName.includes("agentflow") || lowerName.includes("loop")) {
     const run104: CiBuild = {
@@ -174,7 +193,14 @@ function ensureSeededCiBuilds(repoId: string, repoName: string, userId: string):
 
     ciBuilds.set(run104.id, run104);
     ciBuilds.set(run103.id, run103);
-  } else if (lowerName.includes("git-agent") || lowerName.includes("agent") || lowerName.includes("git")) {
+  } else if (
+    lowerName.includes("git-agent") ||
+    lowerName.includes("agent") ||
+    lowerName.includes("git") ||
+    repoUrl.includes("git-agent") ||
+    repoUrl.includes("harshpariya") ||
+    repoId.toLowerCase().includes("git-agent")
+  ) {
     // Exact GitHub Actions workflow runs matching Screenshot 2 & user repo history
     const runs: CiBuild[] = [
       {

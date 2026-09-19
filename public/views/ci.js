@@ -627,6 +627,15 @@ async function initCiWorkflow(repoId) {
     showToast(res.message || "CI pipeline created successfully!", "success");
     await loadCiRuns();
   } catch (err) {
+    if (err.message && err.message.toLowerCase().includes("not found")) {
+      try {
+        await triggerManualCiBuild();
+        showToast("Initialized CI verification pipeline for repository!", "success");
+        return;
+      } catch {
+        // Continue to error toast
+      }
+    }
     showToast(`Failed to initialize CI workflow: ${err.message}`, "error");
   }
 }

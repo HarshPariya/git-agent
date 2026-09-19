@@ -309,13 +309,17 @@ export const generateText = async ({ instructions, input }: LlmRequest): Promise
 
 export const groqProvider: LlmProvider = { generate: generateText };
 
-export const isLlmAvailable = (): boolean =>
-  Boolean(
+export const isLlmAvailable = (): boolean => {
+  if (process.env.NODE_ENV === "test" && process.env.ENABLE_LLM_IN_TESTS !== "true") {
+    return false;
+  }
+  return Boolean(
     env.groqApiKey &&
     env.groqApiKey.length > 5 &&
     env.groqApiKey !== "mock-key-for-test" &&
     !env.groqApiKey.includes("placeholder"),
   );
+};
 
 export const callLlm = async (
   messages: readonly LlmMessage[],

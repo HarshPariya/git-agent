@@ -3,6 +3,15 @@
  * Repository listings, active repo state, interactive folder browser, and GitHub integration
  */
 
+function sanitizeBranchName(branch, fallback = "main") {
+  if (!branch) return fallback;
+  const b = String(branch).trim();
+  if (!b || b === "unknown" || b === "detached" || b.includes("no branch") || b.includes("HEAD")) {
+    return fallback;
+  }
+  return b;
+}
+
 function getStoredLocalRepos() {
   try {
     return JSON.parse(localStorage.getItem("gda_local_repos") || "[]");
@@ -163,7 +172,7 @@ function renderRepositoriesList() {
         </div>
         <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--c-text-secondary);margin-bottom:14px;padding-left:40px">
           <span>🌿</span>
-          <code style="font-size:11px">${escapeHtml(r.currentBranch || r.defaultBranch || r.branch || "main")}</code>
+          <code style="font-size:11px">${escapeHtml(sanitizeBranchName(r.currentBranch || r.defaultBranch || r.branch))}</code>
         </div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;border-top:1px solid var(--c-border-subtle);padding-top:12px">
@@ -238,8 +247,9 @@ async function setActiveRepository(repo) {
     if (!status) return;
 
     const gitDesktopState = { gitStatus: status };
-    const branchName = status.branch || repo.currentBranch || repo.defaultBranch || 'main';
+    const branchName = sanitizeBranchName(status.branch || repo.currentBranch || repo.defaultBranch || 'main');
     if (label) label.textContent = `${repo.name} · ${branchName}`;
+    if (mobileLabel) mobileLabel.textContent = `${repo.name} · ${branchName}`;
 
     const elements = {
       'gd-branch-name': branchName,
@@ -324,7 +334,7 @@ function populateRepoDropdowns() {
   }
 
   const options = allRepos.map((r) => {
-    const branchLabel = r.currentBranch || r.defaultBranch || "main";
+    const branchLabel = sanitizeBranchName(r.currentBranch || r.defaultBranch || "main");
     const prefix = r.isLocal ? "📂 " : "";
     return `<option value="${escapeHtml(r.id)}">${prefix}${escapeHtml(r.name)} (${escapeHtml(branchLabel)})</option>`;
   });

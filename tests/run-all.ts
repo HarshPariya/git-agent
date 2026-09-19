@@ -1,31 +1,72 @@
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
+import path from "node:path";
 
-const execAsync = promisify(exec);
-
-// Each suite gets 180 seconds. This prevents a hanging process from blocking the
-// entire CI run while giving cloud CI runners adequate margin for DB initialization.
-const SUITE_TIMEOUT_MS = 180_000;
+const SUITE_TIMEOUT_MS = 60_000;
 
 interface TestSuite {
   name: string;
-  command: string;
-  /** Optional per-suite override when 120 s is not enough. */
+  file: string;
   timeoutMs?: number;
 }
 
 const SUITES: TestSuite[] = [
-  { name: "Git Engine & Safety Controls", command: "npx tsx tests/git-engine.test.ts" },
-  { name: "Agent Orchestration & State Machine", command: "npx tsx tests/agent-orchestrator.test.ts" },
-  { name: "Express API & Service Endpoints", command: "npx tsx tests/api.test.ts" },
-  { name: "Guardrails, Security & Limits", command: "npx tsx tests/guardrails.test.ts" },
-  { name: "AI Semantic Commit Plan & Change Analyzer", command: "npx tsx tests/git-change-analyzer.test.ts" },
-  { name: "E2E Git Workflow & Synchronization", command: "npx tsx tests/e2e-git-workflow.test.ts" },
-  { name: "Multi-Tenant Isolation & Restart Recovery", command: "npx tsx tests/tenant-and-recovery.test.ts" },
-  { name: "n8n Automation & Internal Endpoints", command: "npx tsx tests/n8n-automation.test.ts" },
-  { name: "Repository Scoping & Workspace Isolation", command: "npx tsx tests/repository-scoping-isolation.test.ts" },
-  { name: "Production System E2E Smoke Test", command: "npx tsx tests/smoke.test.ts" },
+  { name: "Git Engine & Safety Controls", file: "tests/git-engine.test.ts" },
+  { name: "Agent Orchestration & State Machine", file: "tests/agent-orchestrator.test.ts" },
+  { name: "Express API & Service Endpoints", file: "tests/api.test.ts" },
+  { name: "Guardrails, Security & Limits", file: "tests/guardrails.test.ts" },
+  { name: "AI Semantic Commit Plan & Change Analyzer", file: "tests/git-change-analyzer.test.ts" },
+  { name: "E2E Git Workflow & Synchronization", file: "tests/e2e-git-workflow.test.ts" },
+  { name: "Multi-Tenant Isolation & Restart Recovery", file: "tests/tenant-and-recovery.test.ts" },
+  { name: "n8n Automation & Internal Endpoints", file: "tests/n8n-automation.test.ts" },
+  { name: "Repository Scoping & Workspace Isolation", file: "tests/repository-scoping-isolation.test.ts" },
+  { name: "Production System E2E Smoke Test", file: "tests/smoke.test.ts" },
 ];
+
+const tsxCliPath = path.resolve(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
+
+function runSuite(suite: TestSuite): Promise<{ success: boolean; durationMs: number; error?: string }> {
+  return new Promise((resolve) => {
+    const timeoutMs = suite.timeoutMs ?? SUITE_TIMEOUT_MS;
+    const suiteStart = Date.now();
+    let timedOut = false;
+
+    const child = spawn(process.execPath, [tsxCliPath, suite.file], {
+      cwd: process.cwd(),
+      env: { ...process.env, NODE_ENV: "test", ENABLE_LLM_IN_TESTS: "false" },
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, timeoutMs);
+
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      resolve({ success: false, durationMs: Date.now() - suiteStart, error: err.message });
+    });
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      const durationMs = Date.now() - suiteStart;
+      if (timedOut) {
+        resolve({
+          success: false,
+          durationMs,
+          error: `Execution timed out after ${timeoutMs / 1000}s`,
+        });
+      } else if (code === 0) {
+        resolve({ success: true, durationMs });
+      } else {
+        resolve({
+          success: false,
+          durationMs,
+          error: `Process exited with code ${code}`,
+        });
+      }
+    });
+  });
+}
 
 async function runAll() {
   console.log(
@@ -39,35 +80,21 @@ async function runAll() {
   let failedSuites = 0;
 
   for (const suite of SUITES) {
-    const timeout = suite.timeoutMs ?? SUITE_TIMEOUT_MS;
-    console.log(`▶ Running Suite: ${suite.name} (timeout: ${timeout / 1000}s)...`);
-    const suiteStart = Date.now();
-    try {
-      const { stdout, stderr } = await execAsync(suite.command, {
-        cwd: process.cwd(),
-        env: { ...process.env, NODE_ENV: "test" },
-        timeout,
-        killSignal: "SIGKILL",
-      });
-      const durationMs = Date.now() - suiteStart;
-      console.log(stdout.trim());
-      if (stderr?.trim()) console.warn(stderr.trim());
-      console.log(`✓ Suite "${suite.name}" PASSED in ${durationMs}ms\n`);
+    const timeout = (suite.timeoutMs ?? SUITE_TIMEOUT_MS) / 1000;
+    console.log(`\n▶ Running Suite: ${suite.name} [${suite.file}] (timeout: ${timeout}s)...`);
+    const res = await runSuite(suite);
+    if (res.success) {
+      console.log(`✓ Suite "${suite.name}" PASSED in ${res.durationMs}ms`);
       passedSuites++;
-    } catch (err: any) {
-      const durationMs = Date.now() - suiteStart;
-      const timedOut =
-        err.killed === true || err.signal === "SIGKILL" || err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
-      console.error(`❌ Suite "${suite.name}" ${timedOut ? "TIMED OUT" : "FAILED"} in ${durationMs}ms`);
-      if (err.stdout) console.log(err.stdout);
-      if (err.stderr) console.error(err.stderr);
+    } else {
+      console.error(`❌ Suite "${suite.name}" FAILED in ${res.durationMs}ms: ${res.error}`);
       failedSuites++;
     }
   }
 
   const totalTimeMs = Date.now() - startTime;
   console.log(
-    "════════════════════════════════════════════════════════════════\n" +
+    "\n════════════════════════════════════════════════════════════════\n" +
       "SUMMARY OF TEST EXECUTION\n" +
       "════════════════════════════════════════════════════════════════",
   );

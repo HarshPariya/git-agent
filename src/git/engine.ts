@@ -237,11 +237,49 @@ export async function executeGitStatus(repoPath: string): Promise<GitStatusOutpu
   let behind = 0;
   let detached = false;
 
+  async function resolveDetachedBranch(execPath: string): Promise<string> {
+    try {
+      const nameRev = await runGit(execPath, ["name-rev", "--name-only", "HEAD"]).catch(() => "");
+      const cleanName = nameRev
+        .trim()
+        .replace(/^remotes\/origin\//, "")
+        .replace(/^origin\//, "")
+        .replace(/[~^].*$/, "");
+      if (cleanName && cleanName !== "undefined" && cleanName !== "HEAD") {
+        return cleanName;
+      }
+    } catch {
+      // Ignore
+    }
+
+    try {
+      const containsOutput = await runGit(execPath, ["branch", "-a", "--contains", "HEAD"]).catch(() => "");
+      const candidateLines = containsOutput
+        .split("\n")
+        .map((l) => l.trim().replace(/^\*\s*/, ""))
+        .filter(Boolean);
+
+      for (const candidate of candidateLines) {
+        const b = candidate
+          .replace(/^remotes\/origin\//, "")
+          .replace(/^origin\//, "")
+          .trim();
+        if (b && !b.includes("HEAD") && !b.includes("detached") && !b.includes("no branch")) {
+          return b;
+        }
+      }
+    } catch {
+      // Ignore
+    }
+
+    return process.env.GIT_DEFAULT_BRANCH || "main";
+  }
+
   if (branchMatch) {
     let branchName = branchMatch[1] ?? "unknown";
     branchName = branchName.replace("No commits yet on ", "").replace("Initial commit on ", "").trim();
     detached = branchName.includes("no branch") || branchName.includes("HEAD (no branch)");
-    branch = detached ? "detached" : branchName;
+    branch = detached ? "unknown" : branchName;
 
     const trackingInfo = branchMatch[3];
     const aheadMatch = trackingInfo?.match(/ahead\s+(\d+)/);
@@ -250,24 +288,14 @@ export async function executeGitStatus(repoPath: string): Promise<GitStatusOutpu
     behind = behindMatch ? parseInt(behindMatch[1] ?? "0", 10) : 0;
   }
 
-  if (branch === "unknown") {
+  if (branch === "unknown" || branch === "detached" || detached) {
     try {
-      const execPath = getExecutionPath(repoPath);
       const branchOutput = await runGit(execPath, ["branch", "--show-current"]).catch(() => "");
       const directBranch = branchOutput.trim();
       if (directBranch) {
         branch = directBranch;
       } else {
-        const headOutput = await runGit(execPath, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "");
-        const headBranch = headOutput.trim();
-        if (headBranch && headBranch !== "HEAD") {
-          branch = headBranch;
-        } else if (headBranch === "HEAD") {
-          branch = "detached";
-          detached = true;
-        } else {
-          branch = "main";
-        }
+        branch = await resolveDetachedBranch(execPath);
       }
     } catch {
       branch = "main";

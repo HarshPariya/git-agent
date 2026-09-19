@@ -105,8 +105,25 @@ function copyProjectDirectory(sourceDir: string, targetDir: string): void {
   }
 }
 
-const sanitizeDefaultBranch = (branch: string): string =>
-  branch && !branch.startsWith("feature/") && !branch.startsWith("fix/") ? branch : "main";
+const sanitizeBranch = (branch: string | undefined | null, fallback = "main"): string => {
+  if (!branch) return fallback;
+  const trimmed = branch.trim();
+  if (
+    !trimmed ||
+    trimmed === "unknown" ||
+    trimmed === "detached" ||
+    trimmed.includes("no branch") ||
+    trimmed.includes("HEAD")
+  ) {
+    return fallback;
+  }
+  return trimmed;
+};
+
+const sanitizeDefaultBranch = (branch: string | undefined | null): string => {
+  const clean = sanitizeBranch(branch, "main");
+  return !clean.startsWith("feature/") && !clean.startsWith("fix/") ? clean : "main";
+};
 
 export class RepositoryStore {
   /**
@@ -158,7 +175,7 @@ export class RepositoryStore {
       }
 
       const status = await executeGitStatus(effectivePath).catch(() => null);
-      const branch = status?.branch && status.branch !== "unknown" ? status.branch : repo.currentBranch || "main";
+      const branch = sanitizeBranch(status?.branch, sanitizeBranch(repo.currentBranch, repo.defaultBranch || "main"));
       const effectiveRepo: Repository = {
         ...repo,
         url: effectiveUrl,
@@ -410,9 +427,11 @@ export class RepositoryStore {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     const finalStatus = await executeGitStatus(repo.localPath);
+    const syncedBranch = sanitizeBranch(finalStatus.branch, repo.defaultBranch || repo.currentBranch || "main");
     const synced: Repository = {
       ...repo,
-      currentBranch: finalStatus.branch,
+      currentBranch: syncedBranch,
+      defaultBranch: sanitizeDefaultBranch(repo.defaultBranch || syncedBranch),
       lastSyncAt: new Date().toISOString(),
       status: "connected",
     };
@@ -451,8 +470,9 @@ export class RepositoryStore {
     if (!repo) throw new AppError(`Repository ${repositoryId} not found`, "NOT_FOUND", 404);
 
     const status = await executeGitStatus(repo.localPath).catch(() => null);
+    const currentBranch = sanitizeBranch(status?.branch, repo.defaultBranch || repo.currentBranch || "main");
     const updated: Repository = status
-      ? { ...repo, currentBranch: status.branch, lastSyncAt: new Date().toISOString(), status: "connected" }
+      ? { ...repo, currentBranch, lastSyncAt: new Date().toISOString(), status: "connected" }
       : { ...repo, status: "error", lastSyncAt: new Date().toISOString() };
 
     repositories.set(repositoryId, updated);
@@ -529,7 +549,7 @@ export class RepositoryStore {
   private async reconnectExisting(existing: Repository): Promise<Repository> {
     registerRepositoryPath(existing.id, existing.localPath);
     const status = await executeGitStatus(existing.localPath).catch(() => null);
-    const current = status?.branch && status.branch !== "unknown" ? status.branch : existing.currentBranch || "main";
+    const current = sanitizeBranch(status?.branch, sanitizeBranch(existing.currentBranch, "main"));
     const updated: Repository = {
       ...existing,
       defaultBranch: sanitizeDefaultBranch(current || existing.defaultBranch),
@@ -555,7 +575,7 @@ export class RepositoryStore {
     localPath: string;
   }): Promise<Repository> {
     const status = await executeGitStatus(params.localPath).catch(() => null);
-    const branch = status?.branch ?? "main";
+    const branch = sanitizeBranch(status?.branch, "main");
 
     const repository: Repository = {
       id: generateId("repo-", params.localPath ? params.localPath.toLowerCase() : undefined),

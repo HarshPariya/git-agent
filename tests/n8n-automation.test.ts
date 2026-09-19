@@ -180,7 +180,11 @@ async function runTests() {
     assert(postCommitRes.data.commitHash === "9876543210abcdef", "Commit hash preserved");
     assert(postCommitRes.data.ciTriggered === true, "CI triggered for main branch commit");
   } finally {
-    server.close();
+    server.closeIdleConnections?.();
+    server.closeAllConnections?.();
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+    });
   }
 
   console.log(`\nResults: ${passed} passed, ${failed} failed`);

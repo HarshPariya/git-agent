@@ -99,10 +99,12 @@ async function runApiTests() {
       "Filesystem browser returns directories and files arrays",
     );
   } finally {
+    server.closeIdleConnections?.();
+    server.closeAllConnections?.();
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
     });
-    await closeDatabase();
+    await closeDatabase().catch(() => {});
   }
 
   console.log(

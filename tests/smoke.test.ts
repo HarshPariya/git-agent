@@ -185,7 +185,11 @@ async function runSmokeTests(): Promise<void> {
       throw new Error(`Smoke test suite failed with ${failed} failure(s)`);
     }
   } finally {
-    server.close();
+    server.closeIdleConnections?.();
+    server.closeAllConnections?.();
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+    });
     await closeDatabase().catch(() => {});
   }
 }
