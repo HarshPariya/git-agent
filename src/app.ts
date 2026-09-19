@@ -76,7 +76,13 @@ import {
 import { getAuditLogHandler, getAuditEntryHandler } from "./api/audit.js";
 import { listScriptsHandler, runScriptHandler } from "./api/scripts.js";
 import { runBisectHandler, detectRegressionHandler } from "./api/bisect.js";
-import { listCiBuildsHandler, getCiBuildHandler, triggerCiBuildHandler, getCiBuildLogsHandler } from "./api/ci.js";
+import {
+  listCiBuildsHandler,
+  getCiBuildHandler,
+  triggerCiBuildHandler,
+  getCiBuildLogsHandler,
+  initCiWorkflowHandler,
+} from "./api/ci.js";
 import {
   listPullRequestsHandler,
   getPullRequestHandler,
@@ -384,6 +390,9 @@ app.post("/api/bisect", ...protectedRoute, runBisectHandler);
 app.post("/api/regression", ...protectedRoute, detectRegressionHandler);
 app.get("/api/ci", ...protectedRoute, listCiBuildsHandler);
 app.get("/api/ci/builds", ...protectedRoute, listCiBuildsHandler);
+app.post("/api/ci/init-workflow", ...protectedRoute, initCiWorkflowHandler);
+app.post("/api/ci/setup", ...protectedRoute, initCiWorkflowHandler);
+app.get("/api/ci/builds/:id", ...protectedRoute, getCiBuildHandler);
 app.get("/api/ci/:id", ...protectedRoute, getCiBuildHandler);
 app.post("/api/ci", ...protectedRoute, triggerCiBuildHandler);
 app.post("/api/ci/builds", ...protectedRoute, triggerCiBuildHandler);

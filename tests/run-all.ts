@@ -3,10 +3,9 @@ import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
 
-// Each suite gets 120 seconds. This prevents a hanging process (e.g. an
-// unclosed MongoDB connection keeping the event loop alive) from blocking the
-// entire CI run for 10+ minutes.
-const SUITE_TIMEOUT_MS = 120_000;
+// Each suite gets 180 seconds. This prevents a hanging process from blocking the
+// entire CI run while giving cloud CI runners adequate margin for DB initialization.
+const SUITE_TIMEOUT_MS = 180_000;
 
 interface TestSuite {
   name: string;

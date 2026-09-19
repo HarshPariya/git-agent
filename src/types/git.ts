@@ -158,14 +158,18 @@ export interface CiBuild {
   readonly repositoryId: string;
   readonly branch: string;
   readonly commitHash: string;
+  readonly commitMessage?: string | undefined;
+  readonly runNumber?: number | undefined;
+  readonly workflowName?: string | undefined;
   readonly status: "queued" | "running" | "passed" | "failed" | "cancelled";
   readonly triggeredBy: string;
   readonly triggerType: "push" | "pull_request" | "manual" | "schedule";
   readonly startedAt: string;
-  readonly completedAt?: string;
-  readonly durationMs?: number;
+  readonly completedAt?: string | undefined;
+  readonly durationMs?: number | undefined;
   readonly steps: readonly CiBuildStep[];
-  readonly logsUrl?: string;
+  readonly logsUrl?: string | undefined;
+  readonly htmlUrl?: string | undefined;
 }
 
 export interface CiBuildStep {

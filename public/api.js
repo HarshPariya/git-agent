@@ -477,7 +477,13 @@ class ApiClient {
   // Workflows
   async listCiBuilds(repositoryId) {
     const q = repositoryId ? `?repositoryId=${encodeURIComponent(repositoryId)}` : "";
-    return this.request(`/api/ci${q}`);
+    return this.request(`/api/ci/builds${q}`);
+  }
+  async initCiWorkflow(repositoryId) {
+    return this.request("/api/ci/init-workflow", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId }),
+    });
   }
   async listPullRequests(repositoryId) {
     const q = repositoryId ? `?repositoryId=${encodeURIComponent(repositoryId)}` : "";

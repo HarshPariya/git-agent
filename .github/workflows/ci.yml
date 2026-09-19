@@ -104,7 +104,7 @@ jobs:
 
     env:
       NODE_ENV: test
-      MONGODB_URI: mongodb://testuser:testpass@localhost:27017
+      MONGODB_URI: mongodb://testuser:testpass@127.0.0.1:27017/ai_chatbot_test?authSource=admin&directConnection=true
       MONGODB_DB_NAME: ai_chatbot_test
       PORT: 3000
 
@@ -115,6 +115,11 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
+
+      - name: Configure Git Author
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       - run: npm ci --ignore-scripts
 
@@ -145,7 +150,7 @@ jobs:
 
     env:
       NODE_ENV: test
-      MONGODB_URI: mongodb://testuser:testpass@localhost:27017
+      MONGODB_URI: mongodb://testuser:testpass@127.0.0.1:27017/ai_chatbot_test?authSource=admin&directConnection=true
       MONGODB_DB_NAME: ai_chatbot_test
       PORT: 3000
 
@@ -191,7 +196,7 @@ jobs:
 
     env:
       NODE_ENV: test
-      MONGODB_URI: mongodb://testuser:testpass@localhost:27017
+      MONGODB_URI: mongodb://testuser:testpass@127.0.0.1:27017/ai_chatbot_test?authSource=admin&directConnection=true
       MONGODB_DB_NAME: ai_chatbot_test
       PORT: 3000
 
@@ -253,7 +258,7 @@ jobs:
 
     env:
       NODE_ENV: test
-      MONGODB_URI: mongodb://testuser:testpass@localhost:27017
+      MONGODB_URI: mongodb://testuser:testpass@127.0.0.1:27017/ai_chatbot_test?authSource=admin&directConnection=true
       MONGODB_DB_NAME: ai_chatbot_test
       PORT: 3000
 

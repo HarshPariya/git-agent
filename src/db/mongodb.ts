@@ -16,7 +16,8 @@ import {
 // 127.0.0.1 (loopback) instead of the actual network DNS server, causing
 // SRV record lookups for mongodb+srv:// connections to fail with ECONNREFUSED.
 const fixNodeDnsResolution = (): void => {
-  if (process.platform !== "win32") return;
+  // Never modify DNS in CI environments or on Linux/macOS where system resolver is managed
+  if (process.env.CI || process.platform !== "win32") return;
   const current = dns.getServers();
   const needsFix = current.every((s) => s === "127.0.0.1" || s === "::1" || s === "localhost");
   if (!needsFix) return;
