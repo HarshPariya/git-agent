@@ -79,10 +79,13 @@ async function runAll() {
   let passedSuites = 0;
   let failedSuites = 0;
 
+  const results: Array<{ name: string; file: string; success: boolean; durationMs: number; error?: string }> = [];
+
   for (const suite of SUITES) {
     const timeout = (suite.timeoutMs ?? SUITE_TIMEOUT_MS) / 1000;
     console.log(`\n▶ Running Suite: ${suite.name} [${suite.file}] (timeout: ${timeout}s)...`);
     const res = await runSuite(suite);
+    results.push({ name: suite.name, file: suite.file, ...res });
     if (res.success) {
       console.log(`✓ Suite "${suite.name}" PASSED in ${res.durationMs}ms`);
       passedSuites++;
@@ -101,6 +104,21 @@ async function runAll() {
   console.log(
     `Total Suites:   ${SUITES.length}\nPassed Suites:  ${passedSuites}\nFailed Suites:  ${failedSuites}\nTotal Duration: ${(totalTimeMs / 1000).toFixed(2)}s\n`,
   );
+
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (summaryPath) {
+    try {
+      const fs = await import("node:fs/promises");
+      const markdown = `## 🧪 Test Suite Execution Summary
+| Test Suite | File | Status | Duration | Details |
+| :--- | :--- | :---: | :---: | :--- |
+${results.map((r) => `| **${r.name}** | \`${r.file}\` | ${r.success ? "✅ **Passed**" : "❌ **Failed**"} | ${(r.durationMs / 1000).toFixed(2)}s | ${r.error ? `\`${r.error}\`` : "Passed cleanly"} |`).join("\n")}
+
+**Result**: ${failedSuites === 0 ? "🎉 **All 10 test suites passed cleanly!**" : `⚠️ **${failedSuites} suite(s) failed**`} *(Total Duration: ${(totalTimeMs / 1000).toFixed(2)}s)*
+`;
+      await fs.appendFile(summaryPath, markdown, "utf8");
+    } catch {}
+  }
 
   if (failedSuites > 0) {
     console.error("CI TEST SUITE FAILED");
