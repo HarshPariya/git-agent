@@ -4,7 +4,7 @@
  * with userId, timestamp, and details. Admin can query all; users see only theirs.
  */
 
-import { getCollection } from "../db/mongodb.js";
+import { getCollection, isDatabaseConnected } from "../db/mongodb.js";
 
 export interface ActivityEntry {
   readonly userId: string;
@@ -38,6 +38,7 @@ export async function logActivity(
   action: string,
   details: Record<string, unknown> = {},
 ): Promise<void> {
+  if (!isDatabaseConnected()) return;
   try {
     const col = getCollection("activity_history");
     const entry: ActivityEntry = {
@@ -67,6 +68,7 @@ export async function logActivity(
  * Called once on server startup. Idempotent.
  */
 export async function ensureActivityIndexes(): Promise<void> {
+  if (!isDatabaseConnected()) return;
   try {
     const col = getCollection("activity_history");
     await col.createIndex({ userId: 1, timestamp: -1 });
@@ -85,6 +87,7 @@ export async function getUserActivity(
   userId: string,
   options: { limit?: number; skip?: number; action?: string } = {},
 ): Promise<{ entries: ActivityEntry[]; total: number }> {
+  if (!isDatabaseConnected()) return { entries: [], total: 0 };
   const col = getCollection("activity_history");
   const filter: Record<string, unknown> = { userId };
   if (options.action) filter.action = options.action;
@@ -106,6 +109,7 @@ export async function getUserActivity(
 export async function getAllActivity(
   options: { limit?: number; skip?: number; action?: string; userId?: string } = {},
 ): Promise<{ entries: ActivityEntry[]; total: number }> {
+  if (!isDatabaseConnected()) return { entries: [], total: 0 };
   const col = getCollection("activity_history");
   const filter: Record<string, unknown> = {};
   if (options.action) filter.action = options.action;
@@ -126,6 +130,7 @@ export async function getAllActivity(
  * Get activity stats: total count per action type for a user (or all users).
  */
 export async function getActivityStats(userId?: string): Promise<Record<string, number>> {
+  if (!isDatabaseConnected()) return {};
   const col = getCollection("activity_history");
   const match: Record<string, unknown> = userId ? { userId } : {};
 

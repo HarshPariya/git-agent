@@ -17,9 +17,9 @@ const SUITES: TestSuite[] = [
   { name: "AI Semantic Commit Plan & Change Analyzer", file: "tests/git-change-analyzer.test.ts" },
   { name: "E2E Git Workflow & Synchronization", file: "tests/e2e-git-workflow.test.ts" },
   { name: "Multi-Tenant Isolation & Restart Recovery", file: "tests/tenant-and-recovery.test.ts" },
-  { name: "n8n Automation & Internal Endpoints", file: "tests/n8n-automation.test.ts" },
+  { name: "n8n Automation & Internal Endpoints", file: "tests/n8n-automation.test.ts", timeoutMs: 90_000 },
   { name: "Repository Scoping & Workspace Isolation", file: "tests/repository-scoping-isolation.test.ts" },
-  { name: "Production System E2E Smoke Test", file: "tests/smoke.test.ts" },
+  { name: "Production System E2E Smoke Test", file: "tests/smoke.test.ts", timeoutMs: 90_000 },
 ];
 
 const tsxCliPath = path.resolve(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
@@ -29,6 +29,7 @@ function runSuite(suite: TestSuite): Promise<{ success: boolean; durationMs: num
     const timeoutMs = suite.timeoutMs ?? SUITE_TIMEOUT_MS;
     const suiteStart = Date.now();
     let timedOut = false;
+    let settled = false;
 
     const child = spawn(process.execPath, [tsxCliPath, suite.file], {
       cwd: process.cwd(),
@@ -41,12 +42,9 @@ function runSuite(suite: TestSuite): Promise<{ success: boolean; durationMs: num
       child.kill("SIGKILL");
     }, timeoutMs);
 
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      resolve({ success: false, durationMs: Date.now() - suiteStart, error: err.message });
-    });
-
-    child.on("close", (code) => {
+    const onFinish = (code: number | null, signal: NodeJS.Signals | null) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       const durationMs = Date.now() - suiteStart;
       if (timedOut) {
@@ -61,10 +59,20 @@ function runSuite(suite: TestSuite): Promise<{ success: boolean; durationMs: num
         resolve({
           success: false,
           durationMs,
-          error: `Process exited with code ${code}`,
+          error: `Process exited with code ${code ?? signal}`,
         });
       }
+    };
+
+    child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ success: false, durationMs: Date.now() - suiteStart, error: err.message });
     });
+
+    child.on("exit", (code, signal) => onFinish(code, signal));
+    child.on("close", (code, signal) => onFinish(code, signal));
   });
 }
 

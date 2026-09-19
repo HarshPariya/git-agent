@@ -181,7 +181,9 @@ async function runSmokeTests(): Promise<void> {
         const savedSession = await db.collection("debug_sessions").findOne({ id: sessionId });
         assert(Boolean(savedSession), "Debug session persisted in MongoDB debug_sessions collection");
       } catch {
-        const memRes = await fetch(`${baseUrl}/api/repositories`, { headers: { Authorization: `Bearer ${userToken}` } });
+        const memRes = await fetch(`${baseUrl}/api/repositories`, {
+          headers: { Authorization: `Bearer ${userToken}` },
+        });
         assert(memRes.status === 200, "Repository persisted across requests");
       }
     } else {
