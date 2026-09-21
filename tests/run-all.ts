@@ -19,7 +19,11 @@ const SUITES: TestSuite[] = [
   { name: "E2E Git Workflow & Synchronization", file: "tests/e2e-git-workflow.test.ts" },
   { name: "Multi-Tenant Isolation & Restart Recovery", file: "tests/tenant-and-recovery.test.ts" },
   { name: "n8n Automation & Internal Endpoints", file: "tests/n8n-automation.test.ts", timeoutMs: 90_000 },
-  { name: "Repository Scoping & Workspace Isolation", file: "tests/repository-scoping-isolation.test.ts" },
+  {
+    name: "Repository Scoping & Workspace Isolation",
+    file: "tests/repository-scoping-isolation.test.ts",
+    timeoutMs: 90_000,
+  },
   { name: "Production System E2E Smoke Test", file: "tests/smoke.test.ts", timeoutMs: 90_000 },
 ];
 

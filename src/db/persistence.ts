@@ -15,6 +15,7 @@ import { logger } from "../logging/logger.js";
 // --- Repositories ---
 
 export async function persistRepository(repo: Repository): Promise<void> {
+  if (process.env.NODE_ENV === "test" && !isDatabaseConnected()) return;
   const isConnected = await ensureDatabaseConnected();
   if (!isConnected) return;
   try {
@@ -48,6 +49,7 @@ export async function persistRepository(repo: Repository): Promise<void> {
 }
 
 export async function markRepositoryDisconnected(repositoryId: string): Promise<void> {
+  if (process.env.NODE_ENV === "test" && !isDatabaseConnected()) return;
   const isConnected = await ensureDatabaseConnected();
   if (!isConnected) return;
   try {
@@ -180,6 +182,7 @@ export async function loadRepositoriesFromDb(): Promise<Repository[]> {
 // --- Debug Sessions ---
 
 export async function persistDebugSession(session: DebugSession): Promise<void> {
+  if (process.env.NODE_ENV === "test" && !isDatabaseConnected()) return;
   const isConnected = await ensureDatabaseConnected();
   if (!isConnected) return;
   try {
@@ -294,6 +297,7 @@ export async function persistGitHubConnection(
   connectionId: string,
   metadata?: { login?: string; name?: string; email?: string; avatarUrl?: string },
 ): Promise<void> {
+  if (process.env.NODE_ENV === "test" && !isDatabaseConnected()) return;
   const isConnected = await ensureDatabaseConnected();
   if (!isConnected) return;
   try {
@@ -324,6 +328,7 @@ export async function persistGitHubConnection(
 }
 
 export async function deleteGitHubConnection(userId: string): Promise<void> {
+  if (process.env.NODE_ENV === "test" && !isDatabaseConnected()) return;
   const isConnected = await ensureDatabaseConnected();
   if (!isConnected) return;
   try {

@@ -99,9 +99,12 @@ async function runGitDesktopTests() {
     `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nGIT DESKTOP TEST RESULTS: ${passed} Passed, ${failed} Failed.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`,
   );
   if (failed > 0) process.exit(1);
+  else process.exit(0);
 }
 
-runGitDesktopTests().catch((err) => {
-  console.error("Git Desktop test error:", err);
-  process.exit(1);
-});
+runGitDesktopTests()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error("Git Desktop test error:", err);
+    process.exit(1);
+  });

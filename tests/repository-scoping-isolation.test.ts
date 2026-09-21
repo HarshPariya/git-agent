@@ -4,6 +4,7 @@ import os from "node:os";
 import { contextBuilder } from "../src/agent/context-builder.js";
 import { debugAgentPipeline } from "../src/agent/debug-agent.js";
 import { getExecutionPath, registerRepositoryPath } from "../src/git/engine.js";
+import { closeDatabase } from "../src/db/mongodb.js";
 import type { RepositoryContext } from "../src/types/repository-context.js";
 
 async function runScopingIsolationTests() {
@@ -252,6 +253,7 @@ async function runScopingIsolationTests() {
   } finally {
     await fs.rm(tmpDirA, { recursive: true, force: true }).catch(() => {});
     await fs.rm(tmpDirB, { recursive: true, force: true }).catch(() => {});
+    await closeDatabase().catch(() => {});
   }
 
   console.log(`\n════════════════════════════════════════════════════`);
@@ -260,10 +262,16 @@ async function runScopingIsolationTests() {
 
   if (failed > 0) {
     process.exit(1);
+  } else {
+    process.exit(0);
   }
 }
 
-runScopingIsolationTests().catch((err) => {
-  console.error("Test suite threw uncaught error:", err);
-  process.exit(1);
-});
+runScopingIsolationTests()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error("Test suite threw uncaught error:", err);
+    process.exit(1);
+  });

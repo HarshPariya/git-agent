@@ -50,3 +50,4 @@ tmp/
 .claude/
 .gemini/
 .system_generated/
+test-summary.md
