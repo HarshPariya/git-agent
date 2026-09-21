@@ -110,6 +110,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -126,6 +128,16 @@ jobs:
       - name: Run Core Test Suite
         run: npm test
         timeout-minutes: 10
+
+      - name: Upload Test Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-log
+          path: |
+            test-results.log
+            test-summary.md
+          retention-days: 7
 
   # ── 5. Security & Guardrails ───────────────────────────────────────────────
   security:

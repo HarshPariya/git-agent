@@ -416,11 +416,13 @@ export async function executeGitDiff(
 export async function executeGitBranches(repoPath: string): Promise<GitBranch[]> {
   const execPath = getExecutionPath(repoPath);
 
-  // Try to fetch remote refs so remote branches are up-to-date (silently fail if offline)
-  try {
-    await execFileAsync("git", ["fetch", "--all", "--prune"], { cwd: execPath, timeout: 15000 });
-  } catch {
-    // Offline or no remote — continue with existing refs
+  // Try to fetch remote refs so remote branches are up-to-date (silently fail if offline or in test/CI)
+  if (process.env.NODE_ENV !== "test" && !process.env.CI) {
+    try {
+      await execFileAsync("git", ["fetch", "--all", "--prune"], { cwd: execPath, timeout: 15000 });
+    } catch {
+      // Offline or no remote — continue with existing refs
+    }
   }
 
   const output = await runGit(execPath, ["branch", "-a", "--no-color"]);

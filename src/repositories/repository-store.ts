@@ -375,7 +375,9 @@ export class RepositoryStore {
             cwd: localPath,
           }).catch(() => ({ stdout: "0" }));
           const count = parseInt(commitCountStr.trim(), 10) || 0;
-          if (count <= 1) {
+          // Only sync stub repos in cloud environments (Render) where a stub was created.
+          // NEVER fetch/reset in CI or during test runs or when already checked out.
+          if (!process.env.CI && process.env.NODE_ENV !== "test" && count <= 1) {
             await execFileAsync("git", ["remote", "set-url", "origin", remoteUrl], { cwd: localPath }).catch(() =>
               execFileAsync("git", ["remote", "add", "origin", remoteUrl], { cwd: localPath }),
             );
